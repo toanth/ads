@@ -14,32 +14,16 @@
 namespace ads {
 
 
-template<typename Layout>
+template<ADS_LAYOUT_CONCEPT Layout>
 class Bitvector : private Layout {
     using Base = Layout;
     using Base::getBlockCount;
-    using Base::getElemIdx;
-    using Base::getSuperblockCountIdx;
+    using Base::getElem;
+    using Base::getSuperblockCount;
     using Base::setBlockCount;
     Index numBits;
-    Index totalNumElems;
-    std::unique_ptr<Elem[]> vec;
 
-    Elem& getSuperblockCount(Index superblockIdx) noexcept {
-        assert(superblockIdx >= 0 && superblockIdx < numSuperblocks());
-        Index i = getSuperblockCountIdx(superblockIdx);
-        assert(i >= 0 && i < totalNumElems);
-        return vec[i];
-    }
-
-    Elem& getElem(Index elemIdx) noexcept {
-        return vec[getElemIdx(elemIdx)];
-    }
-
-
-    Bitvector(Index numBits, Index numElems) noexcept : Base(numElems), numBits(numBits),
-                                                        totalNumElems(Base::completeSizeInElems(numElems)), vec(makeUniqueForOverwrite<Elem>(totalNumElems)) {
-        // TODO: ensure that allocated memory is cache aligned
+    Bitvector(Index numBits, Index numElems) noexcept : Base(numElems), numBits(numBits) {
     }
 
 public:
@@ -47,25 +31,33 @@ public:
 
     explicit Bitvector(Index numBits) noexcept : Bitvector(numBits, ((numBits + 63) / 64 + superblockSize() - 1) / superblockSize() * superblockSize()) {}
 
-    explicit Bitvector(std::string_view str) : Bitvector(Index(str.size())) {
+    explicit Bitvector(std::string_view str, Index base = 2) : Bitvector(Index(str.size()) * log2(Elem(base))) {
+        if (base != 2 && base != 4 && base != 16) [[unlikely]] {
+            throw std::invalid_argument("base must be one of 2, 4, or 16");
+        }
+        const Index log2ofBase = log2(base);
+        const std::size_t charsPerElem = 64 / log2ofBase;
         Index i = 0;
         for (Index superblock = 0; superblock < numSuperblocks(); ++superblock) {
             for (Index j = 0; j < superblockSize(); ++j) {
                 if (str.empty()) break;
-                std::size_t numToParse = std::min(std::size_t(64), str.size());
+                std::size_t numToParse = std::min(charsPerElem, str.size());
                 std::string_view toParse = str.substr(0, numToParse);
                 std::uint64_t res;
-                auto err = std::from_chars(toParse.data(), toParse.data() + toParse.size(), res, 2);
+                auto err = std::from_chars(toParse.data(), toParse.data() + toParse.size(), res, base);
                 if (err.ec != std::errc()) [[unlikely]] {
                     throw std::invalid_argument(std::make_error_code(err.ec).message());
                 } else if (err.ptr != toParse.data() + toParse.size()) [[unlikely]] {
                     throw std::invalid_argument("invalid character found");
                 }
+                if (numToParse < charsPerElem) {
+                    res <<= (charsPerElem - numToParse) * log2ofBase;
+                }
                 str.remove_prefix(numToParse);
                 getElem(i) = res;
                 ++i;
             }
-            buildMetadata(superblock);
+            buildMetadata(superblock);// TODO: Compute metadata while iterating over elements for cache efficiency
         }
         assert(str.empty());
     }
@@ -79,9 +71,9 @@ public:
         auto s = superblockElems(superblockIdx);
         Index inSuperblockSoFar = 0;
         for (Index i = 0; i < superblockSize(); ++i) {
-            std::cout << "setting block count for block " << i << " to " << inSuperblockSoFar << ", s[i] is "
-                      << std::hex << s[i] << std::dec << ", popcount " << popcount(s[i]) << std::endl;
-            setBlockCount(vec.get(), superblockIdx, i, inSuperblockSoFar);
+            //            std::cout << "setting block count for block " << i << " to " << inSuperblockSoFar << ", s[i] is "
+            //                      << std::hex << s[i] << std::dec << ", popcount " << popcount(s[i]) << std::endl;
+            setBlockCount(superblockIdx, i, inSuperblockSoFar);
             inSuperblockSoFar += popcount(s[i]);
         }
         assert(inSuperblockSoFar <= superblockSize() * 64);
@@ -100,7 +92,7 @@ public:
         Elem mask = Elem(-1) << (63 - pos % 64);
         Index superblockIdx = elemIdx / superblockSize();
         Index blockIdx = elemIdx % superblockSize();
-        return superblockCount(superblockIdx) + getBlockCount(vec.get(), superblockIdx, blockIdx) + popcount(element(elemIdx) & mask);
+        return getSuperblockCount(superblockIdx) + getBlockCount(superblockIdx, blockIdx) + popcount(element(elemIdx) & mask);
     }
 
     [[nodiscard]] Index rankZero(Index pos) const {
@@ -151,22 +143,19 @@ public:
     }
 
     [[nodiscard]] Span<Elem> superblockElems(Index superblockIdx) noexcept {
-        return Span<Elem>(vec.get() + getElemIdx(superblockIdx * superblockSize()), superblockSize());
+        return Span<Elem>(&getElem(superblockIdx * superblockSize()), superblockSize());
     }
     [[nodiscard]] Span<const Elem> superblockElems(Index superblockIdx) const noexcept {
-        return Span<const Elem>(vec.get() + getElemIdx(superblockIdx * superblockSize()), superblockSize());
+        return Span<const Elem>(&getElem(superblockIdx * superblockSize()), superblockSize());
     }
 
-    [[nodiscard]] Elem superblockCount(Index superblockIdx) const noexcept {
-        return vec[getSuperblockCountIdx(superblockIdx)];
-    }
-
-    [[nodiscard]] Elem blockCount(Index superblockIdx, Index blockIdx) const noexcept {
-        return getBlockCount(vec.get(), superblockIdx, blockIdx);
-    }
 
     [[nodiscard]] Elem element(Index elemIdx) const noexcept {
-        return vec[getElemIdx(elemIdx)];
+        return getElem(elemIdx);
+    }
+
+    [[nodiscard]] bool bit(Index bitIndex) const noexcept {
+        return (element(bitIndex / 64) >> (63 - bitIndex % 64)) & 0x1;
     }
 };
 

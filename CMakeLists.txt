@@ -3,4 +3,6 @@ project(bitvector)
 
 set(CMAKE_CXX_STANDARD 17)
 
-add_executable(bitvector main.cpp bitvector.hpp common.hpp bitvec_layouts.hpp)
+add_executable(bitvector src/main.cpp include/bitvector.hpp include/common.hpp include/bitvec_layouts.hpp)
+
+add_subdirectory(tests)

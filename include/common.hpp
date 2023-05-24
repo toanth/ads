@@ -3,6 +3,7 @@
 
 #include <cassert>
 #include <cstdint>
+#include <cstring>
 #include <memory>
 
 #ifdef _MSC_VER
@@ -14,13 +15,54 @@ namespace ads {
 #if __cplusplus >= 202002L
 constexpr static bool hasCpp20 = true;
 #define ADS_HAS_CPP20
+#define ADS_CONSTEVAL consteval
+#define ADS_CPP20_CONSTEXPR constexpr
 #include <bit>
 #else
 constexpr static bool hasCpp20 = false;
+#define ADS_CONSTEVAL constexpr
+#define ADS_CPP20_CONSTEXPR inline
 #endif
 
 using Index = std::ptrdiff_t;
 
+namespace detail {
+
+    template<typename T>
+    struct TypeIdentity {// std::type_identity is a C++20 feature
+        using Type = T;
+    };
+
+    template<Index NumBytes>
+    struct IntTypeImpl : TypeIdentity<std::uint64_t> {};
+
+    template<>
+    struct IntTypeImpl<4> : TypeIdentity<std::uint32_t> {};
+    template<>
+    struct IntTypeImpl<3> : TypeIdentity<std::uint32_t> {};
+    template<>
+    struct IntTypeImpl<2> : TypeIdentity<std::uint16_t> {};
+    template<>
+    struct IntTypeImpl<1> : TypeIdentity<std::uint8_t> {};
+
+}// namespace detail
+
+template<Index NumBytes>
+using IntType = typename detail::IntTypeImpl<NumBytes>::Type;
+
+template<typename Dest>
+ADS_CPP20_CONSTEXPR Dest ptrBitCast(const unsigned char* src) noexcept {
+#if ADS_HAS_CPP20
+    using T = char[sizeof(Dest)];
+    return std::bit_cast<Dest>((T*) src);
+#else
+    Dest res;
+    std::memcpy(&res, src, sizeof(Dest));
+    return res;
+#endif
+}
+
+#define ADS_RESTRICT __restrict
 
 template<typename UnsignedInteger>// no concepts in C++17 :(
 Index log2(UnsignedInteger n) noexcept {
@@ -62,6 +104,10 @@ static constexpr Index ELEMS_PER_CACHELINE = CACHELINE_SIZE_BYTES / 8;
 template<typename T>
 std::unique_ptr<T[]> makeUniqueForOverwrite(Index size) noexcept {
     return std::unique_ptr<T[]>(new std::remove_extent_t<T>[size]);
+}
+
+constexpr Index roundUpDiv(Index divisor, Index quotient) noexcept {
+    return (divisor + quotient - 1) / quotient;// hopefully, this function gets inlined and optimized (quotient is usually a power of 2)
 }
 
 // Simplified version of std::span

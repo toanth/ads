@@ -1,11 +1,11 @@
-#include "bitvector.hpp"
+#include "../include/bitvector.hpp"
 #include <iostream>
 
 int main() {
     std::cout << "Hello, World!" << std::endl;
 
     using namespace ads;
-    Index numBits = 1000;
+    Index numBits = 3;
     Index remainingBits = numBits;
     Bitvector<NaiveLayout1024ElemSuperblocks> bv(numBits);
     assert(bv.sizeInBits() == numBits);
@@ -38,7 +38,7 @@ int main() {
         }
         std::cout << std::endl;
     }
-    std::cout << std::endl;
+    std::cout << "rank queries:" << std::endl;
     for (Index i = 0; i < numBits; ++i) {
         std::cout << bv.rankOne(i) << ' ';
     }
