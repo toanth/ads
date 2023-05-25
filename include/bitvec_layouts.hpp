@@ -140,7 +140,7 @@ public:
     using Base = DefaultLayoutImpl<SimpleLayout<SuperblockSize, BlockSize>>;
     std::unique_ptr<Elem[]> vec;
     Elem* superblocks;
-    unsigned char* blocks;// examining the objec representation is only valid through unsigned char* or std::byte*
+    unsigned char* blocks;// examining the object representation is only valid through unsigned char* or std::byte*
 
     using Base::numBlocks;
     using Base::numBlocksInSuperblock;

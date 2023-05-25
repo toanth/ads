@@ -7,7 +7,7 @@ int main() {
     using namespace ads;
     Index numBits = 3;
     Index remainingBits = numBits;
-    Bitvector<NaiveLayout1024ElemSuperblocks> bv(numBits);
+    Bitvector<CacheEfficientLayout> bv(numBits);
     assert(bv.sizeInBits() == numBits);
     for (Index i = 0; i < bv.numSuperblocks(); ++i) {
         auto s = bv.superblockElems(i);
@@ -24,7 +24,7 @@ int main() {
                 remainingBits = 0;
             }
         }
-        bv.buildMetadata(i);
+        bv.buildRankMetadata(i);
     }
     std::cout << "sizeInBits: " << bv.sizeInBits() << ", size in elems: " << bv.sizeInElems() << ", num superblocks: " << bv.numSuperblocks() << std::endl;
     for (Index i = 0; i < bv.sizeInElems(); ++i) {

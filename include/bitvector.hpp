@@ -57,13 +57,13 @@ public:
                 getElem(i) = res;
                 ++i;
             }
-            buildMetadata(superblock);// TODO: Compute metadata while iterating over elements for cache efficiency
+            buildRankMetadata(superblock);// TODO: Compute metadata while iterating over elements for cache efficiency
         }
         assert(str.empty());
     }
 
 
-    void buildMetadata(Index superblockIdx) noexcept {
+    void buildRankMetadata(Index superblockIdx) noexcept {
         assert(superblockIdx >= 0 && superblockIdx < numSuperblocks());
         if (superblockIdx == 0) {
             getSuperblockCount(0) = 0;
@@ -82,6 +82,18 @@ public:
         }
     }
 
+    void buildSelectMetadata(Index maxRankOverall) noexcept {
+        // idea: store array of superblock start indices
+        // superblock size 1024 zeros, minimum size 1024 bit = 2^10 bit = 128 Byte = 16 Elem,
+        // maximum size 65536 bit = 2^16 bit = 8192 Byte = 1024 Elems; memory usage <= 8 Byte = 64 bit per 2^10 bits = 1/16th of bv
+        // block size 2^7 = 128 zeros; 2^3 = 8 blocks in a superblock; memory usage 32 bit per block => 256 bits = 32 Byte = 4 Elem per superblock
+        // maximum block size = roughly 2^16 bits
+        // -- idea: only store elem idx, which saves log2(64) = 6 bits, use those to store number of zeros in Elem before the original position
+        // for blocks <= 128 * 16 * 8 bits = 16384 bits = 2048 Bytes = 256 Elem, don't store anything and compute answer by looking at the bv, possibly use rank queries
+        // else, store all answers naively
+        // -- what about select 0? reuse select 1? how?
+    }
+
     [[nodiscard]] Index rankOne(Index pos) const {
         if (pos >= sizeInBits() || pos < 0) [[unlikely]] {
             throw std::invalid_argument("invalid position for rank query");
@@ -97,6 +109,44 @@ public:
 
     [[nodiscard]] Index rankZero(Index pos) const {
         return pos - rankOne(pos);
+    }
+
+    template<bool IsOne>
+    [[nodiscard]] Index rank(Index pos) const noexcept {
+        if constexpr (IsOne) {
+            return rankOne(pos);
+        } else {
+            return rankZero(pos);
+        }
+    }
+
+    template<bool IsOne>
+    [[nodiscard]] Index select(Index bitRank) const {
+        if (bitRank < 0 || bitRank >= sizeInBits()) [[unlikely]] {
+            throw std::invalid_argument("invalid rank for select query");
+        }
+        Index lower = 0, upper = sizeInBits(), mid = -1;
+        Index r = -1;
+        std::cout << "!: <" << bitRank << std::endl;
+        while (upper - lower > 1) {// TODO: linear fallback
+            mid = (lower + upper) / 2;
+            r = rank<IsOne>(mid);
+            std::cout << lower << " " << mid << " " << upper << " rank " << r << " should be " << bitRank << std::endl;
+            if (r <= bitRank) {
+                lower = mid;
+            } else {
+                upper = mid;
+            }
+        }
+        return rank<IsOne>(lower) == bitRank && bit(lower) == IsOne ? lower : -1;
+    }
+
+    [[nodiscard]] Index selectOne(Index rank) const {
+        return select<true>(rank);
+    }
+
+    [[nodiscard]] Index selectZero(Index rank) const {
+        return select<false>(rank);
     }
 
     //    explicit Bitvector(const char* name) noexcept {

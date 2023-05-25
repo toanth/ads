@@ -116,6 +116,36 @@ TEST(BitvecRank, ManySuperblocks) {
     }
 }
 
+TEST(BitvecSelect, Only1s) {
+    Bitvector<TestLayout> bv("1111");
+    for (Index i = 0; i < bv.sizeInBits(); ++i) {
+        ASSERT_EQ(bv.selectOne(i), i) << i;
+        ASSERT_EQ(bv.selectZero(i), -1) << i;
+    }
+}
+
+TEST(BitvecSelect, Small) {
+    std::string s("1100000000000000000000000000001");
+    Bitvector<TestLayout> bv(s);
+    ASSERT_EQ(bv.selectOne(0), 0);
+    ASSERT_EQ(bv.selectOne(1), 1);
+    ASSERT_EQ(bv.selectOne(2), s.size() - 1);
+    for (Index i = 0; i < s.size() - 3; ++i) {
+        ASSERT_EQ(bv.selectZero(i), i + 2);
+    }
+}
+
+TEST(BitvecSelect, Large) {
+    std::string s(15, 'c');
+    Bitvector<TestLayout> bv(s, 16);
+    for (Index i = 0; i < s.size(); ++i) {
+        ASSERT_EQ(bv.selectZero(2 * i), 4 * i + 2);
+        ASSERT_EQ(bv.selectZero(2 * i + 1), 4 * i + 3);
+        ASSERT_EQ(bv.selectOne(2 * i), 4 * i);
+        ASSERT_EQ(bv.selectOne(2 * i + 1), 4 * i + 1);
+    }
+}
+
 
 TEST(Bitvector, EmptyOrOneElem) {
     Bitvector<TestLayout> bv(0);
