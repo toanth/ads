@@ -3,6 +3,8 @@
 
 #include "bitvec_layouts.hpp"
 #include "common.hpp"
+#include "rand_access_iter.hpp"
+
 #include <cassert>
 #include <charconv>
 #include <cstdint>
@@ -14,28 +16,34 @@
 namespace ads {
 
 
-template<ADS_LAYOUT_CONCEPT Layout>
+template<ADS_LAYOUT_CONCEPT Layout = SimpleLayout<>>
 class Bitvector : private Layout {
     using Base = Layout;
     using Base::getBlockCount;
     using Base::getElem;
     using Base::getSuperblockCount;
+    using Base::numBlocksInSuperblock;
+    using Base::numElems;
     using Base::setBlockCount;
+
     Index numBits;
 
     Bitvector(Index numBits, Index numElems) noexcept : Base(numElems), numBits(numBits) {
     }
 
 public:
+    using Base::completeSizeInElems;
     using Base::superblockSize;
 
-    explicit Bitvector(Index numBits) noexcept : Bitvector(numBits, ((numBits + 63) / 64 + superblockSize() - 1) / superblockSize() * superblockSize()) {}
+    Bitvector() noexcept : numBits(0) {}
+
+    explicit Bitvector(Index numBits) noexcept : Bitvector(numBits, roundUpDiv(numBits, 64)) {}
 
     explicit Bitvector(std::string_view str, Index base = 2) : Bitvector(Index(str.size()) * log2(Elem(base))) {
         if (base != 2 && base != 4 && base != 16) [[unlikely]] {
             throw std::invalid_argument("base must be one of 2, 4, or 16");
         }
-        const Index log2ofBase = log2(base);
+        const Index log2ofBase = log2(Elem(base));
         const std::size_t charsPerElem = 64 / log2ofBase;
         Index i = 0;
         for (Index superblock = 0; superblock < numSuperblocks(); ++superblock) {
@@ -70,7 +78,7 @@ public:
         }
         auto s = superblockElems(superblockIdx);
         Index inSuperblockSoFar = 0;
-        for (Index i = 0; i < superblockSize(); ++i) {
+        for (Index i = 0; i < s.size(); ++i) {
             //            std::cout << "setting block count for block " << i << " to " << inSuperblockSoFar << ", s[i] is "
             //                      << std::hex << s[i] << std::dec << ", popcount " << popcount(s[i]) << std::endl;
             setBlockCount(superblockIdx, i, inSuperblockSoFar);
@@ -127,11 +135,9 @@ public:
         }
         Index lower = 0, upper = sizeInBits(), mid = -1;
         Index r = -1;
-        std::cout << "!: <" << bitRank << std::endl;
         while (upper - lower > 1) {// TODO: linear fallback
             mid = (lower + upper) / 2;
             r = rank<IsOne>(mid);
-            std::cout << lower << " " << mid << " " << upper << " rank " << r << " should be " << bitRank << std::endl;
             if (r <= bitRank) {
                 lower = mid;
             } else {
@@ -149,30 +155,6 @@ public:
         return select<false>(rank);
     }
 
-    //    explicit Bitvector(const char* name) noexcept {
-    //        // use c io because that's faster than <iostreams>
-    //        FILE* file = std::fopen(name, "r");
-    //        if (!file) [[unlikely]]
-    //            throw std::invalid_argument("couldn't open file");
-    //        // TODO: posix_fadvise?
-    //        constexpr static Index bufferSize = 1024 * 16 / sizeof(Elem);
-    //        Elem buffer[bufferSize + 1];
-    //        std::fread(buffer, sizeof(Elem), 1, file);
-    //        Index numElems = Index(buffer[0]);// the number of entries in the bit vector
-    //        assert(numElems >= 0 && std::size_t(numElems) == buffer[0]);
-    //        vec = makeUniqueForOverwrite<Elem>(numElems);
-    //        blocks = vec.get() + numElems;
-    //        superBlocks = blocks + numBlocks(numElems);
-    //        while (remaining > 0) {
-    //            std::size_t numRead = std::fread(buffer, sizeof(Elem), std::min(bufferSize, remaining), file);
-    //            assert(numRead < remaining);
-    //            if (numRead < bufferSize && remaining != nunRead) [[unlikely]] {
-    //                throw std::invalid_argument("io error");
-    //            }
-    //            remaining -= numRead;
-    //        }
-    //    }
-
 
     // Idea: superblock size is 4 Elems = 32 Byte = 256 bit, use 1 Byte to store number of 0s in superblock -- numbers in range [0, 8 * 24]
     // with s' = 256, we have s = 2^4 = 16 = (log n) / 2, therefore n = 2 ^ 32
@@ -185,7 +167,8 @@ public:
     }
 
     [[nodiscard]] Index sizeInElems() const noexcept {
-        return (numBits + 63) / 64;
+        assert(numElems() == roundUpDiv(numBits, 64));
+        return numElems();
     }
 
     [[nodiscard]] Index numSuperblocks() const noexcept {
@@ -193,21 +176,113 @@ public:
     }
 
     [[nodiscard]] Span<Elem> superblockElems(Index superblockIdx) noexcept {
-        return Span<Elem>(&getElem(superblockIdx * superblockSize()), superblockSize());
+        Index size = superblockIdx == numSuperblocks() - 1 ? numElems() % superblockSize() : superblockSize();
+        return Span<Elem>(&getElem(superblockIdx * superblockSize()), size);
     }
     [[nodiscard]] Span<const Elem> superblockElems(Index superblockIdx) const noexcept {
-        return Span<const Elem>(&getElem(superblockIdx * superblockSize()), superblockSize());
+        Index size = superblockIdx == numSuperblocks() - 1 ? numElems() % superblockSize() : superblockSize();
+        return Span<const Elem>(&getElem(superblockIdx * superblockSize()), size);
     }
 
+    /// \brief Set the element at \p elemIdx to \p value without updating rank or select information.
+    /// Note that the order of bits is reversed, see \f element.
+    void setElem(Index elemIdx, Elem value) noexcept {
+        assert(elemIdx >= 0 && elemIdx < numElems());
+        getElem(elemIdx) = value;
+    }
 
+    /// \brief Get the internal representation of the element number \p elemIdx.
+    /// Note that its bit are reversed compared to the logical order: The value of 1 means that the last bit is set, not the first.
+    /// \param elemIdx 0 based index of the internal element representation.
+    /// \return the element at the specified position.
     [[nodiscard]] Elem element(Index elemIdx) const noexcept {
         return getElem(elemIdx);
     }
 
+    /// \brief return the bit with index \p bitIndex. \p bitIndex corresponds to the logical index, not
+    /// to the actual bit position, i.e. `element(0) & 1` is not the same as `bit(0)` but `bit(63)` instead.
+    /// \param bitIndex the logical bit index
+    /// \return true if the bit is set, false otherwise
     [[nodiscard]] bool bit(Index bitIndex) const noexcept {
         return (element(bitIndex / 64) >> (63 - bitIndex % 64)) & 0x1;
     }
+
+    constexpr static auto getBit = [](const auto& bv, Index i) -> bool {
+        return bv.bit(i);
+    };
+    constexpr static auto getElement = [](const auto& bv, Index i) -> Elem {
+        return bv.element(i);
+    };
+
+    using BitIter = RandAccessIter<Bitvector, decltype(getBit)>;
+
+    BitIter bitIter(Index i) const {
+        return BitIter(*this, getBit, i);
+    }
+
+    Subrange<BitIter> bitView() const noexcept {
+        return Subrange<BitIter>{bitIter(0), bitIter(numBits)};
+    }
+
+    using ElemIter = RandAccessIter<Bitvector, decltype(getElement)>;
+
+    ElemIter elemIter(Index i) const {
+        return ElemIter(*this, getElement, i);
+    }
+
+    Subrange<ElemIter> elemView() const noexcept {
+        return Subrange<ElemIter>{elemIter(0), elemIter(numElems())};
+    }
+
+    friend std::ostream& operator<<(std::ostream& os, const Bitvector& bv) {
+        std::copy(bv.bitView().begin(), bv.bitView().end(), std::ostream_iterator<bool>(os, ""));
+        return os;
+    }
 };
+
+
+template<ADS_LAYOUT_CONCEPT L1, ADS_LAYOUT_CONCEPT L2>
+bool operator==(const Bitvector<L1>& lhs, const Bitvector<L2>& rhs) {
+    return lhs.sizeInBits() == rhs.sizeInBits() && std::equal(lhs.elemView().begin(), lhs.elemView().end(), rhs.elemView().begin());
+}
+template<ADS_LAYOUT_CONCEPT L1, ADS_LAYOUT_CONCEPT L2>
+bool operator!=(const Bitvector<L1>& lhs, const Bitvector<L2>& rhs) {
+    return !(rhs == lhs);
+}
+
+#ifdef ADS_HAS_CPP20
+
+template<ADS_LAYOUT_CONCEPT L1, ADS_LAYOUT_CONCEPT L2>
+std : strong_ordering operator<=>(const Bitvector<L1>& lhs, const Bitvector<L2>& rhs) noexcept {
+    if (lhs.sizeInBits() != rhs.sizeInBits()) {
+        return std::lexicographical_compare_three_way(lhs.bitView().begin(), lhs.bitView().end(), rhs.bitView().begin(), rhs.bitView().end());
+    }
+    return std::lexicographical_compare_three_way(lhs.elemView().begin(), lhs.elemView().end(), rhs.elemView().begin(), rhs.elemView().end());
+}
+
+#else
+
+template<ADS_LAYOUT_CONCEPT L1, ADS_LAYOUT_CONCEPT L2>
+bool operator<(const Bitvector<L1>& lhs, const Bitvector<L2>& rhs) {
+    if (lhs.sizeInBits() != rhs.sizeInBits()) {
+        return std::lexicographical_compare(lhs.bitView().begin(), lhs.bitView().end(), rhs.bitView().begin(), rhs.bitView().end());
+    }
+    return std::lexicographical_compare(lhs.elemView().begin(), lhs.elemView().end(), rhs.elemView().begin(), rhs.elemView().end());
+}
+template<ADS_LAYOUT_CONCEPT L1, ADS_LAYOUT_CONCEPT L2>
+bool operator>(const Bitvector<L1>& lhs, const Bitvector<L2>& rhs) {
+    return rhs < lhs;
+}
+template<ADS_LAYOUT_CONCEPT L1, ADS_LAYOUT_CONCEPT L2>
+bool operator<=(const Bitvector<L1>& lhs, const Bitvector<L2>& rhs) {
+    return !(rhs < lhs);
+}
+template<ADS_LAYOUT_CONCEPT L1, ADS_LAYOUT_CONCEPT L2>
+bool operator>=(const Bitvector<L1>& lhs, const Bitvector<L2>& rhs) {
+    return !(lhs < rhs);
+}
+
+#endif
 
 }// namespace ads
 

@@ -3,6 +3,6 @@ project(bitvector)
 
 set(CMAKE_CXX_STANDARD 17)
 
-add_executable(bitvector src/main.cpp include/bitvector.hpp include/common.hpp include/bitvec_layouts.hpp include/elias_fano.hpp)
+add_executable(bitvector src/main.cpp include/bitvector.hpp include/common.hpp include/bitvec_layouts.hpp include/elias_fano.hpp include/rand_access_iter.hpp)
 
 add_subdirectory(tests)

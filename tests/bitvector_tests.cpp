@@ -3,8 +3,8 @@
 
 using namespace ads;
 
-using TestLayout = CacheEfficientLayout;
-//using TestLayout = SimpleLayout<>;
+//using TestLayout = CacheEfficientLayout;
+using TestLayout = SimpleLayout<>;
 
 TEST(BitvectorConstruction, Sizes) {
     {
@@ -36,6 +36,21 @@ TEST(BitvectorConstruction, Sizes) {
     }
 }
 
+TEST(BitvectorConstruction, Elements) {
+    Bitvector<TestLayout> bv(1);
+    bv.setElem(0, 1);
+    bv.buildRankMetadata(0);
+    ASSERT_EQ(bv.sizeInBits(), 1);
+    ASSERT_EQ(bv.element(0), 1);
+    ASSERT_EQ(bv.bit(0), 0);
+    ASSERT_LT(bv, Bitvector<>("1"));
+    bv.setElem(0, Elem(1) << 63);
+    bv.buildRankMetadata(0);
+    ASSERT_EQ(bv.sizeInBits(), 1);
+    ASSERT_EQ(bv.bit(0), 1);
+    ASSERT_EQ(*bv.bitView().begin(), true);
+    ASSERT_GT(bv, Bitvector<>("0"));
+}
 
 TEST(BitvectorConstruction, FromStringview) {
     Bitvector<TestLayout> bv("01");
@@ -133,6 +148,10 @@ TEST(BitvecSelect, Small) {
     for (Index i = 0; i < s.size() - 3; ++i) {
         ASSERT_EQ(bv.selectZero(i), i + 2);
     }
+    bv = Bitvector<TestLayout>("0111");
+    ASSERT_EQ(bv.selectOne(0), 1);
+    ASSERT_EQ(bv.selectOne(1), 2);
+    ASSERT_EQ(bv.selectZero(0), 0);
 }
 
 TEST(BitvecSelect, Large) {

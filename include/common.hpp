@@ -4,10 +4,17 @@
 #include <cassert>
 #include <cstdint>
 #include <cstring>
+#include <iostream>
+#include <iterator>
 #include <memory>
+#include <random>
 
 #ifdef _MSC_VER
 #include <intrin.h>
+#endif
+#if __cplusplus >= 202002L
+#include <bit>
+#include <ranges>
 #endif
 
 namespace ads {
@@ -17,11 +24,17 @@ constexpr static bool hasCpp20 = true;
 #define ADS_HAS_CPP20
 #define ADS_CONSTEVAL consteval
 #define ADS_CPP20_CONSTEXPR constexpr
-#include <bit>
+
+namespace maybe_ranges = std::ranges;
+
 #else
+
 constexpr static bool hasCpp20 = false;
 #define ADS_CONSTEVAL constexpr
 #define ADS_CPP20_CONSTEXPR inline
+
+namespace maybe_ranges = std;
+
 #endif
 
 using Index = std::ptrdiff_t;
@@ -66,6 +79,7 @@ ADS_CPP20_CONSTEXPR Dest ptrBitCast(const unsigned char* src) noexcept {
 
 template<typename UnsignedInteger>// no concepts in C++17 :(
 Index log2(UnsignedInteger n) noexcept {
+    static_assert(std::is_unsigned_v<UnsignedInteger>);
 #ifdef ADS_HAS_CPP20
     return std::bit_floor(n);
 #elif defined __clang__ || defined __GNUC__
@@ -110,7 +124,16 @@ constexpr Index roundUpDiv(Index divisor, Index quotient) noexcept {
     return (divisor + quotient - 1) / quotient;// hopefully, this function gets inlined and optimized (quotient is usually a power of 2)
 }
 
-// Simplified version of std::span
+
+// Useful for testing
+inline std::mt19937_64 createRandomEngine() noexcept {
+    std::random_device rd;
+    std::seed_seq seq{rd(), rd(), rd(), rd()};
+    return std::mt19937_64(seq);
+}
+
+
+// Simpler version of std::span, which doesn't exist is C++17
 template<typename T>
 class Span {
     T* first = nullptr;
@@ -123,6 +146,9 @@ public:
     }
     constexpr Span(T* first, T* last) noexcept : first(first), last(last) {
         assert(size() >= 0);
+    }
+    template<typename Container>// Don't even try to check that `Container` models contiguous_range in C++17
+    /*implicit*/ Span(Container& c) : Span(c.data(), c.size()) {
     }
 
     [[nodiscard]] constexpr Index size() const noexcept {
@@ -144,6 +170,20 @@ public:
     constexpr T* end() noexcept { return last; }
     constexpr const T* end() const noexcept { return last; }
 };
+
+template<typename Container>
+Span(const Container&) -> Span<const typename Container::value_type>;
+
+// Simpler version of std::ranges::subrange
+template<typename Iter>
+struct Subrange {
+    Iter first;
+    Iter last;
+
+    Iter begin() const noexcept { return first; }
+    Iter end() const noexcept { return last; }
+};
+
 
 }// namespace ads
 
