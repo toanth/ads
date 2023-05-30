@@ -38,6 +38,9 @@ namespace maybe_ranges = std;
 #endif
 
 using Index = std::ptrdiff_t;
+using Elem = std::uint64_t;
+
+struct CreateWithSizeTag {};
 
 namespace detail {
 

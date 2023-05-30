@@ -61,6 +61,7 @@ void printUsage() {
 }
 
 int main(int argc, char** argv) {
+    // TODO: Modulo and division by powers of two is less efficient for signed integer types than for unsigned
     if (argc != 4) {
         printUsage();
         return 1;

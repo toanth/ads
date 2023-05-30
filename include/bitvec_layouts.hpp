@@ -7,8 +7,6 @@
 
 namespace ads {
 
-using Elem = std::uint64_t;
-
 #ifdef ADS_HAS_CPP20
 template<typename T>
 concept IsLayout = requires(T& t) {
@@ -217,14 +215,14 @@ private:
 public:
     using Base = DefaultLayoutImpl<SimpleLayout<SuperblockSize, BlockSize>, BlockSize * 8>;
     std::unique_ptr<Elem[]> vec = nullptr;
-    Elem* superblocks = nullptr;
-    unsigned char* blocks = nullptr;// examining the object representation is only valid through unsigned char* or std::byte*
+    Elem* ADS_RESTRICT superblocks = nullptr;
+    unsigned char* ADS_RESTRICT blocks = nullptr;// examining the object representation is only valid through unsigned char* or std::byte*
 
     using Base::numBlocks;
     using Base::numBlocksInSuperblock;
     using Base::numSuperblocks;
 
-    SimpleLayout() noexcept {}
+    SimpleLayout() noexcept = default;
 
     explicit SimpleLayout(Index numElements) : vec(makeUniqueForOverwrite<Elem>(completeSizeInElems(numElements))) {
         superblocks = vec.get() + numElements;
@@ -266,7 +264,7 @@ public:
 
     [[nodiscard]] Index getBlockCount(Index superblockIdx, Index blockIdx) const noexcept {
         constexpr static Index blockCountWidth = bytesPerBlockCount();
-        auto ptr = blocks + (superblockIdx * numBlocksInSuperblock() + blockIdx) * blockCountWidth;
+        unsigned char* ADS_RESTRICT ptr = blocks + (superblockIdx * numBlocksInSuperblock() + blockIdx) * blockCountWidth;
         if constexpr (blockCountWidth == 1) {
             return Index(*ptr);
         } else if constexpr (blockCountWidth == 2 || blockCountWidth == 4) {

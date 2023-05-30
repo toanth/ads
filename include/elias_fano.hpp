@@ -18,8 +18,6 @@ class EliasFano {
 private:
     static constexpr Index numBitsInNumber = 8 * sizeof(Number);
 
-    struct CreateWithSizeTag {};
-
     EliasFano(Index numInts, CreateWithSizeTag)
         : numInts(numInts), numLowerBitsPerNumber(numBitsInNumber - Index(std::ceil(std::log2(numInts)))) {
         Index lowerSizeInElems = roundUpDiv(numLowerBitsPerNumber * numInts, 8 * sizeof(Elem));
@@ -54,7 +52,7 @@ public:
         while (first != last) {
             Elem upperPart = Elem(*first) >> numLowerBitsPerNumber;
             Elem newBitIdx = upperPart + elemIdx;
-            Index currentUpperElemIdx = newBitIdx / 64;
+            Index currentUpperElemIdx = Index(newBitIdx / 64);
             if (currentUpperElemIdx > lastUpperElemIdx) {
                 upper.setElem(lastUpperElemIdx, currentUpperEntry);
                 for (Index k = lastUpperElemIdx + 1; k < currentUpperElemIdx; ++k) {
@@ -106,6 +104,18 @@ public:
 
     [[nodiscard]] Number operator[](Index i) const {
         return get(i);
+    }
+
+    constexpr static auto getNumber = [](const EliasFano& ev, Index i) { return ev.get(i); };
+
+    using NumberIter = RandAccessIter<EliasFano, decltype(getNumber)>;
+
+    NumberIter numberIter(Index i) const {
+        return NumberIter(*this, getNumber, i);
+    }
+
+    Subrange<NumberIter> numbers() const noexcept {
+        return {numberIter(0), numberIter(size())};
     }
 
     [[nodiscard]] Number predecessor(Number n) const {

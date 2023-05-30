@@ -44,6 +44,7 @@ void testElems(const std::vector<Elem>& arr, const EliasFano<>& ef, std::string_
         ASSERT_EQ(ef.getLowerPart(i), arr[i] % (Elem(1) << numLowerBits)) << i << " of " << arr.size() << ", name " << name;
         ASSERT_EQ(ef[i], arr[i]) << i << " of " << arr.size() << ", name " << name;
     }
+    ASSERT_TRUE(std::equal(arr.begin(), arr.end(), ef.numbers().begin()));
 }
 
 TEST(EliasFano, ConstructionLarge) {
