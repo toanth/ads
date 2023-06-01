@@ -208,8 +208,7 @@ struct SimpleLayout : DefaultLayoutImpl<SimpleLayout<SuperblockSize, BlockSize>,
 
 private:
     ADS_CONSTEVAL static Index numBytesOfBlockCount(Index blocksInSuperblock) noexcept {
-        // no constexpr std::bit_floor in C++17; using <= instead of < is fine because no entry actually stores this number
-        return blocksInSuperblock <= 256 ? 1 : 1 + numBytesOfBlockCount(blocksInSuperblock / 256);
+        return bytesNeededForIndexing(blocksInSuperblock);
     }
 
 public:

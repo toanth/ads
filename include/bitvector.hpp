@@ -90,7 +90,7 @@ public:
         }
     }
 
-    void buildSelectMetadata(Index maxRankOverall) noexcept {
+    void buildSelectMetadata(Index) noexcept {
         // idea: store array of superblock start indices
         // superblock size 1024 zeros, minimum size 1024 bit = 2^10 bit = 128 Byte = 16 Elem,
         // maximum size 65536 bit = 2^16 bit = 8192 Byte = 1024 Elems; memory usage <= 8 Byte = 64 bit per 2^10 bits = 1/16th of bv

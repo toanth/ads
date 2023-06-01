@@ -66,6 +66,8 @@ namespace detail {
 template<Index NumBytes>
 using IntType = typename detail::IntTypeImpl<NumBytes>::Type;
 
+#define ADS_RESTRICT __restrict
+
 template<typename Dest>
 ADS_CPP20_CONSTEXPR Dest ptrBitCast(const unsigned char* src) noexcept {
 #if ADS_HAS_CPP20
@@ -78,7 +80,11 @@ ADS_CPP20_CONSTEXPR Dest ptrBitCast(const unsigned char* src) noexcept {
 #endif
 }
 
-#define ADS_RESTRICT __restrict
+
+ADS_CONSTEVAL static Index bytesNeededForIndexing(Index numElements) noexcept {
+    // no constexpr std::bit_floor in C++17; using <= instead of < is fine because no entry actually stores this number
+    return numElements <= 256 ? 1 : 1 + bytesNeededForIndexing(numElements / 256);
+}
 
 template<typename UnsignedInteger>// no concepts in C++17 :(
 Index log2(UnsignedInteger n) noexcept {
@@ -87,7 +93,7 @@ Index log2(UnsignedInteger n) noexcept {
     return std::bit_floor(n);
 #elif defined __clang__ || defined __GNUC__
     return 8 * sizeof(UnsignedInteger) - __builtin_clzll(n) - 1;
-#elifdef _MSC_VER
+#elif defined _MSC_VER
     std::uint64 pos;
     _BitScanReverse(&pos, std::uint64_t(n));
     return 8 * 64 - pos - 1;
@@ -102,7 +108,7 @@ Index popcount(UnsignedInteger n) noexcept {
     return std::popcount(n);
 #elif defined __clang__ || defined __GNUC__
     return __builtin_popcountll(std::uint64_t(n));
-#elifdef _MSC_VER
+#elif defined _MSC_VER
     return __popcnt64(std::uint64_t(n));
 #else
     using T = UnsignedInteger;
@@ -117,11 +123,6 @@ Index popcount(UnsignedInteger n) noexcept {
 static constexpr Index CACHELINE_SIZE_BYTES = 64;
 static constexpr Index ELEMS_PER_CACHELINE = CACHELINE_SIZE_BYTES / 8;
 
-// The following functions are only available in C++20 :(
-template<typename T>
-std::unique_ptr<T[]> makeUniqueForOverwrite(Index size) noexcept {
-    return std::unique_ptr<T[]>(new std::remove_extent_t<T>[size]);
-}
 
 constexpr Index roundUpDiv(Index divisor, Index quotient) noexcept {
     return (divisor + quotient - 1) / quotient;// hopefully, this function gets inlined and optimized (quotient is usually a power of 2)
@@ -150,8 +151,9 @@ public:
     constexpr Span(T* first, T* last) noexcept : first(first), last(last) {
         assert(size() >= 0);
     }
-    template<typename Container>// Don't even try to check that `Container` models contiguous_range in C++17
-    /*implicit*/ Span(Container& c) : Span(c.data(), c.size()) {
+
+    template<typename Container>                                // Don't even try to check that `Container` models contiguous_range in C++17
+    /*implicit*/ Span(Container& c) : Span(c.data(), c.size()) {// NOLINT(google-explicit-constructor)
     }
 
     [[nodiscard]] constexpr Index size() const noexcept {
@@ -168,6 +170,8 @@ public:
         return first[i];
     }
 
+    constexpr T* data() noexcept { return first; }
+    constexpr const T* data() const noexcept { return first; }
     constexpr T* begin() noexcept { return first; }
     constexpr const T* begin() const noexcept { return first; }
     constexpr T* end() noexcept { return last; }
@@ -187,6 +191,28 @@ struct Subrange {
     Iter end() const noexcept { return last; }
 };
 
+
+// Only available in C++20
+template<typename T>
+std::unique_ptr<T[]> makeUniqueForOverwrite(Index size) noexcept {
+    assert(size >= 0);
+    if (size == 0) { return nullptr; }
+    return std::unique_ptr<T[]>(new std::remove_extent_t<T>[size]);
+}
+
+template<typename T>
+std::unique_ptr<T[]> toUniquePtr(Span<const T> values, Index size) noexcept {
+    std::unique_ptr<T[]> res = makeUniqueForOverwrite<T>(size);
+    std::copy(values.begin(), values.end(), res.get());
+    // reading uninitialized data would cause UB
+    std::fill(res.get() + values.size(), res.get() + size, T());
+    return res;
+}
+
+template<typename T>
+std::unique_ptr<T[]> toUniquePtr(Span<const T> values) noexcept {
+    return toUniquePtr(values, values.size());
+}
 
 }// namespace ads
 

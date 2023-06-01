@@ -7,11 +7,32 @@
 
 namespace ads {
 
+#ifdef ADS_HAS_CPP20
+template<typename RmqType, typename ValueType = Elem>
+concept Rmq = requires(const RmqType& r) {
+    RmqType();
+    RmqType(std::vector<ValueType>());
+    RmqType(std::unique_ptr<ValueType>(), Index());
+    RmqType(std::initialize_list<ValueType>());
+    { RmqType::name } -> std::convertible_to<std::string>;
+    { r(Index(), Index()) } -> std::convertible_to<Index>;
+    { r.sizeInBits() } -> std::convertible_to<Index>;
+};
+#define ADS_RMQ_CONCEPT Rmq
+#define ADS_RMQ_CONCEPT_FOR(value_type) Rmq<value_type>
+
+#else
+#define ADS_RMQ_CONCEPT class
+#define ADS_RMQ_CONCEPT_FOR(value_type) class
+#endif
+
 template<typename T = Elem, typename Comparator = std::less<>>
 struct SimpleRMQ : std::vector<T> {
     using Base = std::vector<T>;
 
     [[no_unique_address]] Comparator comp = Comparator{};
+
+    constexpr static const char name[] = "Simple RMQ";
 
     using Base::Base;
 
@@ -33,10 +54,9 @@ struct SimpleRMQ : std::vector<T> {
 /// \tparam Comparator Used to compare two elements, defaults to std::less (std::greater would turn this into range maximum queries)
 template<typename Comparator = std::less<>>
 class NaiveRMQ {
-    std::unique_ptr<Index[]> arr;
-    Index length;
+    std::unique_ptr<Index[]> arr = nullptr;
+    Index length = 0;
     [[no_unique_address]] Comparator comp = Comparator{};
-
 
     // If `length * (length + 1)` overflows, we're probably in trouble anyway
     NaiveRMQ(Index length, CreateWithSizeTag) : arr(makeUniqueForOverwrite<Index>(length * (length + 1) / 2)), length(length) {
@@ -60,6 +80,9 @@ class NaiveRMQ {
     }
 
 public:
+    constexpr static const char name[] = "Naive RMQ";
+    NaiveRMQ() = default;
+
     template<typename Range, typename = std::void_t<decltype(maybe_ranges::begin(std::declval<Range&>()))>>// no concepts in C++17
     explicit NaiveRMQ(const Range& values)
         : NaiveRMQ(maybe_ranges::begin(values), maybe_ranges::end(values)) {
