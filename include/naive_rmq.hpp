@@ -13,7 +13,7 @@ concept Rmq = requires(const RmqType& r) {
     RmqType();
     RmqType(std::vector<ValueType>());
     RmqType(std::unique_ptr<ValueType>(), Index());
-    RmqType(std::initialize_list<ValueType>());
+    RmqType(std::initializer_list<ValueType>());
     { RmqType::name } -> std::convertible_to<std::string>;
     { r(Index(), Index()) } -> std::convertible_to<Index>;
     { r.sizeInBits() } -> std::convertible_to<Index>;

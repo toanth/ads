@@ -37,7 +37,9 @@ namespace maybe_ranges = std;
 
 #endif
 
+// TODO: Make unsigned? Makes division, modulo by powers of two more efficient
 using Index = std::ptrdiff_t;
+// TODO: Instead of a global Elem alias, define per template to allow smaller sizes
 using Elem = std::uint64_t;
 
 struct CreateWithSizeTag {};
@@ -50,7 +52,9 @@ namespace detail {
     };
 
     template<Index NumBytes>
-    struct IntTypeImpl : TypeIdentity<std::uint64_t> {};
+    struct IntTypeImpl : TypeIdentity<std::uint64_t> {
+        static_assert(NumBytes > 4 && NumBytes <= 8);
+    };
 
     template<>
     struct IntTypeImpl<4> : TypeIdentity<std::uint32_t> {};
@@ -68,6 +72,7 @@ using IntType = typename detail::IntTypeImpl<NumBytes>::Type;
 
 #define ADS_RESTRICT __restrict
 
+// TODO: Used?
 template<typename Dest>
 ADS_CPP20_CONSTEXPR Dest ptrBitCast(const unsigned char* src) noexcept {
 #if ADS_HAS_CPP20
@@ -81,13 +86,18 @@ ADS_CPP20_CONSTEXPR Dest ptrBitCast(const unsigned char* src) noexcept {
 }
 
 
+constexpr Index roundUpDiv(Index divisor, Index quotient) noexcept {
+    assert(divisor >= 0 && quotient > 0);
+    return (divisor + quotient - 1) / quotient;// hopefully, this function gets inlined and optimized (quotient is usually a power of 2)
+}
+
 ADS_CONSTEVAL static Index bytesNeededForIndexing(Index numElements) noexcept {
     // no constexpr std::bit_floor in C++17; using <= instead of < is fine because no entry actually stores this number
-    return numElements <= 256 ? 1 : 1 + bytesNeededForIndexing(numElements / 256);
+    return numElements <= 256 ? 1 : 1 + bytesNeededForIndexing(roundUpDiv(numElements, 256));
 }
 
 template<typename UnsignedInteger>// no concepts in C++17 :(
-Index log2(UnsignedInteger n) noexcept {
+ADS_CPP20_CONSTEXPR Index log2(UnsignedInteger n) noexcept {
     static_assert(std::is_unsigned_v<UnsignedInteger>);
 #ifdef ADS_HAS_CPP20
     return std::bit_floor(n);
@@ -103,7 +113,7 @@ Index log2(UnsignedInteger n) noexcept {
 }
 
 template<typename UnsignedInteger>
-Index popcount(UnsignedInteger n) noexcept {
+ADS_CPP20_CONSTEXPR Index popcount(UnsignedInteger n) noexcept {
 #ifdef ADS_HAS_CPP20
     return std::popcount(n);
 #elif defined __clang__ || defined __GNUC__
@@ -120,13 +130,27 @@ Index popcount(UnsignedInteger n) noexcept {
 #endif
 }
 
+template<typename UnsignedInteger>
+constexpr UnsignedInteger reverseBits(UnsignedInteger n) noexcept {
+    // see https://stackoverflow.com/questions/746171/efficient-algorithm-for-bit-reversal-from-msb-lsb-to-lsb-msb-in-c
+    n = ((n & 0xaaaa'aaaa'aaaa'aaaaull) >> 1) | ((n & 0x5555'5555'5555'5555ull) << 1);
+    n = ((n & 0xcccc'cccc'cccc'ccccull) >> 2) | ((n & 0x3333'3333'3333'3333ull) << 2);
+    if constexpr (sizeof(UnsignedInteger) > 1) {
+        n = ((n & 0xf0f0'f0f0'f0f0'f0f0ull) >> 4) | ((n & 0x0f0f'0f0f'0f0f'0f0full) << 4);
+    }
+    if constexpr (sizeof(UnsignedInteger) > 2) {
+        n = ((n & 0xff00'ff00'ff00'ff00ull) >> 8) | ((n & 0x00ff'00ff'00ff'00ffull) << 8);
+    }
+    if constexpr (sizeof(UnsignedInteger) > 4) {
+        n = ((n & 0xffff'0000'ffff'0000ull) >> 16) | ((n & 0x0000'ffff'0000'ffffull) << 16);
+    }
+    constexpr Index bits = sizeof(UnsignedInteger) * 4;
+    return (n >> bits) | (n << bits);
+}
+
+
 static constexpr Index CACHELINE_SIZE_BYTES = 64;
 static constexpr Index ELEMS_PER_CACHELINE = CACHELINE_SIZE_BYTES / 8;
-
-
-constexpr Index roundUpDiv(Index divisor, Index quotient) noexcept {
-    return (divisor + quotient - 1) / quotient;// hopefully, this function gets inlined and optimized (quotient is usually a power of 2)
-}
 
 
 // Useful for testing
@@ -187,8 +211,10 @@ struct Subrange {
     Iter first;
     Iter last;
 
-    Iter begin() const noexcept { return first; }
-    Iter end() const noexcept { return last; }
+    [[nodiscard]] Iter begin() const noexcept { return first; }
+    [[nodiscard]] Iter end() const noexcept { return last; }
+
+    [[nodiscard]] Index size() const noexcept { return last - first; }
 };
 
 

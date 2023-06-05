@@ -9,23 +9,23 @@ template<typename Number = std::uint64_t, ADS_LAYOUT_CONCEPT BitvecLayout = Simp
 class EliasFano {
 
     Index numInts = 0;
-    Index numLowerBitsPerNumber = 0;
+    //    Index numLowerBitsPerNumber = 0;
     Index lowerBitMask;
     Index completeSizeInBits;
     Bitvector<BitvecLayout> upper;
-    BitwiseAccess<dynSize> lower;
+    BitStorage<dynSize> lower;// TODO: Change to BitView?
 
 private:
     static constexpr Index numBitsInNumber = 8 * sizeof(Number);
 
     EliasFano(Index numInts, CreateWithSizeTag)
-        : numInts(numInts), numLowerBitsPerNumber(numBitsInNumber - Index(std::ceil(std::log2(numInts)))) {
-        Index lowerSizeInElems = roundUpDiv(numLowerBitsPerNumber * numInts, 8 * sizeof(Elem));
-        lower.vec = makeUniqueForOverwrite<Elem>(lowerSizeInElems);
-        lowerBitMask = (Number(1) << numLowerBitsPerNumber) - 1;
-        upper = Bitvector<BitvecLayout>(numInts + (1 << getNumUpperBitsPerNumber()) + 1);
+        : numInts(numInts) {
+        Index lowerBitsPerNumber = numBitsInNumber - Index(std::ceil(std::log2(numInts)));
+        Index lowerSizeInElems = roundUpDiv(lowerBitsPerNumber * numInts, 8 * sizeof(Elem));
+        lower = BitStorage<dynSize>{makeUniqueForOverwrite<Elem>(lowerSizeInElems), lowerBitsPerNumber};
+        lowerBitMask = (Number(1) << lowerBitsPerNumber) - 1;
+        upper = Bitvector<BitvecLayout>(numInts + (1 << numUpperBitsPerNumber()) + 1);
         completeSizeInBits = 8 * (sizeof(*this) + (lowerSizeInElems + upper.completeSizeInElems()) * sizeof(Elem));
-        // max: maxIdx = n - 1, max value = 2^numbits - 1
     }
 
 
@@ -45,13 +45,12 @@ public:
     // TODO: Instead of the worst case assumpption that max(first, last) == (1 << numBits) - 1, actually check the last element
     template<typename ForwardIter, typename Sentinel>
     EliasFano(ForwardIter first, Sentinel last) noexcept : EliasFano(maybe_ranges::distance(first, last), CreateWithSizeTag{}) {
-        Index lowerBitIdx = 0;
         Elem currentUpperEntry = 0;
         Index lastUpperElemIdx = 0;
-        Index elemIdx = 1;
+        Index elemIdx = 0;
         while (first != last) {
-            Elem upperPart = Elem(*first) >> numLowerBitsPerNumber;
-            Elem newBitIdx = upperPart + elemIdx;
+            Elem upperPart = Elem(*first) >> numLowerBitsPerNumber();
+            Elem newBitIdx = upperPart + elemIdx + 1;
             Index currentUpperElemIdx = Index(newBitIdx / 64);
             if (currentUpperElemIdx > lastUpperElemIdx) {
                 upper.setElem(lastUpperElemIdx, currentUpperEntry);
@@ -61,9 +60,8 @@ public:
                 lastUpperElemIdx = currentUpperElemIdx;
                 currentUpperEntry = 0;
             }
-            currentUpperEntry |= Elem(1) << (63 - (newBitIdx % 64));// the order of bits in an element is reversed
-            lower.setBits(lowerBitIdx, Elem(*first), numLowerBitsPerNumber);
-            lowerBitIdx += numLowerBitsPerNumber;
+            currentUpperEntry |= Elem(1) << (newBitIdx % 64);// the order of bits in an element is reversed
+            lower.setBits(elemIdx, Elem(*first));
             ++elemIdx;
             ++first;
         }
@@ -81,8 +79,11 @@ public:
         return upper;
     }
 
-    [[nodiscard]] const BitwiseAccess<dynSize>& getLower() const noexcept {
+    [[nodiscard]] const BitStorage<dynSize>& getLower() const noexcept {
         return lower;
+    }
+    [[nodiscard]] Index numLowerBitsPerNumber() const noexcept {
+        return lower.bitAccess.numBits;
     }
 
     [[nodiscard]] Elem getUpperPart(Index i) const {
@@ -90,7 +91,7 @@ public:
     }
 
     [[nodiscard]] Elem getLowerPart(Index i) const {
-        return lower.getBits(i * numLowerBitsPerNumber, numLowerBitsPerNumber);
+        return lower.getBits(i);
     }
 
     [[nodiscard]] Number get(Index i) const {
@@ -99,7 +100,7 @@ public:
         }
         Elem upperPart = getUpperPart(i);
         Elem lowerPart = getLowerPart(i);
-        return Number(lowerPart + (upperPart << numLowerBitsPerNumber));
+        return Number(lowerPart + (upperPart << numLowerBitsPerNumber()));
     }
 
     [[nodiscard]] Number operator[](Index i) const {
@@ -119,14 +120,14 @@ public:
     }
 
     [[nodiscard]] Number predecessor(Number n) const {
-        Number upperSearchBits = n >> numLowerBitsPerNumber;
+        Number upperSearchBits = n >> numLowerBitsPerNumber();
         Number lowerSearchBits = n & lowerBitMask;
         Index first = upper.selectZero(upperSearchBits) - upperSearchBits;
         Index last = upper.selectZero(upperSearchBits + 1) - upperSearchBits - 1;
         for (Index i = last - 1; i >= first; --i) {
-            Number lowerBits = lower.getBits(i * numLowerBitsPerNumber, numLowerBitsPerNumber);
+            Number lowerBits = lower.getBits(i);
             if (lowerBits <= lowerSearchBits) {
-                return lowerBits + (upperSearchBits << numLowerBitsPerNumber);
+                return lowerBits + (upperSearchBits << numLowerBitsPerNumber());
             }
         }
         // there was no element with the same upper part, so return the greatest element with a smaller upper part
@@ -137,14 +138,14 @@ public:
     }
 
     [[nodiscard]] Number successor(Number n) const {
-        Number upperSearchBits = n >> numLowerBitsPerNumber;
+        Number upperSearchBits = n >> numLowerBitsPerNumber();
         Number lowerSearchBits = n & lowerBitMask;
         Index first = upper.selectZero(upperSearchBits) - upperSearchBits;
         Index last = upper.selectZero(upperSearchBits + 1) - upperSearchBits - 1;
         for (Index i = first; i != last; ++i) {
-            Number lowerBits = lower.getBits(i * numLowerBitsPerNumber, numLowerBitsPerNumber);
+            Number lowerBits = lower.getBits(i);
             if (lowerBits >= lowerSearchBits) {
-                return lowerBits + (upperSearchBits << numLowerBitsPerNumber);
+                return lowerBits + (upperSearchBits << numLowerBitsPerNumber());
             }
         }
         // there was no element with the same upper part, so return the greatest element with a smaller upper part
@@ -162,12 +163,8 @@ public:
         return completeSizeInBits;
     }
 
-    [[nodiscard]] Index getNumLowerBitsPerNumber() const noexcept {
-        return numLowerBitsPerNumber;
-    }
-
-    [[nodiscard]] Index getNumUpperBitsPerNumber() const noexcept {
-        return numBitsInNumber - numLowerBitsPerNumber;
+    [[nodiscard]] Index numUpperBitsPerNumber() const noexcept {
+        return numBitsInNumber - numLowerBitsPerNumber();
     }
 };
 

@@ -19,25 +19,37 @@ namespace ads {
 template<ADS_LAYOUT_CONCEPT Layout = SimpleLayout<>>
 class Bitvector : private Layout {
     using Base = Layout;
+    using Base::blockSize;
     using Base::getBlockCount;
-    using Base::getElem;
+    using Base::getElemRef;
     using Base::getSuperblockCount;
     using Base::numBlocksInSuperblock;
-    using Base::numElems;
     using Base::setBlockCount;
+    using Base::setSuperblockCount;
 
     Index numBits;
 
-    Bitvector(Index numBits, Index numElems) noexcept : Base(numElems), numBits(numBits) {
-    }
-
 public:
     using Base::completeSizeInElems;
+    using Base::getBit;
+    using Base::getElem;
+    using Base::numElems;
+    using Base::setBit;
+    using Base::setElem;
     using Base::superblockSize;
 
     Bitvector() noexcept : numBits(0) {}
 
-    explicit Bitvector(Index numBits) noexcept : Bitvector(numBits, roundUpDiv(numBits, 64)) {}
+    explicit Bitvector(Index numBits) noexcept : Base(roundUpDiv(numBits, 64)), numBits(numBits) {}
+
+    Bitvector(Index numBits, Elem fill) : Bitvector(numBits) {
+        for (Index i = 0; i < sizeInElems(); ++i) {
+            setElem(i, fill);
+        }
+        for (Index i = 0; i < numSuperblocks(); ++i) {
+            buildRankMetadata(i);
+        }
+    }
 
     explicit Bitvector(std::string_view str, Index base = 2) : Bitvector(Index(str.size()) * log2(Elem(base))) {
         if (base != 2 && base != 4 && base != 16) [[unlikely]] {
@@ -52,7 +64,7 @@ public:
                 std::size_t numToParse = std::min(charsPerElem, str.size());
                 std::string_view toParse = str.substr(0, numToParse);
                 std::uint64_t res;
-                auto err = std::from_chars(toParse.data(), toParse.data() + toParse.size(), res, base);
+                auto err = std::from_chars(toParse.data(), toParse.data() + toParse.size(), res, int(base));
                 if (err.ec != std::errc()) [[unlikely]] {
                     throw std::invalid_argument(std::make_error_code(err.ec).message());
                 } else if (err.ptr != toParse.data() + toParse.size()) [[unlikely]] {
@@ -62,7 +74,8 @@ public:
                     res <<= (charsPerElem - numToParse) * log2ofBase;
                 }
                 str.remove_prefix(numToParse);
-                getElem(i) = res;
+                res = reverseBits(res);
+                setElem(i, res);
                 ++i;
             }
             buildRankMetadata(superblock);// TODO: Compute metadata while iterating over elements for cache efficiency
@@ -74,19 +87,22 @@ public:
     void buildRankMetadata(Index superblockIdx) noexcept {
         assert(superblockIdx >= 0 && superblockIdx < numSuperblocks());
         if (superblockIdx == 0) {
-            getSuperblockCount(0) = 0;
+            setSuperblockCount(0, 0);
         }
         auto s = superblockElems(superblockIdx);
+        assert(s.size() % blockSize() == 0);
         Index inSuperblockSoFar = 0;
         for (Index i = 0; i < s.size(); ++i) {
-            //            std::cout << "setting block count for block " << i << " to " << inSuperblockSoFar << ", s[i] is "
-            //                      << std::hex << s[i] << std::dec << ", popcount " << popcount(s[i]) << std::endl;
-            setBlockCount(superblockIdx, i, inSuperblockSoFar);
+            if (i % blockSize() == 0) {
+                //                std::cout << "setting block count for block " << i << " to " << inSuperblockSoFar << ", s[i] is "
+                //                          << std::hex << s[i] << std::dec << ", popcount " << popcount(s[i]) << std::endl;
+                setBlockCount(superblockIdx, i / blockSize(), inSuperblockSoFar);
+            }
             inSuperblockSoFar += popcount(s[i]);
         }
         assert(inSuperblockSoFar <= superblockSize() * 64);
         if (superblockIdx < numSuperblocks() - 1) {
-            getSuperblockCount(superblockIdx + 1) = getSuperblockCount(superblockIdx) + inSuperblockSoFar;
+            setSuperblockCount(superblockIdx + 1, getSuperblockCount(superblockIdx) + inSuperblockSoFar);
         }
     }
 
@@ -109,10 +125,11 @@ public:
         if (pos == 0) [[unlikely]] { return 0; }
         --pos;
         Index elemIdx = pos / 64;
-        Elem mask = Elem(-1) << (63 - pos % 64);
+        Elem mask = Elem(-1) >> (63 - pos % 64);
         Index superblockIdx = elemIdx / superblockSize();
         Index blockIdx = elemIdx % superblockSize();
-        return getSuperblockCount(superblockIdx) + getBlockCount(superblockIdx, blockIdx) + popcount(element(elemIdx) & mask);
+        //        std::cout << getSuperblockCount(superblockIdx) << " " << getBlockCount(superblockIdx, blockIdx) << " " << popcount(getElem(elemIdx) & mask) << std::endl;
+        return getSuperblockCount(superblockIdx) + getBlockCount(superblockIdx, blockIdx) + popcount(getElem(elemIdx) & mask);
     }
 
     [[nodiscard]] Index rankZero(Index pos) const {
@@ -144,7 +161,7 @@ public:
                 upper = mid;
             }
         }
-        return rank<IsOne>(lower) == bitRank && bit(lower) == IsOne ? lower : -1;
+        return rank<IsOne>(lower) == bitRank && getBit(lower) == IsOne ? lower : -1;
     }
 
     [[nodiscard]] Index selectOne(Index rank) const {
@@ -176,58 +193,64 @@ public:
     }
 
     [[nodiscard]] Span<Elem> superblockElems(Index superblockIdx) noexcept {
-        Index size = superblockIdx == numSuperblocks() - 1 ? numElems() % superblockSize() : superblockSize();
-        return Span<Elem>(&getElem(superblockIdx * superblockSize()), size);
+        Index size = superblockIdx == numSuperblocks() - 1 ? (numElems() - 1) % superblockSize() + 1 : superblockSize();
+        return Span<Elem>(&getElemRef(superblockIdx * superblockSize()), size);
     }
     [[nodiscard]] Span<const Elem> superblockElems(Index superblockIdx) const noexcept {
-        Index size = superblockIdx == numSuperblocks() - 1 ? numElems() % superblockSize() : superblockSize();
-        return Span<const Elem>(&getElem(superblockIdx * superblockSize()), size);
+        Index size = superblockIdx == numSuperblocks() - 1 ? (numElems() - 1) % superblockSize() + 1 : superblockSize();
+        return Span<const Elem>(&getElemRef(superblockIdx * superblockSize()), size);
     }
 
-    /// \brief Set the element at \p elemIdx to \p value without updating rank or select information.
-    /// Note that the order of bits is reversed, see \f element.
-    void setElem(Index elemIdx, Elem value) noexcept {
-        assert(elemIdx >= 0 && elemIdx < numElems());
-        getElem(elemIdx) = value;
-    }
+    //    /// \brief Set the element at \p elemIdx to \p value without updating rank or select information.
+    //    /// Note that the order of bits is reversed, see \f element.
+    //    void setElem(Index elemIdx, Elem value) noexcept {
+    //        assert(elemIdx >= 0 && elemIdx < numElems());
+    //        getElem(elemIdx) = value;
+    //    }
+    //
+    //    void setBit(Index bitIdx) noexcept {
+    //        assert(bitIdx >= 0 && bitIdx < numBits);
+    //        element
+    //    }
+    //
+    //    /// \brief Get the internal representation of the element number \p elemIdx.
+    //    /// Note that its bit are reversed compared to the logical order: The value of 1 means that the last bit is set, not the first.
+    //    /// \param elemIdx 0 based index of the internal element representation.
+    //    /// \return the element at the specified position.
+    //    [[nodiscard]] Elem element(Index elemIdx) const noexcept {
+    //        return getElem(elemIdx);
+    //    }
+    //
+    //    /// \brief return the bit with index \p bitIndex. \p bitIndex corresponds to the logical index, not
+    //    /// to the actual bit position, i.e. `element(0) & 1` is not the same as `bit(0)` but `bit(63)` instead.
+    //    /// \param bitIndex the logical bit index
+    //    /// \return true if the bit is set, false otherwise
+    //    // TODO: Fip order of bits? Measure
+    //    [[nodiscard]] bool bit(Index bitIndex) const noexcept {
+    //        return (element(bitIndex / 64) >> (63 - bitIndex % 64)) & 0x1;
+    //    }
 
-    /// \brief Get the internal representation of the element number \p elemIdx.
-    /// Note that its bit are reversed compared to the logical order: The value of 1 means that the last bit is set, not the first.
-    /// \param elemIdx 0 based index of the internal element representation.
-    /// \return the element at the specified position.
-    [[nodiscard]] Elem element(Index elemIdx) const noexcept {
-        return getElem(elemIdx);
-    }
-
-    /// \brief return the bit with index \p bitIndex. \p bitIndex corresponds to the logical index, not
-    /// to the actual bit position, i.e. `element(0) & 1` is not the same as `bit(0)` but `bit(63)` instead.
-    /// \param bitIndex the logical bit index
-    /// \return true if the bit is set, false otherwise
-    [[nodiscard]] bool bit(Index bitIndex) const noexcept {
-        return (element(bitIndex / 64) >> (63 - bitIndex % 64)) & 0x1;
-    }
-
-    constexpr static auto getBit = [](const auto& bv, Index i) -> bool {
-        return bv.bit(i);
+    constexpr static auto getBitFunc = [](const auto& bv, Index i) -> bool {
+        return bv.getBit(i);
     };
-    constexpr static auto getElement = [](const auto& bv, Index i) -> Elem {
-        return bv.element(i);
+    constexpr static auto getElemFunc = [](const auto& bv, Index i) -> Elem {
+        return bv.getElem(i);
     };
 
-    using BitIter = RandAccessIter<Bitvector, decltype(getBit)>;
+    using BitIter = RandAccessIter<Bitvector, decltype(getBitFunc)>;
 
     BitIter bitIter(Index i) const {
-        return BitIter(*this, getBit, i);
+        return BitIter(*this, getBitFunc, i);
     }
 
     Subrange<BitIter> bitView() const noexcept {
         return Subrange<BitIter>{bitIter(0), bitIter(numBits)};
     }
 
-    using ElemIter = RandAccessIter<Bitvector, decltype(getElement)>;
+    using ElemIter = RandAccessIter<Bitvector, decltype(getElemFunc)>;
 
     ElemIter elemIter(Index i) const {
-        return ElemIter(*this, getElement, i);
+        return ElemIter(*this, getElemFunc, i);
     }
 
     Subrange<ElemIter> elemView() const noexcept {

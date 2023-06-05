@@ -8,7 +8,7 @@ else ()
     #    add_compile_options(-Wall -Wextra -Wpedantic -Wno-sign-compare) # TODO: Enable Wsign-compare
 endif ()
 
-add_executable(tests bitvector_tests.cpp ../include/elias_fano.hpp eliasfano_tests.cpp rmq_tests.cpp ../include/nlogn_rmq.hpp ../include/cartesian_tree_rmq.hpp ../include/linear_space_rmq.hpp)
+add_executable(tests common_tests.cpp bitvector_tests.cpp ../include/elias_fano.hpp eliasfano_tests.cpp rmq_tests.cpp ../include/nlogn_rmq.hpp ../include/linear_space_rmq.hpp ../include/succinct_rmq.hpp ../include/trees.hpp)
 
 #target_link_libraries(tests bitvector)
 
