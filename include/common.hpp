@@ -100,15 +100,30 @@ template<typename UnsignedInteger>// no concepts in C++17 :(
 ADS_CPP20_CONSTEXPR Index log2(UnsignedInteger n) noexcept {
     static_assert(std::is_unsigned_v<UnsignedInteger>);
 #ifdef ADS_HAS_CPP20
-    return std::bit_floor(n);
+    return 8 * sizeof(UnsignedInteger) - std::countl_zero(n) - 1;
 #elif defined __clang__ || defined __GNUC__
-    return 8 * sizeof(UnsignedInteger) - __builtin_clzll(n) - 1;
+    return 8 * sizeof(unsigned long long) - __builtin_clzll(n) - 1;
 #elif defined _MSC_VER
     std::uint64 pos;
     _BitScanReverse(&pos, std::uint64_t(n));
     return 8 * 64 - pos - 1;
 #else
     return Index(std::log2(n));
+#endif
+}
+
+template<typename UnsignedInteger>
+ADS_CPP20_CONSTEXPR Index roundUpLog2(UnsignedInteger n) noexcept {
+    static_assert(std::is_unsigned_v<UnsignedInteger>);
+    assert(n > 0);
+#ifdef ADS_HAS_CPP20
+    if (std::has_single_bit(n)) {
+        return log2(n);
+    }
+    return log2(n) + 1;// TODO: Test if this is actually faster than the fallback, use for non-c++20 mode as well if faster
+#else
+    if (n <= 1) { return 0; }
+    return log2(UnsignedInteger(n - 1)) + 1;
 #endif
 }
 
@@ -129,6 +144,7 @@ ADS_CPP20_CONSTEXPR Index popcount(UnsignedInteger n) noexcept {
     return (T) (n * ((T) ~(T) 0 / 255)) >> (sizeof(T) - 1) * CHAR_BIT;// count
 #endif
 }
+
 
 template<typename UnsignedInteger>
 constexpr UnsignedInteger reverseBits(UnsignedInteger n) noexcept {
@@ -168,6 +184,8 @@ class Span {
     T* last = nullptr;
 
 public:
+    using value_type = T;
+
     constexpr Span() noexcept = default;
     constexpr Span(T* ptr, Index size) noexcept : first(ptr), last(ptr + size) {
         assert(size >= 0);
@@ -193,6 +211,7 @@ public:
         assert(i >= 0 && i < size());
         return first[i];
     }
+    [[nodiscard]] bool empty() const noexcept { return size() == 0; }
 
     constexpr T* data() noexcept { return first; }
     constexpr const T* data() const noexcept { return first; }
@@ -200,6 +219,19 @@ public:
     constexpr const T* begin() const noexcept { return first; }
     constexpr T* end() noexcept { return last; }
     constexpr const T* end() const noexcept { return last; }
+
+    friend std::ostream& operator<<(std::ostream& os, Span s) noexcept {
+        os << "[";
+        if (!s.empty()) {
+            os << s[0];
+        }
+        if (s.size() > 0) {
+            for (const auto& val: Span(s.begin() + 1, s.end())) {
+                os << ", " << val;
+            }
+        }
+        return os;
+    }
 };
 
 template<typename Container>
@@ -210,6 +242,8 @@ template<typename Iter>
 struct Subrange {
     Iter first;
     Iter last;
+
+    using value_type = typename std::iterator_traits<Iter>::value_type;
 
     [[nodiscard]] Iter begin() const noexcept { return first; }
     [[nodiscard]] Iter end() const noexcept { return last; }

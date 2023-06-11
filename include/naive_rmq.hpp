@@ -36,7 +36,7 @@ struct SimpleRMQ : std::vector<T> {
 
     using Base::Base;
 
-    SimpleRMQ(const std::vector<T>& vec) : Base(vec) {}
+    explicit SimpleRMQ(const std::vector<T>& vec) : Base(vec) {}
 
     [[nodiscard]] Index rmq(Index first, Index last) const noexcept {
         assert(first < last);
@@ -46,6 +46,8 @@ struct SimpleRMQ : std::vector<T> {
     [[nodiscard]] Index operator()(Index first, Index last) const noexcept {
         return rmq(first, last);
     }
+
+    [[nodiscard]] Span<const T> values() const noexcept { return Span<const T>(*this); }
 };
 
 
@@ -62,20 +64,20 @@ class NaiveRMQ {
     NaiveRMQ(Index length, CreateWithSizeTag) : arr(makeUniqueForOverwrite<Index>(length * (length + 1) / 2)), length(length) {
     }
 
-    Index arrIndex(Index first, Index last) const noexcept {
+    [[nodiscard]] Index arrIndex(Index first, Index last) const noexcept {
         assert(0 <= first && first < last && last <= length);
         Index seqLen = last - 1 - first;
         Index n = length - 1 - first;
         return n * (n + 1) / 2 + seqLen;
     }
 
-    Index& minIdx(Index first, Index last) noexcept {
+    [[nodiscard]] Index& minIdx(Index first, Index last) noexcept {
         return arr[arrIndex(first, last)];
     }
-    Index minIdx(Index first, Index last) const noexcept {
+    [[nodiscard]] Index minIdx(Index first, Index last) const noexcept {
         return arr[arrIndex(first, last)];
     }
-    Index& minIdx(Index first) noexcept {
+    [[nodiscard]] Index& minIdx(Index first) noexcept {
         return minIdx(first, first + 1);
     }
 

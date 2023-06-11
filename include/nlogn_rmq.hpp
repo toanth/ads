@@ -149,6 +149,10 @@ struct NlognRMQOneArray : NlognRmqOps<NlognRMQOneArray<T, IndexType, Comp>, Comp
 
     const T& operator[](Index i) const noexcept { return getArrayElement(i); }
 
+    [[nodiscard]] Span<const T> values() const noexcept {
+        return Span<const T>(array.get(), this->size());
+    }
+
 private:
     T& getArrayElement(Index i) noexcept { return array[i]; }
     const T& getArrayElement(Index i) const noexcept { return array[i]; }

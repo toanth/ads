@@ -13,7 +13,7 @@ TEST(BitvectorConstruction, Sizes) {
         ASSERT_EQ(bv.sizeInBits(), 64);
         ASSERT_EQ(bv.sizeInElems(), 1);
         for (Index i = 0; i < 100'000; ++i) {
-            Bitvector<TestLayout> bv(i);
+            bv = Bitvector<TestLayout>(i);
             ASSERT_EQ(bv.sizeInBits(), i);
             ASSERT_EQ(bv.bitView().size(), bv.sizeInBits());
             ASSERT_GE(bv.sizeInElems(), (i + 63) / 64);// TODO: Make exact?
@@ -221,8 +221,13 @@ TEST(Bitvector, Random) {
         results[i] = results[i - 1] + (str[i - 1] == '0');
     }
     Bitvector<TestLayout> bv(str);
+    Index maxRank = bv.rankOne(bv.sizeInBits() - 1);
     for (Index i = 0; i < bv.sizeInBits(); ++i) {
         ASSERT_EQ(bv.rankZero(i), results[i]) << i;
-        // TOOD: Test select
+        // TODO: Define rank as num values <= i instead of <i?
+        //        ASSERT_EQ(bv.selectOne(bv.rankOne((i))), i);
+        //        if (i < maxRank) {
+        //            ASSERT_EQ(bv.rankOne(bv.selectOne(i)), i);
+        //        }
     }
 }

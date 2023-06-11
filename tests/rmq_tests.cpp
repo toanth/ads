@@ -3,6 +3,7 @@
 #include "../include/linear_space_rmq.hpp"
 #include "../include/naive_rmq.hpp"
 #include "../include/nlogn_rmq.hpp"
+#include "../include/succinct_rmq.hpp"
 #include "gtest/gtest.h"
 
 using namespace ads;
@@ -16,10 +17,10 @@ template<ADS_RMQ_CONCEPT RmqType>
 class UsefulRmqsTest : public ::testing::Test {
 };
 
-using AllRmqTypes = ::testing::Types<NaiveRMQ<>, NlognRMQ<>, LinearSpaceRMQ<>>;
+using AllRmqTypes = ::testing::Types<NaiveRMQ<>, NlognRMQ<>, LinearSpaceRMQ<>, SuccinctRMQ>;
 TYPED_TEST_SUITE(AllRmqsTest, AllRmqTypes);
 
-using UsefulRmqTypes = ::testing::Types<NlognRMQ<>, LinearSpaceRMQ<>>;
+using UsefulRmqTypes = ::testing::Types<NlognRMQ<>, LinearSpaceRMQ<>, SuccinctRMQ>;
 TYPED_TEST_SUITE(UsefulRmqsTest, UsefulRmqTypes);
 
 
@@ -42,7 +43,7 @@ void testQuery(const TestRmq& testRmq, const ReferenceRmq& referenceRmq, Index l
     Index testeeAnswer = testRmq(lower, upper);
     Index referenceAnswer = referenceRmq(lower, upper);
     ASSERT_EQ(referenceRmq[testeeAnswer], referenceRmq[referenceAnswer]) << TestRmq::name
-                                                                         << ", answers " << testeeAnswer << " "
+                                                                         << ", answers (test/ref) " << testeeAnswer << " "
                                                                          << referenceAnswer << ", interval " << lower
                                                                          << " " << upper;
 }
@@ -64,13 +65,13 @@ void testLargeRmq(std::vector<Elem> values) {
     NlognRMQ<> reference(values);
     auto engine = createRandomEngine();
     std::uniform_int_distribution<Index> idxDist(0, Index(values.size()));
-    Index numIterations = Index(std::sqrt(std::sqrt(values.size() + 10'00)));
+    Index numIterations = values.size() / 10 + 10 * Index(std::sqrt(values.size())) + 10;
     for (Index i = 0; i < numIterations; ++i) {
         std::pair<Index, Index> range = std::minmax(idxDist(engine), idxDist(engine));
-        if (range.first == range.second || range.first == values.size()) continue;
+        if (range.first == range.second) continue;
         testQuery(rmq, reference, range.first, range.second);
     }
-    for (Index i = 0; i < numIterations / 10; ++i) {
+    for (Index i = 0; i < numIterations / 4; ++i) {
         Index l = idxDist(engine);
         Index u = idxDist(engine) % 7 + l + 1;
         if (u >= values.size()) { continue; }
@@ -137,6 +138,11 @@ TYPED_TEST(AllRmqsTest, Small) {
     testSmallRmq<TypeParam>({12, 0, 4, 2, 100, 101});
 }
 
+TYPED_TEST(AllRmqsTest, SuccinctRmqPaperExample) {
+    TypeParam rmq{5, 3, 4, 3, 4, 5, 1, 3, 2, 4, 2, 5, 3, 5, 5, 4};
+    ASSERT_EQ(rmq(6, 9), 6);
+    ASSERT_EQ(rmq(9, 15), 10);
+}
 
 TYPED_TEST(AllRmqsTest, SmallAscending) {
     testSmallRmq<TypeParam>({2, 3, 4, 5, 6, 7, 100, 101, 102, 1000, 1234, 9998, 9999});
@@ -147,7 +153,49 @@ TYPED_TEST(AllRmqsTest, SmallDescending) {
 }
 
 TYPED_TEST(AllRmqsTest, SmallRepeating) {
-    testSmallRmq<TypeParam>(std::vector<Elem>((1 << 9) + 3, 42));
+    testSmallRmq<TypeParam>(std::vector<Elem>((1 << 8) + 13, 42));
+}
+
+TYPED_TEST(AllRmqsTest, SuccinctBlockBorder) {
+    std::vector<Elem> vec(260);
+    for (Index i = 0; i < vec.size(); ++i) {
+        vec[i] = i;
+    }
+    TypeParam rmq(vec);
+    ASSERT_EQ(rmq(240, 260), 240);
+    for (Elem& v: vec) {
+        v = vec.back() - v;
+    }
+    rmq = TypeParam(vec);
+    ASSERT_EQ(rmq(240, 260), 259);
+    vec.clear();
+    for (Index i = 0; i < 240; ++i) {
+        vec.push_back(240 - i);
+    }
+    for (Index i = 240; i < 350; ++i) {
+        vec.push_back(1000 - i);
+    }
+    rmq = TypeParam(vec);
+    ASSERT_EQ(rmq(240, 260), 259);
+    ASSERT_EQ(rmq(239, 260), 239);
+    ASSERT_EQ(rmq(200, 350), 239);
+    ASSERT_EQ(rmq(240, 241), 240);
+    ASSERT_EQ(rmq(239, 240), 239);
+}
+
+TYPED_TEST(AllRmqsTest, 1000Elements) {
+    std::vector<Elem> vec(1000);
+    for (Index i = 0; i * 2 < vec.size(); ++i) {
+        vec[2 * i] = i + 1'000'200;
+        vec[2 * i + 1] = (i % 2 == 0 ? 1 : -1) * i * i + 1'000'000;
+    }
+    testLargeRmq<TypeParam>(vec);
+}
+
+TYPED_TEST(AllRmqsTest, SmallishRandom) {
+    auto engine = createRandomEngine();
+    std::uniform_int_distribution<Index> dist(0, 1 << 10);
+    testLargeRmq<TypeParam>(randomValues(dist(engine)));
 }
 
 TYPED_TEST(UsefulRmqsTest, PowerOfTwo) {
@@ -158,24 +206,29 @@ TYPED_TEST(UsefulRmqsTest, PowerOfTwoMinus1) {
     testLargeRmq<TypeParam>(randomValues((1 << 16) - 1));
 }
 
+// This test exists because the bitvector of the succinct rmq stores 2 (n+1) bits
+TYPED_TEST(UsefulRmqsTest, PowerOfTwoMinus2) {
+    testLargeRmq<TypeParam>(randomValues((1 << 16) - 2));
+}
+
 TYPED_TEST(UsefulRmqsTest, PowerOfTwoPlus1) {
     testLargeRmq<TypeParam>(randomValues((1 << 16) + 1));
 }
 
 TYPED_TEST(UsefulRmqsTest, LargeAscending) {
-    std::vector<Elem> vec(1 << 18);
+    std::vector<Elem> vec((1 << 18) - 7);
     std::iota(vec.begin(), vec.end(), 5);
     testLargeRmq<TypeParam>(std::move(vec));
 }
 
 TYPED_TEST(UsefulRmqsTest, LargeDescending) {
-    std::vector<Elem> vec(1 << 18);
+    std::vector<Elem> vec((1 << 18) + 23);
     std::iota(vec.rbegin(), vec.rend(), 7);
     testLargeRmq<TypeParam>(vec);
 }
 
 TYPED_TEST(UsefulRmqsTest, LargeAlmostAscending) {
-    std::vector<Elem> vec(1 << 18);
+    std::vector<Elem> vec((1 << 18) - 31);
     std::iota(vec.rbegin(), vec.rend(), 7);
     auto engine = createRandomEngine();
     std::uniform_int_distribution<Index> idxDist(0, vec.size() - 1);
@@ -186,13 +239,7 @@ TYPED_TEST(UsefulRmqsTest, LargeAlmostAscending) {
 }
 
 TYPED_TEST(UsefulRmqsTest, LargeRepeating) {
-    testLargeRmq<TypeParam>(std::vector<Elem>(1 << 20, 54));
-}
-
-TYPED_TEST(AllRmqsTest, SmallishRandom) {
-    auto engine = createRandomEngine();
-    std::uniform_int_distribution<Elem> dist(0, 1 << 10);
-    testLargeRmq<TypeParam>(randomValues(dist(engine)));
+    testLargeRmq<TypeParam>(std::vector<Elem>((1 << 17) - 4, 54));
 }
 
 TYPED_TEST(UsefulRmqsTest, LargeRandom) {
@@ -200,45 +247,3 @@ TYPED_TEST(UsefulRmqsTest, LargeRandom) {
     std::uniform_int_distribution<Elem> dist(0, 1 << 18);
     testLargeRmq<TypeParam>(randomValues(dist(engine)));
 }
-
-
-//template<typename RMQ>
-//void testRandomRmq() {
-//    auto engine = createRandomEngine();
-//    std::uniform_int_distribution<Elem> dist;
-//    std::vector<Elem> values(dist(engine) % (1 << 10));
-//    for (auto& val: values) {
-//        val = dist(engine);
-//    }
-//    RMQ rmq(values);
-//    SimpleRMQ<> reference(values);
-//    std::uniform_int_distribution<Index> idxDist(0, Index(values.size()));
-//    for (Index i = 0; i < 100'000; ++i) {
-//        std::pair<Index, Index> range = std::minmax(idxDist(engine), idxDist(engine));
-//        if (range.first == range.second || range.first == values.size()) continue;
-//        ASSERT_EQ(rmq(range.first, range.second), reference(range.first, range.second)) << range.first << " " << range.second;
-//    }
-//}
-//TEST(NaiveRmq, Small) {
-//    testSmallRmq<NaiveRMQ<>>();
-//}
-//
-//TEST(NaiveRmq, Random) {
-//    testRandomRmq<NaiveRMQ<>>();
-//}
-//
-//TEST(NlognRMQ, Small) {
-//    testSmallRmq<NlognRMQ<>>();
-//}
-//
-//TEST(NlognRMQ, Random) {
-//    testRandomRmq<NlognRMQ<>>();
-//}
-//
-//TEST(LinearSpaceRMQ, Small) {
-//    testSmallRmq<LinearSpaceRMQ<>>();
-//}
-
-//TEST(CartesianTreeRMQ, Small) {
-//    testSmallRmq<CartesianTreeRMQ<>>();
-//}

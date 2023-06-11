@@ -12,7 +12,6 @@ TEST(EliasFano, ConstructionSmall) {
     const auto& upper = ef.getUpper();
     ASSERT_EQ(upper.sizeInBits(), 3 * 2 + 2);
     ASSERT_EQ(upper.getBit(0), false);
-    std::cout << upper << std::endl;
     for (Index i = 0; i < 3; ++i) {
         ASSERT_EQ(upper.getBit(i + 1), true) << i;
     }
