@@ -261,6 +261,18 @@ public:
         std::copy(bv.bitView().begin(), bv.bitView().end(), std::ostream_iterator<bool>(os, ""));
         return os;
     }
+
+    [[nodiscard]] std::string toString() const noexcept {
+        std::string res;
+        for (bool b: bitView()) {
+            if (b) {
+                res += '1';
+            } else {
+                res += '0';
+            }
+        }
+        return res;
+    }
 };
 
 

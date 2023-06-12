@@ -23,6 +23,7 @@ public:
 
     [[nodiscard]] static T getBits(const Underlying* ptr, Index i) noexcept {
         assert(i >= 0);
+        assert(ptr);
         if constexpr (sizeof(Underlying) == sizeof(T)) {
             return T(ptr[i]);
         } else if constexpr (sizeof(Underlying) * 2 == sizeof(T)) {
@@ -36,6 +37,8 @@ public:
     }
 
     static void setBits(T* ADS_RESTRICT ptr, Index i, T value) noexcept {
+        assert(i >= 0);
+        assert(ptr);
         if constexpr (sizeof(Underlying) == sizeof(T)) {// TODO: Look at code generation to see if these special cases actually help
             ptr[i] = value;
         } else if constexpr (sizeof(Underlying) * 2 == sizeof(T)) {
@@ -59,12 +62,14 @@ struct BitwiseAccessImpl {
 
     [[nodiscard]] static T getBits(const T* ADS_RESTRICT ptr, Index elemStartIndex, Index inElem) noexcept {
         assert(elemStartIndex >= 0 && inElem >= 0 && inElem * NumBits < bitsInT);
+        assert(ptr);
         return (ptr[elemStartIndex] >> (NumBits * inElem)) & mask;
     }
 
     static void setBits(T* ADS_RESTRICT ptr, Index elemStartIndex, Index inElem, T value) noexcept {
         assert(elemStartIndex >= 0 && inElem >= 0 && inElem * NumBits < bitsInT);
         assert(value < (T(1) << NumBits));
+        assert(ptr);
         ptr[elemStartIndex] &= ~(mask << (NumBits * inElem));
         ptr[elemStartIndex] |= value << (NumBits * inElem);
     }
@@ -91,6 +96,7 @@ struct BitwiseAccess<dynSize, T> {
 
     [[nodiscard]] Elem getBits(const T* ADS_RESTRICT ptr, Index elemStartIndex, Index bitStartIndex) const noexcept {
         assert(elemStartIndex >= 0 && bitStartIndex >= 0 && bitStartIndex < bitsInT && numBits > 0 && numBits < bitsInT);
+        assert(ptr);
         T mask = (T(1) << numBits) - 1;// TODO: Make member?
         T r = (ptr[elemStartIndex] >> bitStartIndex) & mask;
         if (numBits + bitStartIndex > bitsInT) {
@@ -110,6 +116,7 @@ struct BitwiseAccess<dynSize, T> {
 
     void setBits(T* ADS_RESTRICT ptr, Index elemStartIndex, Index bitStartIndex, T value) const noexcept {
         assert(elemStartIndex >= 0 && bitStartIndex >= 0 && numBits > 0 && numBits < bitsInT);
+        assert(ptr);
         setBitsImpl(ptr, elemStartIndex, bitStartIndex, value, numBits);
         if (numBits + bitStartIndex > bitsInT) {
             Index remaining = numBits + bitStartIndex - bitsInT;

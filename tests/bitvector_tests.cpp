@@ -46,6 +46,7 @@ TEST(BitvectorConstruction, Elements) {
     ASSERT_EQ(bv.getElem(0), 1);
     ASSERT_EQ(bv.getBit(0), 1);
     ASSERT_EQ(*bv.bitView().begin(), 1);
+    ASSERT_EQ(bv.toString(), "1");
     ASSERT_EQ(bv, Bitvector<>("1"));
     ASSERT_GT(bv, Bitvector<>("0"));
     bv = Bitvector(64);
@@ -66,6 +67,7 @@ TEST(BitvectorConstruction, FromStringview) {
     for (Index i = 2; i < 64; ++i) {
         ASSERT_EQ(bv.getBit(i), 0);
     }
+    ASSERT_EQ(bv.toString(), "01");
     std::string s("101110011101");
     bv = Bitvector<TestLayout>(s);
     ASSERT_EQ(bv.sizeInElems(), 1);
@@ -118,6 +120,7 @@ TEST(BitvecRank, OneSuperblock) {
         s[i] = '0';
     }
     bv = Bitvector<TestLayout>(s);
+    ASSERT_EQ(bv.toString(), s);
     for (Index i = 0; i < s.size(); ++i) {
         ASSERT_EQ(bv.rankZero(i), (i + 1) / 2);
         ASSERT_EQ(bv.rankOne(i), i / 2);

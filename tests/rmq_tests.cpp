@@ -24,17 +24,17 @@ using UsefulRmqTypes = ::testing::Types<NlognRMQ<>, LinearSpaceRMQ<>, SuccinctRM
 TYPED_TEST_SUITE(UsefulRmqsTest, UsefulRmqTypes);
 
 
-void fillWithRandomValues(std::vector<Elem>& v) {
+void fillWithRandomValues(std::vector<Elem>& v, Elem maxVal) {
     auto engine = createRandomEngine();
-    std::uniform_int_distribution<Elem> dist;
+    std::uniform_int_distribution<Elem> dist(maxVal);
     for (Elem& value: v) {
         value = dist(engine);
     }
 }
 
-std::vector<Elem> randomValues(Index size) {
+std::vector<Elem> randomValues(Index size, Elem maxVal = std::numeric_limits<Elem>::max()) {
     std::vector<Elem> res(size);
-    fillWithRandomValues(res);
+    fillWithRandomValues(res, maxVal);
     return res;
 }
 
@@ -132,10 +132,11 @@ TYPED_TEST(AllRmqsTest, VerySmall) {
     testSmallRmq<TypeParam>({9, 2, 42, 3});
     testSmallRmq<TypeParam>({1, 2, 1, 3});
     testSmallRmq<TypeParam>({0, 2, 3, 3, 100});
+    testSmallRmq<TypeParam>({20, 8, 1, 15, 0});
 }
 
 TYPED_TEST(AllRmqsTest, Small) {
-    testSmallRmq<TypeParam>({12, 0, 4, 2, 100, 101});
+    testSmallRmq<TypeParam>({12, 0, 4, 2, 100, 101, 79, 5, 2, 100});
 }
 
 TYPED_TEST(AllRmqsTest, SuccinctRmqPaperExample) {
@@ -192,6 +193,10 @@ TYPED_TEST(AllRmqsTest, 1000Elements) {
     testLargeRmq<TypeParam>(vec);
 }
 
+TYPED_TEST(AllRmqsTest, SmallManyRandomDuplicates) {
+    testSmallRmq<TypeParam>(randomValues(301, 7));
+}
+
 TYPED_TEST(AllRmqsTest, SmallishRandom) {
     auto engine = createRandomEngine();
     std::uniform_int_distribution<Index> dist(0, 1 << 10);
@@ -245,5 +250,5 @@ TYPED_TEST(UsefulRmqsTest, LargeRepeating) {
 TYPED_TEST(UsefulRmqsTest, LargeRandom) {
     auto engine = createRandomEngine();
     std::uniform_int_distribution<Elem> dist(0, 1 << 18);
-    testLargeRmq<TypeParam>(randomValues(dist(engine)));
+    testLargeRmq<TypeParam>(randomValues(Index(dist(engine)), 100));
 }

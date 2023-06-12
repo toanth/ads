@@ -42,9 +42,6 @@ TEST(RmmTree, Small) {
     ASSERT_EQ(tree.findMinInBlock(4, 7).pos, 6);
     ASSERT_EQ(tree.bitvecRmq(0, 1), 0);
     ASSERT_EQ(tree.bitvecRmq(0, 2), 0);
-    for (Index i = 0; i < 4; ++i) {
-        ASSERT_EQ(tree.findOpen(4 + i), 3 - i) << i;
-    }
     testRmmTree(tree);
 }
 
@@ -74,7 +71,6 @@ TEST(RmmTree, 1BlockDescending) {
         for (Index i = 0; i < j; ++i) {
             ASSERT_EQ(tree.bitvecRmq(i, j), i);
         }
-        ASSERT_EQ(tree.findOpen(str.size() / 2 + j), str.size() / 2 - 1 - j);
     }
     testRmmTree(tree);
 }
@@ -94,11 +90,6 @@ TEST(RmmTree, 1Block2BitsRandom) {
     ASSERT_LE(m.minExcess, 2);
     ASSERT_GE(m.minExcess, 1);
     ASSERT_EQ(tree.bitvecRmq(0, tree.getBitvector().sizeInBits()), tree.getBitvector().sizeInBits() - 1);
-    ASSERT_EQ(tree.findOpen(tree.bv.sizeInBits() - 1), 0);
-    Index open = tree.findOpen(tree.bv.sizeInBits() - 2);
-    ASSERT_EQ(tree.bitvecRmq(open, tree.bv.sizeInBits()), tree.bv.sizeInBits() - 1);
-    ASSERT_EQ(tree.rmqImpl(open, tree.bv.sizeInBits() - 2).minExcess, 2);
-    ASSERT_EQ(tree.rmqImpl(open, tree.bv.sizeInBits() - 2).pos, open);
     testRmmTree(tree);
 }
 
@@ -110,9 +101,6 @@ TEST(RmmTree, 2Blocks) {
     }
     RangeMinMaxTree<> tree((Bitvector<>(str)));
     ASSERT_EQ(tree.bitvecRmq(blockSize - 4, str.size()), str.size() - 1);
-    for (Index i = 0; i < str.size() / 2; ++i) {
-        ASSERT_EQ(tree.findOpen(i + str.size() / 2), str.size() / 2 - 1 - i) << i;
-    }
     testRmmTree(tree);
     str = std::string(blockSize * 2, '1');
     for (Index i = 2; i < str.size(); i += 2) {
@@ -125,10 +113,6 @@ TEST(RmmTree, 2Blocks) {
     ASSERT_EQ(tree.bitvecRmq(blockSize, 2 * blockSize), 2 * blockSize - 1);
     ASSERT_EQ(tree.bitvecRmq(2, 4), 2);
     ASSERT_EQ(tree.bitvecRmq(blockSize - 2, blockSize + 2), blockSize - 2);
-    for (Index i = 2; i < str.size(); i += 2) {
-        ASSERT_EQ(tree.findOpen(i), i - 1) << i;
-    }
-    ASSERT_EQ(tree.findOpen(str.size() - 1), 0);
     testRmmTree(tree);
 }
 
@@ -164,9 +148,6 @@ TEST(RmmTree, 10BlocksAscending) {
     ASSERT_EQ(tree.bitvecRmq(0, blockSize), 0);
     ASSERT_EQ(tree.bitvecRmq(5 * blockSize - 6, 5 * blockSize + 4), 5 * blockSize - 6);
     ASSERT_EQ(tree.bitvecRmq(5 * blockSize - 4, 5 * blockSize + 6), 5 * blockSize + 5);
-    for (Index i = 0; i < blockSize * 5; ++i) {
-        ASSERT_EQ(tree.findOpen(5 * blockSize + i), 5 * blockSize - 1 - i) << i;
-    }
     testRmmTree(tree);
 }
 
@@ -211,9 +192,6 @@ TEST(RmmTree, 9BlocksAscending) {
     ASSERT_EQ(tree.bitvecRmq(0, blockSize), 0);
     ASSERT_EQ(tree.bitvecRmq(mid - 6, mid + 4), mid - 6);
     ASSERT_EQ(tree.bitvecRmq(mid - 4, mid + 6), mid + 5);
-    for (Index i = 0; i < mid; ++i) {
-        ASSERT_EQ(tree.findOpen(mid + i), mid - 1 - i) << i;
-    }
     testRmmTree(tree);
 }
 
@@ -242,15 +220,6 @@ TEST(RmmTree, 10BlocksAlternating) {
     ASSERT_EQ(tree.bitvecRmq(7 * blockSize - 4, 7 * blockSize + 6), 7 * blockSize - 1);
     ASSERT_EQ(tree.bitvecRmq(8 * blockSize - 6, 8 * blockSize + 4), 8 * blockSize - 6);
     ASSERT_EQ(tree.bitvecRmq(8 * blockSize - 4, 8 * blockSize + 6), 8 * blockSize + 5);
-    ASSERT_EQ(tree.findOpen(2 * blockSize), 2 * blockSize - 1);
-    for (Index i = 2; i < 9; i += 2) {
-        for (Index j = 0; j < blockSize; ++j) {
-            ASSERT_EQ(tree.findOpen(i * blockSize + j), i * blockSize - 1 - j) << i << " " << j;
-        }
-    }
-    for (Index i = 0; i < blockSize; ++i) {
-        ASSERT_EQ(tree.findOpen(9 * blockSize + i), blockSize - 1 - i) << i;
-    }
     testRmmTree(tree);
 }
 
@@ -275,11 +244,6 @@ TEST(RmmTree, IncreasingDegree) {
         ASSERT_EQ(tree.rmqImpl(1 + 10 * 11 + i, 1 + 11 * 12 - i).minExcess, 1 + i) << i;
         ASSERT_EQ(tree.rmqImpl(10 * 11, 1 + 11 * 12 - i).minExcess, 1) << i;
         ASSERT_EQ(tree.rmqImpl(1 + 10 * 11 + i, 1 + 11 * 12).minExcess, 1) << i;
-    }
-    for (Index i = 0; i < 100; ++i) {
-        for (Index j = 0; j < i; ++j) {
-            ASSERT_EQ(tree.findOpen(i * (i - 1) + i + j + 1), i * (i - 1) + i - j) << i << " " << j;
-        }
     }
     testRmmTree(tree);
 }
@@ -315,12 +279,6 @@ TEST(RmmTree, DecreasingDegreeAlternatingDegree1) {
         ASSERT_EQ(tree.rmqImpl(startIndices[20], startIndices[21] - 2 - i).minExcess, i == 0 ? 2 : 3) << i;
         ASSERT_EQ(tree.rmqImpl(startIndices[20] + i, startIndices[21] - 2).minExcess, 2) << i;
     }
-    for (Index i = 0; i < 100; ++i) {
-        for (Index j = 0; j < lengths[i]; ++j) {
-            ASSERT_EQ(tree.findOpen(startIndices[i] + lengths[i] + j), startIndices[i] + lengths[i] - 1 - j) << i << " " << j;
-        }
-        ASSERT_EQ(tree.findOpen(startIndices[i] - 1), startIndices[i] - 2);
-    }
     testRmmTree(tree);
 }
 
@@ -334,11 +292,5 @@ TEST(RmmTree, Random) {
     testRmmTree(tree);
     for (Index i = 0; i < tree.numLeaves; ++i) {
         ASSERT_EQ(tree.findMinInBlock(i * blockSize, (i + 1) * blockSize).minExcess, tree.rmmArr[tree.leafIdxInArr(i)]);
-    }
-    for (Index i = 0; i < tree.bv.sizeInBits(); ++i) {
-        if (tree.bv.getBit(i) == openParen) { continue; }
-        Index open = tree.findOpen(i);
-        ASSERT_EQ(tree.bitvecRmq(open, i), open);
-        ASSERT_EQ(tree.rmqImpl(open, i).minExcess, tree.rmqImpl(i, i + 1).minExcess + 1);
     }
 }

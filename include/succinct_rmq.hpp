@@ -120,38 +120,27 @@ struct RangeMinMaxTree {
         return {minPos, minExcess};
     }
 
-    MinRes findMinInBlock(Index lower, Index upper, Index& excessUntilUpper, Index& globalOffset) const noexcept {
+    // Idea: find min extent within block and use that together with the heap's stored value of the global min extent in this block
+    // to figure out the extent at the start of the block, which allows calculating the global min extent within the query range
+    [[nodiscard]] MinRes findMinInBlock(Index lower, Index upper) const noexcept {
         Index blockBegin = lower / BlockSize * BlockSize;
         Index blockEnd = blockBegin + BlockSize;
         blockEnd = std::min(blockEnd, bv.sizeInBits());
         upper = std::min(upper, bv.sizeInBits());
         assert(lower <= upper);
         if (upper == lower) {
-            Index ignored = 0;
-            Index minExcessInBlock = findMinInBlockImpl(blockBegin, blockEnd, ignored).minExcess;
-            globalOffset = rmmArr[leafIdxInArr(lower / BlockSize)] - minExcessInBlock;
-            assert(globalOffset >= 0 || blockBegin == blockEnd);
             return noRes;
         }
         Index inBlockExcess = 0;
         Index minExcessInBlock = findMinInBlockImpl(blockBegin, lower, inBlockExcess).minExcess;
         MinRes res = findMinInBlockImpl(lower, upper, inBlockExcess);
-        excessUntilUpper = inBlockExcess;
         assert(res.pos >= lower && res.pos < upper);
         minExcessInBlock = std::min(minExcessInBlock, res.minExcess);
         Index minExcessAfterQuery = findMinInBlockImpl(upper, blockEnd, inBlockExcess).minExcess;
         minExcessInBlock = std::min(minExcessInBlock, minExcessAfterQuery);
-        globalOffset = rmmArr[leafIdxInArr(lower / BlockSize)] - minExcessInBlock;
+        Index globalOffset = rmmArr[leafIdxInArr(lower / BlockSize)] - minExcessInBlock;
         return {res.pos, res.minExcess + globalOffset};
     }
-
-    // Idea: find min extent within block and use that together with the heap's stored value of the global min extent in this block
-    // to figure out the extent at the start of the block, which allows calculating the global min extent within the query range
-    [[nodiscard]] MinRes findMinInBlock(Index lower, Index upper) const noexcept {
-        Index ignored = 0;
-        return findMinInBlock(lower, upper, ignored, ignored);
-    }
-
 
     /// \brief Find the minimum element in the half-open range of blocks [\p lowerBlockIdx, \p upperBlockIdx)
     /// \param lowerBlockIdx
@@ -235,77 +224,6 @@ struct RangeMinMaxTree {
         return rmqImpl(lower, upper).pos;
     }
 
-    [[nodiscard]] Index findLastWithExcess(Index last, Index excess) const {
-        assert(excess >= 0);
-        Index i = last;
-        if (excess == 0) {
-            assert(bv.getBit(last) == openParen);
-            return last;
-        }
-        while (true) {
-            --i;
-            assert(i >= (last - 1) / BlockSize * BlockSize);
-            if (bv.getBit(i) == closeParen) {
-                ++excess;
-            } else if (--excess <= 0) {
-                break;
-            }
-        }
-        return i;
-    }
-
-    // The rightmost index where the excess is <= excess must be achieved by a closing parenthesis (unless it's the first bit in the bitvector).
-    // Find that parenthesis and add 1 to find the matching open parenthesis.
-    [[nodiscard]] Index findOpen(Index i) const noexcept {
-        if (i == bv.sizeInBits() - 1) { return 0; }// don't try to find a bit with excess -1
-        Index excess = 0;
-        Index excessOfBlockBegin = 0;
-        assert(bv.getBit(i) == closeParen);
-        Index blockBegin = i / BlockSize * BlockSize;
-        MinRes minInBlockBeforeI = findMinInBlock(blockBegin, i, excess, excessOfBlockBegin);
-        excess += excessOfBlockBegin - 1;// -1 because the closing ')' must also be counted
-        assert(excess >= Index(rmmArr[leafIdxInArr(i / BlockSize)]));
-        assert(excess >= 0);
-        assert(minInBlockBeforeI.minExcess <= excess + 1 || minInBlockBeforeI.minExcess == noRes.minExcess);
-        if (minInBlockBeforeI.minExcess <= excess) {
-            assert(minInBlockBeforeI.pos < i && minInBlockBeforeI.pos >= blockBegin);
-            return findLastWithExcess(i, 1);
-        }
-        // move up in tree
-        assert(i >= BlockSize);
-        Index v = leafIdxInArr(i / BlockSize);
-        while (true) {
-            if (isRightChild(v) && Index(rmmArr[v - 1]) <= excess) {
-                --v;
-                break;
-            }
-            v /= 2;
-            assert(v > 1);
-        }
-        assert(v >= 1);
-        assert(v == 1 || !isRightChild(v));
-        // move down in tree
-        Index firstLeaf = leafIdxInArr(0);
-        while (v < firstLeaf) {
-            assert(Index(rmmArr[v]) <= excess);
-            v *= 2;
-            if (Index(rmmArr[v + 1]) <= excess) {
-                ++v;
-            }
-        }
-        assert(Index(rmmArr[v]) <= excess);
-        // find the last position with the required excess in the current block
-        assert(leafNum(v) < i / BlockSize);
-        Index blockEnd = (leafNum(v) + 1) * BlockSize;
-        Index excessInBlock = 0;
-        findMinInBlock(blockEnd - BlockSize, blockEnd, excessInBlock, excessOfBlockBegin);
-        Index currentExcess = excessInBlock + excessOfBlockBegin;
-        assert(currentExcess >= Index(rmmArr[v]));
-        assert(blockBegin == blockEnd || Index(rmmArr[v + 1]) > excess);
-        assert(currentExcess >= excess);
-        return findLastWithExcess(blockEnd, currentExcess - excess);
-    }
-
     [[nodiscard]] const Bitvector<>& getBitvector() const noexcept { return bv; }
 };
 
@@ -362,9 +280,10 @@ public:
         Index w = rmmTree.bitvecRmq(x, y);
         assert(w >= x && w < y);
         assert(dfuds.getBit(w) == closeParen);
-        if (dfuds.rank<closeParen>(rmmTree.findOpen(w)) == lower + 1) {
-            return lower;
-        }
+        // The findOpen call from the paper (https://algo2.iti.kit.edu/download/rmq.pdf, corollary 5.6) is unnecessary:
+        // It only handles the case of lca == lower, but in this case, w is equal to x because no descendant of lower can have a smaller excess
+        // and lower is the leftmost value with such an excess (see https://doi.org/10.1016/j.jcss.2011.09.002).
+        // Therefore, rank<closeParen>(w) already computes the correct answer.
         return dfuds.rank<closeParen>(w);
     }
 
