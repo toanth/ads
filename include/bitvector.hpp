@@ -106,6 +106,12 @@ public:
         }
     }
 
+    void buildRankMetadata() noexcept {
+        for (Index i = 0; i < numSuperblocks(); ++i) {
+            buildRankMetadata(i);
+        }
+    }
+
     void buildSelectMetadata(Index) noexcept {
         // idea: store array of superblock start indices
         // superblock size 1024 zeros, minimum size 1024 bit = 2^10 bit = 128 Byte = 16 Elem,
