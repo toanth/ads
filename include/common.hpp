@@ -75,7 +75,7 @@ using IntType = typename detail::IntTypeImpl<NumBytes>::Type;
 // TODO: Used?
 template<typename Dest>
 ADS_CPP20_CONSTEXPR Dest ptrBitCast(const unsigned char* src) noexcept {
-#if ADS_HAS_CPP20
+#ifdef ADS_HAS_CPP20
     using T = char[sizeof(Dest)];
     return std::bit_cast<Dest>((T*) src);
 #else
@@ -129,6 +129,7 @@ ADS_CPP20_CONSTEXPR Index roundUpLog2(UnsignedInteger n) noexcept {
 
 template<typename UnsignedInteger>
 ADS_CPP20_CONSTEXPR Index popcount(UnsignedInteger n) noexcept {
+    static_assert(std::is_unsigned_v<UnsignedInteger>);
 #ifdef ADS_HAS_CPP20
     return std::popcount(n);
 #elif defined __clang__ || defined __GNUC__

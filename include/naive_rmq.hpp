@@ -8,11 +8,22 @@
 namespace ads {
 
 #ifdef ADS_HAS_CPP20
-template<typename RmqType, typename ValueType = Elem>
+
+template<typename T>
+concept HasValueType = requires { typename T::value_type; };
+
+template<typename RmqType>
+struct RmqValueType : std::type_identity<Elem> {};// The succinct rmq doesn't have a value_type
+
+template<HasValueType RmqType>
+struct RmqValueType<RmqType> : std::type_identity<typename RmqType::value_type> {};
+
+
+template<typename RmqType, typename ValueType = typename RmqValueType<RmqType>::type>
 concept Rmq = requires(const RmqType& r) {
     RmqType();
     RmqType(std::vector<ValueType>());
-    RmqType(std::unique_ptr<ValueType>(), Index());
+    RmqType(std::unique_ptr<ValueType[]>(), Index());
     RmqType(std::initializer_list<ValueType>());
     { RmqType::name } -> std::convertible_to<std::string>;
     { r(Index(), Index()) } -> std::convertible_to<Index>;
@@ -38,6 +49,8 @@ struct SimpleRMQ : std::vector<T> {
 
     explicit SimpleRMQ(const std::vector<T>& vec) : Base(vec) {}
 
+    SimpleRMQ(std::unique_ptr<T[]> ptr, Index length) : Base(ptr.get(), ptr.get() + length) {}
+
     [[nodiscard]] Index rmq(Index first, Index last) const noexcept {
         assert(first < last);
         return std::min_element(this->begin() + first, this->begin() + last, comp) - this->begin();
@@ -48,6 +61,8 @@ struct SimpleRMQ : std::vector<T> {
     }
 
     [[nodiscard]] Span<const T> values() const noexcept { return Span<const T>(*this); }
+
+    [[nodiscard]] Index sizeInBits() const noexcept { return this->size() * sizeof(T) * 8; }
 };
 
 
@@ -60,8 +75,13 @@ class NaiveRMQ {
     Index length = 0;
     [[no_unique_address]] Comparator comp = Comparator{};
 
-    // If `length * (length + 1)` overflows, we're probably in trouble anyway
-    NaiveRMQ(Index length, CreateWithSizeTag) : arr(makeUniqueForOverwrite<Index>(length * (length + 1) / 2)), length(length) {
+    // If `numValues * (numValues + 1)` overflows, we're probably in trouble anyway
+    static Index completeSize(Index numValues) noexcept {
+        assert(numValues >= 0);
+        return numValues * (numValues + 1) / 2;
+    }
+
+    NaiveRMQ(Index length, CreateWithSizeTag) : arr(makeUniqueForOverwrite<Index>(completeSize(length))), length(length) {
     }
 
     [[nodiscard]] Index arrIndex(Index first, Index last) const noexcept {
@@ -119,6 +139,10 @@ public:
 
     [[nodiscard]] Index size() const noexcept {
         return length;
+    }
+
+    [[nodiscard]] Index sizeInBits() const noexcept {
+        return completeSize(size()) * sizeof(Index) * 8;
     }
 
     constexpr static auto getValue = [](const NaiveRMQ& rmq, Index i) -> Index {

@@ -1,6 +1,7 @@
 #ifndef BITVECTOR_NLOGN_RMQ_HPP
 #define BITVECTOR_NLOGN_RMQ_HPP
 
+#include "bit_access.hpp"
 #include "common.hpp"
 namespace ads {
 
@@ -86,6 +87,7 @@ public:
 };
 
 
+//TODO: Use bitview etc, don't need two separate class templates
 template<typename T, typename IndexType, typename Comp>
 struct NlognRMQSeparateArrays : NlognRmqOps<NlognRMQSeparateArrays<T, IndexType, Comp>, Comp> {
     using Base = NlognRmqOps<NlognRMQSeparateArrays<T, IndexType, Comp>, Comp>;
@@ -107,6 +109,12 @@ struct NlognRMQSeparateArrays : NlognRmqOps<NlognRMQSeparateArrays<T, IndexType,
         this->init(values);
     }
 
+    explicit NlognRMQSeparateArrays(const std::vector<T>& values) : NlognRMQSeparateArrays(Span<const T>(values)) {
+    }
+
+    NlognRMQSeparateArrays(std::unique_ptr<T[]> ptr, Index length) : NlognRMQSeparateArrays(Span<const T>(ptr.get(), length)) {
+    }
+
     const T& operator[](Index i) const noexcept { return getArrayElement(i); }
 
 private:
@@ -125,9 +133,11 @@ template<typename T, typename IndexType, typename Comp>
 struct NlognRMQOneArray : NlognRmqOps<NlognRMQOneArray<T, IndexType, Comp>, Comp> {
     using Base = NlognRmqOps<NlognRMQOneArray<T, IndexType, Comp>, Comp>;
     friend Base;
-    std::unique_ptr<T[]> array = nullptr;
-    unsigned char* ADS_RESTRICT minima = nullptr;
+    Array<T> array = Array<T>();
+    View<IndexType> minima = View<IndexType>();
     Index length = 0;
+
+    static_assert(alignof(T) % alignof(IndexType) == 0);
 
     constexpr static const char name[] = "n log n space RMQ (1)";
 
@@ -136,33 +146,43 @@ struct NlognRMQOneArray : NlognRmqOps<NlognRMQOneArray<T, IndexType, Comp>, Comp
     NlognRMQOneArray(std::initializer_list<T> list) : NlognRMQOneArray(Span<const T>(list.begin(), list.end())) {}
 
     NlognRMQOneArray(Index length, CreateWithSizeTag) : array(makeUniqueForOverwrite<T>(completeSize(length))), length(length) {
-        minima = reinterpret_cast<unsigned char*>(array.get() + length);
+        minima = View<IndexType>(array.ptr.get() + length, completeSize(length) - length);
     }
 
     explicit NlognRMQOneArray(Span<const T> values) : NlognRMQOneArray(values.size(), CreateWithSizeTag{}) {
         this->init(values);
     }
 
+    explicit NlognRMQOneArray(const std::vector<T>& values) : NlognRMQOneArray(Span<const T>(values)) {
+    }
+
+    NlognRMQOneArray(std::unique_ptr<T[]> ptr, Index length) : NlognRMQOneArray(Span<const T>(ptr.get(), length)) {
+    }
+
     static Index completeSize(Index length) noexcept {
-        return length + minimaSize(length);
+        return length + roundUpDiv(minimaSize(length) * sizeof(IndexType), sizeof(T));
+    }
+
+    [[nodiscard]] Index sizeInBits() const noexcept {
+        return completeSize(length) * sizeof(T) * 8;
     }
 
     const T& operator[](Index i) const noexcept { return getArrayElement(i); }
 
     [[nodiscard]] Span<const T> values() const noexcept {
-        return Span<const T>(array.get(), this->size());
+        return Span<const T>(array.ptr.get(), this->size());
     }
 
 private:
-    T& getArrayElement(Index i) noexcept { return array[i]; }
-    const T& getArrayElement(Index i) const noexcept { return array[i]; }
+    T& getArrayElement(Index i) noexcept { return array.ptr[i]; }
+    const T& getArrayElement(Index i) const noexcept { return array.ptr[i]; }
 
 
     IndexType getMinimum(Index i) const noexcept {
-        return ptrBitCast<Index>(minima + i * sizeof(Index));
+        return minima[i];
     }
-    void setMinimum(Index i, const IndexType& value) const noexcept {
-        std::memcpy(minima + i * sizeof(T), &value, sizeof(T));
+    void setMinimum(Index i, const IndexType& value) noexcept {
+        minima.setBits(i, value);
     }
 };
 

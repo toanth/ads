@@ -30,7 +30,7 @@ class Bitvector : private Layout {
     Index numBits;
 
 public:
-    using Base::completeSizeInElems;
+    using Base::allocatedSizeInElems;
     using Base::getBit;
     using Base::getElem;
     using Base::numElems;
@@ -110,6 +110,10 @@ public:
         for (Index i = 0; i < numSuperblocks(); ++i) {
             buildRankMetadata(i);
         }
+    }
+
+    void buildMetadata() noexcept {
+        buildRankMetadata();
     }
 
     void buildSelectMetadata(Index) noexcept {
@@ -207,34 +211,9 @@ public:
         return Span<const Elem>(&getElemRef(superblockIdx * superblockSize()), size);
     }
 
-    //    /// \brief Set the element at \p elemIdx to \p value without updating rank or select information.
-    //    /// Note that the order of bits is reversed, see \f element.
-    //    void setElem(Index elemIdx, Elem value) noexcept {
-    //        assert(elemIdx >= 0 && elemIdx < numElems());
-    //        getElem(elemIdx) = value;
-    //    }
-    //
-    //    void setBit(Index bitIdx) noexcept {
-    //        assert(bitIdx >= 0 && bitIdx < numBits);
-    //        element
-    //    }
-    //
-    //    /// \brief Get the internal representation of the element number \p elemIdx.
-    //    /// Note that its bit are reversed compared to the logical order: The value of 1 means that the last bit is set, not the first.
-    //    /// \param elemIdx 0 based index of the internal element representation.
-    //    /// \return the element at the specified position.
-    //    [[nodiscard]] Elem element(Index elemIdx) const noexcept {
-    //        return getElem(elemIdx);
-    //    }
-    //
-    //    /// \brief return the bit with index \p bitIndex. \p bitIndex corresponds to the logical index, not
-    //    /// to the actual bit position, i.e. `element(0) & 1` is not the same as `bit(0)` but `bit(63)` instead.
-    //    /// \param bitIndex the logical bit index
-    //    /// \return true if the bit is set, false otherwise
-    //    // TODO: Fip order of bits? Measure
-    //    [[nodiscard]] bool bit(Index bitIndex) const noexcept {
-    //        return (element(bitIndex / 64) >> (63 - bitIndex % 64)) & 0x1;
-    //    }
+    [[nodiscard]] Index numAllocatedBits() const noexcept {
+        return allocatedSizeInElems() * sizeof(Elem) * 8;
+    }
 
     constexpr static auto getBitFunc = [](const auto& bv, Index i) -> bool {
         return bv.getBit(i);
@@ -294,7 +273,7 @@ bool operator!=(const Bitvector<L1>& lhs, const Bitvector<L2>& rhs) {
 #ifdef ADS_HAS_CPP20
 
 template<ADS_LAYOUT_CONCEPT L1, ADS_LAYOUT_CONCEPT L2>
-std : strong_ordering operator<=>(const Bitvector<L1>& lhs, const Bitvector<L2>& rhs) noexcept {
+std::strong_ordering operator<=>(const Bitvector<L1>& lhs, const Bitvector<L2>& rhs) noexcept {
     if (lhs.sizeInBits() != rhs.sizeInBits()) {
         return std::lexicographical_compare_three_way(lhs.bitView().begin(), lhs.bitView().end(), rhs.bitView().begin(), rhs.bitView().end());
     }

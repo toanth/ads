@@ -1,8 +1,10 @@
+cmake_minimum_required(VERSION 3.25)
+
 project(tests)
 
 include(FetchContent)
 set(FETCHCONTENT_QUIET off)
-get_filename_component(fc_base "../dependencies" REALPATH BASE_DIR "${CMAKE_BINARY_DIR}")
+get_filename_component(fc_base "${CMAKE_CURRENT_SOURCE_DIR}/../dependencies" REALPATH BASE_DIR "${CMAKE_BINARY_DIR}")
 set(FETCHCONTENT_BASE_DIR ${fc_base})
 
 FetchContent_Declare(

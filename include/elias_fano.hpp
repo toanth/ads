@@ -11,7 +11,7 @@ class EliasFano {
     Index numInts = 0;
     //    Index numLowerBitsPerNumber = 0;
     Index lowerBitMask;
-    Index completeSizeInBits;
+    Index allocatedSizeInBits;
     Bitvector<BitvecLayout> upper;
     BitStorage<dynSize> lower;// TODO: Change to BitView?
 
@@ -22,10 +22,10 @@ private:
         : numInts(numInts) {
         Index lowerBitsPerNumber = numBitsInNumber - Index(std::ceil(std::log2(numInts)));
         Index lowerSizeInElems = roundUpDiv(lowerBitsPerNumber * numInts, 8 * sizeof(Elem));
-        lower = BitStorage<dynSize>{makeUniqueForOverwrite<Elem>(lowerSizeInElems), lowerBitsPerNumber};
+        lower = BitStorage<dynSize>{makeUniqueForOverwrite<Elem>(lowerSizeInElems), {lowerBitsPerNumber}};
         lowerBitMask = (Number(1) << lowerBitsPerNumber) - 1;
         upper = Bitvector<BitvecLayout>(numInts + (1 << numUpperBitsPerNumber()) + 1);
-        completeSizeInBits = 8 * (sizeof(*this) + (lowerSizeInElems + upper.completeSizeInElems()) * sizeof(Elem));
+        allocatedSizeInBits = (lowerSizeInElems + upper.allocatedSizeInElems()) * sizeof(Elem) * 8;
     }
 
 
@@ -159,8 +159,8 @@ public:
         return numInts;
     }
 
-    [[nodiscard]] Index spaceInBits() const noexcept {
-        return completeSizeInBits;
+    [[nodiscard]] Index numAllocatedBits() const noexcept {
+        return allocatedSizeInBits;
     }
 
     [[nodiscard]] Index numUpperBitsPerNumber() const noexcept {

@@ -12,12 +12,12 @@ namespace ads {
 template<typename T>
 concept IsLayout = requires(T& t, const T& ct) {
     T();
-    T(Index);
+    T(Index());
     { T::superblockSize() } -> std::convertible_to<Index>;
     { T::blockSize() } -> std::convertible_to<Index>;
     { T::numBlocksInSuperblock() } -> std::convertible_to<Index>;
     { T::bytesPerBlockCount() } -> std::convertible_to<Index>;
-    { ct.completeSizeInElems() } -> std::convertible_to<Index>;
+    { ct.allocatedSizeInElems() } -> std::convertible_to<Index>;
     { ct.getElem(Index()) } -> std::convertible_to<const Elem&>;
     { ct.getSuperblockCount(Index()) } -> std::convertible_to<const Elem&>;
     t.setSuperblockCount(Index(), Elem());
@@ -26,14 +26,14 @@ concept IsLayout = requires(T& t, const T& ct) {
     { ct.numElems() } -> std::convertible_to<Index>;
     { ct.numBlocks() } -> std::convertible_to<Index>;
     { ct.numSuperblocks() } -> std::convertible_to<Index>;
-    { T::completeSizeInElems(Index()) } -> std::convertibele_to<Index>;
+    { T::allocatedSizeInElems(Index()) } -> std::convertible_to<Index>;
 };
 #define ADS_LAYOUT_CONCEPT IsLayout
 #else
 #define ADS_LAYOUT_CONCEPT class
 #endif
 
-template<ADS_LAYOUT_CONCEPT Layout, Index NumBits>
+template<typename Layout, Index NumBits>
 struct DefaultLayoutImpl : BitStorage<NumBits> {
 
     [[nodiscard]] constexpr const Layout& derived() const noexcept {
@@ -76,7 +76,7 @@ struct CacheEfficientLayout : DefaultLayoutImpl<CacheEfficientLayout, 8> {
     CacheEfficientLayout() noexcept : numElements(0) {}
 
     explicit CacheEfficientLayout(Index numElems) noexcept {
-        ptr = makeUniqueForOverwrite<Elem>(completeSizeInElems(numElems));
+        ptr = makeUniqueForOverwrite<Elem>(allocatedSizeInElems(numElems));
         numElements = numElems;
         // TODO: ensure that allocated memory is cache aligned
     }
@@ -93,8 +93,12 @@ struct CacheEfficientLayout : DefaultLayoutImpl<CacheEfficientLayout, 8> {
         return 1;
     }
 
-    static Index completeSizeInElems(Index numElements) noexcept {
+    static Index allocatedSizeInElems(Index numElements) noexcept {
         return roundUpDiv(numElements, 4) * ELEMS_PER_CACHELINE;
+    }
+
+    [[nodiscard]] Index allocatedSizeInElems() const noexcept {
+        return allocatedSizeInElems(numElems());
     }
 
     [[nodiscard]] Index numElems() const noexcept {
@@ -189,7 +193,7 @@ public:
 
     SimpleLayout() noexcept = default;
 
-    explicit SimpleLayout(Index numElements) : vec{makeUniqueForOverwrite<Elem>(completeSizeInElems(numElements))} {
+    explicit SimpleLayout(Index numElements) : vec{makeUniqueForOverwrite<Elem>(allocatedSizeInElems(numElements))} {
         superblocks = View<Elem>(vec.ptr.get() + numElements, numSuperblocks(numElements));
         blocks = BlocksView(superblocks.ptr + numSuperblocks(), numBlocks(numElements));
     }
@@ -208,11 +212,11 @@ public:
         return res;
     }
 
-    [[nodiscard]] Index completeSizeInElems() const noexcept {
-        return completeSizeInElems(numElems());
+    [[nodiscard]] Index allocatedSizeInElems() const noexcept {
+        return allocatedSizeInElems(numElems());
     }
 
-    [[nodiscard]] static Index completeSizeInElems(Index numElements) noexcept {
+    [[nodiscard]] static Index allocatedSizeInElems(Index numElements) noexcept {
         return numElements + blockSize() * numBlocks(numElements) + superblockSize() * numSuperblocks(numElements);
     }
 
@@ -260,9 +264,9 @@ public:
 };
 
 #ifdef ADS_HAS_CPP20
-static_assert(Layout<CacheEfficientLayout>);
-static_assert(Layout<NaiveLayout4ElemSuperblocks>);
-static_assert(Layout<NaiveLayout1024ElemSuperblocks>);
+static_assert(IsLayout<CacheEfficientLayout>);
+static_assert(IsLayout<SimpleLayout<>>);
+static_assert(IsLayout<SimpleLayout<4>>);
 #endif
 
 }// namespace ads

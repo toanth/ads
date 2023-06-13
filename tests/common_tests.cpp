@@ -39,13 +39,13 @@ TEST(RoundUpLog2, General) {
 
 
 TEST(Popcount, General) {
-    ASSERT_EQ(popcount(0), 0);
+    ASSERT_EQ(popcount(0u), 0);
     ASSERT_EQ(popcount(std::uint16_t(1)), 1);
     ASSERT_EQ(popcount(std::uint8_t(2)), 1);
-    ASSERT_EQ(popcount(3), 2);
-    ASSERT_EQ(popcount(255), 8);
-    ASSERT_EQ(popcount(256), 1);
-    ASSERT_EQ(popcount((1 << 16) - 12), 13);
+    ASSERT_EQ(popcount(3ul), 2);
+    ASSERT_EQ(popcount(std::uint8_t(255)), 8);
+    ASSERT_EQ(popcount(std::uint16_t(256)), 1);
+    ASSERT_EQ(popcount((1ull << 16) - 12), 13);
     ASSERT_EQ(popcount(Elem(-1)), 64);
     ASSERT_EQ(popcount(Elem(-2)), 63);
 }

@@ -19,6 +19,8 @@ struct RangeMinMaxTree {
     static_assert(BlockSize <= std::numeric_limits<T>::max() / 2);
     static_assert(BlockSize % 64 == 0);
 
+    using value_type = T;
+
     static constexpr Index blockSize = BlockSize;
 
     std::unique_ptr<T[]> rmmArr = nullptr;
@@ -230,7 +232,9 @@ struct RangeMinMaxTree {
 
 class SuccinctRMQ {
 
-    RangeMinMaxTree<> rmmTree = RangeMinMaxTree<>();
+    using RmmTree = RangeMinMaxTree<>;
+
+    RmmTree rmmTree = RmmTree();
     Index length = 0;
 
 public:
@@ -263,7 +267,7 @@ public:
         for (Index i = 0; i < dfuds.numSuperblocks(); ++i) {
             dfuds.buildRankMetadata(i);
         }
-        rmmTree = RangeMinMaxTree<>(std::move(dfuds));
+        rmmTree = RmmTree(std::move(dfuds));
     }
     template<typename T>
     SuccinctRMQ(std::unique_ptr<T> ptr, Index length) : SuccinctRMQ(Span<const T>(ptr.get(), length)) {}
@@ -295,7 +299,11 @@ public:
         return length;
     }
 
-    [[nodiscard]] const RangeMinMaxTree<>& getTree() const noexcept {
+    [[nodiscard]] Index sizeInBits() const noexcept {
+        return Index(rmmTree.size * sizeof(typename RmmTree ::value_type) * 8 + rmmTree.getBitvector().sizeInBits());
+    }
+
+    [[nodiscard]] const RmmTree& getTree() const noexcept {
         return rmmTree;
     }
 };
