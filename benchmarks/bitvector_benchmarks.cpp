@@ -4,6 +4,9 @@
 namespace bm = benchmark;
 using namespace ads;
 
+static void divideByNInPlot(bm::State& state) {
+    state.counters["perN"] = 1;
+}
 
 static void BM_BitvecAllocation(bm::State& state) {
     for (auto _ : state) {
@@ -12,6 +15,8 @@ static void BM_BitvecAllocation(bm::State& state) {
         bm::ClobberMemory();
     }
     state.counters["bits"] = double(Bitvector<>(state.range(0)).numAllocatedBits());
+    state.SetComplexityN(state.range(0));
+    divideByNInPlot(state);
 }
 
 static void BM_BitvecFillZero(bm::State& state) {
@@ -21,6 +26,8 @@ static void BM_BitvecFillZero(bm::State& state) {
         bm::ClobberMemory();
     }
     state.counters["bits"] = double(Bitvector<>(state.range(0)).numAllocatedBits());
+    state.SetComplexityN(state.range(0));
+    divideByNInPlot(state);
 }
 
 static void BM_BitvecFillOnes(bm::State& state) {
@@ -30,6 +37,8 @@ static void BM_BitvecFillOnes(bm::State& state) {
         bm::ClobberMemory();
     }
     state.counters["bits"] = double(Bitvector<>(state.range(0)).numAllocatedBits());
+    state.SetComplexityN(state.range(0));
+    divideByNInPlot(state);
 }
 
 constexpr Elem alternating = 0xaaaa'aaaa'aaaa'aaaaull;
@@ -41,6 +50,7 @@ static void BM_BitvecAlternatingOnesZerosRankLast(bm::State& state) {
         bm::DoNotOptimize(i);
     }
     state.counters["bits"] = double(bv.numAllocatedBits());
+    state.SetComplexityN(state.range(0));
 }
 
 static void BM_BitvecAlternatingOnesZerosSelectLast(bm::State& state) {
@@ -50,6 +60,7 @@ static void BM_BitvecAlternatingOnesZerosSelectLast(bm::State& state) {
         bm::DoNotOptimize(i);
     }
     state.counters["bits"] = double(bv.numAllocatedBits());
+    state.SetComplexityN(state.range(0));
 }
 
 static void BM_BitvecAlternatingOnesZerosSelectOneThird(bm::State& state) {
@@ -59,6 +70,7 @@ static void BM_BitvecAlternatingOnesZerosSelectOneThird(bm::State& state) {
         bm::DoNotOptimize(i);
     }
     state.counters["bits"] = double(bv.numAllocatedBits());
+    state.SetComplexityN(state.range(0));
 }
 
 static void BM_BitvecOnesThenZerosSelectFirstZero(bm::State& state) {
@@ -75,6 +87,7 @@ static void BM_BitvecOnesThenZerosSelectFirstZero(bm::State& state) {
         bm::DoNotOptimize(i);
     }
     state.counters["bits"] = double(bv.numAllocatedBits());
+    state.SetComplexityN(state.range(0));
 }
 
 static void BM_Bitvec4OnesThenZerosThenOnesSelectFifthOne(bm::State& state) {
@@ -93,13 +106,14 @@ static void BM_Bitvec4OnesThenZerosThenOnesSelectFifthOne(bm::State& state) {
         bm::DoNotOptimize(i);
     }
     state.counters["bits"] = double(bv.numAllocatedBits());
+    state.SetComplexityN(state.range(0));
 }
 
-BENCHMARK(BM_BitvecAllocation)->Range(1, Elem(1) << 34);
-BENCHMARK(BM_BitvecFillZero)->Range(1, Elem(1) << 34);
-BENCHMARK(BM_BitvecFillOnes)->Range(1, Elem(1) << 34);
-BENCHMARK(BM_BitvecAlternatingOnesZerosRankLast)->Range(1, Elem(1) << 34);
-BENCHMARK(BM_BitvecAlternatingOnesZerosSelectLast)->Range(1, Elem(1) << 34);
-BENCHMARK(BM_BitvecAlternatingOnesZerosSelectOneThird)->Range(1, Elem(1) << 34);
-BENCHMARK(BM_BitvecOnesThenZerosSelectFirstZero)->Range(1, Elem(1) << 34);
-BENCHMARK(BM_Bitvec4OnesThenZerosThenOnesSelectFifthOne)->Range(1, Elem(1) << 34);
+BENCHMARK(BM_BitvecAllocation)->Range(1, Elem(1) << 34)->Complexity(bm::oN);
+BENCHMARK(BM_BitvecFillZero)->Range(1, Elem(1) << 34)->Complexity(bm::oN);
+BENCHMARK(BM_BitvecFillOnes)->Range(1, Elem(1) << 34)->Complexity(bm::oN);
+BENCHMARK(BM_BitvecAlternatingOnesZerosRankLast)->Range(1, Elem(1) << 34)->Complexity(bm::o1);
+BENCHMARK(BM_BitvecAlternatingOnesZerosSelectLast)->Range(1, Elem(1) << 34)->Complexity(bm::oLogN);
+BENCHMARK(BM_BitvecAlternatingOnesZerosSelectOneThird)->Range(1, Elem(1) << 34)->Complexity(bm::oLogN);
+BENCHMARK(BM_BitvecOnesThenZerosSelectFirstZero)->Range(1, Elem(1) << 34)->Complexity(bm::oLogN);
+BENCHMARK(BM_Bitvec4OnesThenZerosThenOnesSelectFifthOne)->Range(1, Elem(1) << 34)->Complexity(bm::oLogN);

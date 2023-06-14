@@ -3,4 +3,4 @@ build/
 tests/lib/
 dependencies/
 */plots/
-*/benchmark_results.json
+*.json
