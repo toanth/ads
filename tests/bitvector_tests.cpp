@@ -3,7 +3,7 @@
 
 using namespace ads;
 
-//using TestLayout = CacheEfficientLayout;
+// using TestLayout = CacheEfficientLayout;
 using TestLayout = SimpleLayout<>;
 
 TEST(BitvectorConstruction, Sizes) {
@@ -16,7 +16,7 @@ TEST(BitvectorConstruction, Sizes) {
             bv = Bitvector<TestLayout>(i);
             ASSERT_EQ(bv.sizeInBits(), i);
             ASSERT_EQ(bv.bitView().size(), bv.sizeInBits());
-            ASSERT_GE(bv.sizeInElems(), (i + 63) / 64);// TODO: Make exact?
+            ASSERT_GE(bv.sizeInElems(), (i + 63) / 64); // TODO: Make exact?
             ASSERT_EQ(bv.elemView().size(), bv.sizeInElems());
             ASSERT_EQ(bv.numSuperblocks(), (bv.sizeInElems() + bv.superblockSize() - 1) / bv.superblockSize());
         }
@@ -24,6 +24,7 @@ TEST(BitvectorConstruction, Sizes) {
 
     Bitvector<TestLayout> bv("1");
     ASSERT_EQ(bv.numSuperblocks(), 1);
+    ASSERT_EQ(bv.numBlocks(), 1);
     ASSERT_EQ(bv.sizeInBits(), 1);
     ASSERT_EQ(bv.sizeInElems(), 1);
 
@@ -213,7 +214,7 @@ TEST(Bitvector, Random) {
     auto engine = createRandomEngine();
     auto dist = std::uniform_int_distribution<Index>(0, 400'000);
     std::string str(dist(engine), '0');
-    for (char& c: str) {
+    for (char& c : str) {
         if (dist(engine) & 1) {
             c = '1';
         }

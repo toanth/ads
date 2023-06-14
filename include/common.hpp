@@ -46,26 +46,26 @@ struct CreateWithSizeTag {};
 
 namespace detail {
 
-    template<typename T>
-    struct TypeIdentity {// std::type_identity is a C++20 feature
-        using Type = T;
-    };
+template<typename T>
+struct TypeIdentity { // std::type_identity is a C++20 feature
+    using Type = T;
+};
 
-    template<Index NumBytes>
-    struct IntTypeImpl : TypeIdentity<std::uint64_t> {
-        static_assert(NumBytes > 4 && NumBytes <= 8);
-    };
+template<Index NumBytes>
+struct IntTypeImpl : TypeIdentity<std::uint64_t> {
+    static_assert(NumBytes > 4 && NumBytes <= 8);
+};
 
-    template<>
-    struct IntTypeImpl<4> : TypeIdentity<std::uint32_t> {};
-    template<>
-    struct IntTypeImpl<3> : TypeIdentity<std::uint32_t> {};
-    template<>
-    struct IntTypeImpl<2> : TypeIdentity<std::uint16_t> {};
-    template<>
-    struct IntTypeImpl<1> : TypeIdentity<std::uint8_t> {};
+template<>
+struct IntTypeImpl<4> : TypeIdentity<std::uint32_t> {};
+template<>
+struct IntTypeImpl<3> : TypeIdentity<std::uint32_t> {};
+template<>
+struct IntTypeImpl<2> : TypeIdentity<std::uint16_t> {};
+template<>
+struct IntTypeImpl<1> : TypeIdentity<std::uint8_t> {};
 
-}// namespace detail
+} // namespace detail
 
 template<Index NumBytes>
 using IntType = typename detail::IntTypeImpl<NumBytes>::Type;
@@ -77,7 +77,7 @@ template<typename Dest>
 ADS_CPP20_CONSTEXPR Dest ptrBitCast(const unsigned char* src) noexcept {
 #ifdef ADS_HAS_CPP20
     using T = char[sizeof(Dest)];
-    return std::bit_cast<Dest>((T*) src);
+    return std::bit_cast<Dest>((T*)src);
 #else
     Dest res;
     std::memcpy(&res, src, sizeof(Dest));
@@ -88,7 +88,7 @@ ADS_CPP20_CONSTEXPR Dest ptrBitCast(const unsigned char* src) noexcept {
 
 constexpr Index roundUpDiv(Index divisor, Index quotient) noexcept {
     assert(divisor >= 0 && quotient > 0);
-    return (divisor + quotient - 1) / quotient;// hopefully, this function gets inlined and optimized (quotient is usually a power of 2)
+    return (divisor + quotient - 1) / quotient; // hopefully, this function gets inlined and optimized (quotient is usually a power of 2)
 }
 
 ADS_CONSTEVAL static Index bytesNeededForIndexing(Index numElements) noexcept {
@@ -96,7 +96,7 @@ ADS_CONSTEVAL static Index bytesNeededForIndexing(Index numElements) noexcept {
     return numElements <= 256 ? 1 : 1 + bytesNeededForIndexing(roundUpDiv(numElements, 256));
 }
 
-template<typename UnsignedInteger>// no concepts in C++17 :(
+template<typename UnsignedInteger> // no concepts in C++17 :(
 ADS_CPP20_CONSTEXPR Index log2(UnsignedInteger n) noexcept {
     static_assert(std::is_unsigned_v<UnsignedInteger>);
 #ifdef ADS_HAS_CPP20
@@ -120,9 +120,11 @@ ADS_CPP20_CONSTEXPR Index roundUpLog2(UnsignedInteger n) noexcept {
     if (std::has_single_bit(n)) {
         return log2(n);
     }
-    return log2(n) + 1;// TODO: Test if this is actually faster than the fallback, use for non-c++20 mode as well if faster
+    return log2(n) + 1; // TODO: Test if this is actually faster than the fallback, use for non-c++20 mode as well if faster
 #else
-    if (n <= 1) { return 0; }
+    if (n <= 1) {
+        return 0;
+    }
     return log2(UnsignedInteger(n - 1)) + 1;
 #endif
 }
@@ -139,10 +141,10 @@ ADS_CPP20_CONSTEXPR Index popcount(UnsignedInteger n) noexcept {
 #else
     using T = UnsignedInteger;
     // see https://stackoverflow.com/questions/3849337/msvc-equivalent-to-builtin-popcount/42913358#42913358
-    n = n - ((n >> 1) & (T) ~(T) 0 / 3);                              // temp
-    n = (n & (T) ~(T) 0 / 15 * 3) + ((n >> 2) & (T) ~(T) 0 / 15 * 3); // temp
-    n = (n + (n >> 4)) & (T) ~(T) 0 / 255 * 15;                       // temp
-    return (T) (n * ((T) ~(T) 0 / 255)) >> (sizeof(T) - 1) * CHAR_BIT;// count
+    n = n - ((n >> 1) & (T) ~(T)0 / 3);                              // temp
+    n = (n & (T) ~(T)0 / 15 * 3) + ((n >> 2) & (T) ~(T)0 / 15 * 3);  // temp
+    n = (n + (n >> 4)) & (T) ~(T)0 / 255 * 15;                       // temp
+    return (T)(n * ((T) ~(T)0 / 255)) >> (sizeof(T) - 1) * CHAR_BIT; // count
 #endif
 }
 
@@ -188,15 +190,11 @@ public:
     using value_type = T;
 
     constexpr Span() noexcept = default;
-    constexpr Span(T* ptr, Index size) noexcept : first(ptr), last(ptr + size) {
-        assert(size >= 0);
-    }
-    constexpr Span(T* first, T* last) noexcept : first(first), last(last) {
-        assert(size() >= 0);
-    }
+    constexpr Span(T* ptr, Index size) noexcept : first(ptr), last(ptr + size) { assert(size >= 0); }
+    constexpr Span(T* first, T* last) noexcept : first(first), last(last) { assert(size() >= 0); }
 
-    template<typename Container>                                // Don't even try to check that `Container` models contiguous_range in C++17
-    /*implicit*/ Span(Container& c) : Span(c.data(), c.size()) {// NOLINT(google-explicit-constructor)
+    template<typename Container> // Don't even try to check that `Container` models contiguous_range in C++17
+    /*implicit*/ Span(Container& c) : Span(c.data(), c.size()) { // NOLINT(google-explicit-constructor)
     }
 
     [[nodiscard]] constexpr Index size() const noexcept {
@@ -227,7 +225,7 @@ public:
             os << s[0];
         }
         if (s.size() > 0) {
-            for (const auto& val: Span(s.begin() + 1, s.end())) {
+            for (const auto& val : Span(s.begin() + 1, s.end())) {
                 os << ", " << val;
             }
         }
@@ -257,7 +255,9 @@ struct Subrange {
 template<typename T>
 std::unique_ptr<T[]> makeUniqueForOverwrite(Index size) noexcept {
     assert(size >= 0);
-    if (size == 0) { return nullptr; }
+    if (size == 0) {
+        return nullptr;
+    }
     return std::unique_ptr<T[]>(new std::remove_extent_t<T>[size]);
 }
 
@@ -275,6 +275,6 @@ std::unique_ptr<T[]> toUniquePtr(Span<const T> values) noexcept {
     return toUniquePtr(values, values.size());
 }
 
-}// namespace ads
+} // namespace ads
 
-#endif//ADS_COMMON_HPP
+#endif // ADS_COMMON_HPP

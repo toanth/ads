@@ -39,7 +39,7 @@ public:
     static void setBits(T* ADS_RESTRICT ptr, Index i, T value) noexcept {
         assert(i >= 0);
         assert(ptr);
-        if constexpr (sizeof(Underlying) == sizeof(T)) {// TODO: Look at code generation to see if these special cases actually help
+        if constexpr (sizeof(Underlying) == sizeof(T)) { // TODO: Look at code generation to see if these special cases actually help
             ptr[i] = value;
         } else if constexpr (sizeof(Underlying) * 2 == sizeof(T)) {
             ptr[i] = Underlying(value);
@@ -97,7 +97,7 @@ struct BitwiseAccess<dynSize, T> {
     [[nodiscard]] Elem getBits(const T* ADS_RESTRICT ptr, Index elemStartIndex, Index bitStartIndex) const noexcept {
         assert(elemStartIndex >= 0 && bitStartIndex >= 0 && bitStartIndex < bitsInT && numBits > 0 && numBits < bitsInT);
         assert(ptr);
-        T mask = (T(1) << numBits) - 1;// TODO: Make member?
+        T mask = (T(1) << numBits) - 1; // TODO: Make member?
         T r = (ptr[elemStartIndex] >> bitStartIndex) & mask;
         if (numBits + bitStartIndex > bitsInT) {
             Index remaining = numBits + bitStartIndex - bitsInT;
@@ -131,7 +131,7 @@ public:
     }
 
     void setBits(T* ADS_RESTRICT ptr, Index i, T value) const noexcept {
-        i *= numBits;// TODO: Does this get optimized when called in a loop? (ie i += numBits each iteration)
+        i *= numBits; // TODO: Does this get optimized when called in a loop? (ie i += numBits each iteration)
         setBits(ptr, i / bitsInT, i % bitsInT, value);
     }
 };
@@ -142,17 +142,11 @@ struct BitStorage {
     std::unique_ptr<T[]> ptr = nullptr;
     [[no_unique_address]] BitAccess bitAccess = BitAccess();
 
-    [[nodiscard]] Elem getBits(Index i) const noexcept {
-        return bitAccess.getBits(ptr.get(), i);
-    }
+    [[nodiscard]] Elem getBits(Index i) const noexcept { return bitAccess.getBits(ptr.get(), i); }
 
-    void setBits(Index i, Elem value) noexcept {
-        return bitAccess.setBits(ptr.get(), i, value);
-    }
+    void setBits(Index i, Elem value) noexcept { return bitAccess.setBits(ptr.get(), i, value); }
 
-    T operator[](Index i) const noexcept {
-        return getBits(i);
-    }
+    T operator[](Index i) const noexcept { return getBits(i); }
 };
 
 template<typename T>
@@ -177,22 +171,16 @@ struct BitView {
         std::uninitialized_value_construct_n(this->ptr, numT);
     }
 
-    [[nodiscard]] T getBits(Index i) const noexcept {
-        return bitAccess.getBits(ptr, i);
-    }
+    [[nodiscard]] T getBits(Index i) const noexcept { return bitAccess.getBits(ptr, i); }
 
-    void setBits(Index i, T value) noexcept {
-        return bitAccess.setBits(ptr, i, value);
-    }
+    void setBits(Index i, T value) noexcept { return bitAccess.setBits(ptr, i, value); }
 
-    T operator[](Index i) const noexcept {
-        return getBits(i);
-    }
+    T operator[](Index i) const noexcept { return getBits(i); }
 };
 
 template<typename T>
 using View = BitView<sizeof(T) * 8, T>;
 
-}// namespace ads
+} // namespace ads
 
-#endif//BITVECTOR_BIT_ACCESS_HPP
+#endif // BITVECTOR_BIT_ACCESS_HPP

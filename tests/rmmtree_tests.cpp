@@ -9,7 +9,7 @@ SuccinctRMQ randomRmq(Index length) {
     auto engine = createRandomEngine();
     auto dist = std::uniform_int_distribution<Index>();
     std::vector<Index> vec(length);
-    for (Index& v: vec) {
+    for (Index& v : vec) {
         v = dist(engine);
     }
     return SuccinctRMQ(vec);

@@ -1,5 +1,5 @@
 
-//#include "../include/cartesian_tree_rmq.hpp"
+// #include "../include/cartesian_tree_rmq.hpp"
 #include "../include/linear_space_rmq.hpp"
 #include "../include/naive_rmq.hpp"
 #include "../include/nlogn_rmq.hpp"
@@ -10,12 +10,10 @@ using namespace ads;
 
 
 template<ADS_RMQ_CONCEPT RmqType>
-class AllRmqsTest : public ::testing::Test {
-};
+class AllRmqsTest : public ::testing::Test {};
 
 template<ADS_RMQ_CONCEPT RmqType>
-class UsefulRmqsTest : public ::testing::Test {
-};
+class UsefulRmqsTest : public ::testing::Test {};
 
 using AllRmqTypes = ::testing::Types<NaiveRMQ<>, NlognRMQ<>, LinearSpaceRMQ<>, SuccinctRMQ>;
 TYPED_TEST_SUITE(AllRmqsTest, AllRmqTypes);
@@ -27,7 +25,7 @@ TYPED_TEST_SUITE(UsefulRmqsTest, UsefulRmqTypes);
 void fillWithRandomValues(std::vector<Elem>& v, Elem maxVal) {
     auto engine = createRandomEngine();
     std::uniform_int_distribution<Elem> dist(maxVal);
-    for (Elem& value: v) {
+    for (Elem& value : v) {
         value = dist(engine);
     }
 }
@@ -42,10 +40,9 @@ template<ADS_RMQ_CONCEPT TestRmq, ADS_RMQ_CONCEPT ReferenceRmq>
 void testQuery(const TestRmq& testRmq, const ReferenceRmq& referenceRmq, Index lower, Index upper) {
     Index testeeAnswer = testRmq(lower, upper);
     Index referenceAnswer = referenceRmq(lower, upper);
-    ASSERT_EQ(referenceRmq[testeeAnswer], referenceRmq[referenceAnswer]) << TestRmq::name
-                                                                         << ", answers (test/ref) " << testeeAnswer << " "
-                                                                         << referenceAnswer << ", interval " << lower
-                                                                         << " " << upper;
+    ASSERT_EQ(referenceRmq[testeeAnswer], referenceRmq[referenceAnswer])
+            << TestRmq::name << ", answers (test/ref) " << testeeAnswer << " " << referenceAnswer << ", interval "
+            << lower << " " << upper;
 }
 
 template<typename RMQ>
@@ -74,7 +71,9 @@ void testLargeRmq(std::vector<Elem> values) {
     for (Index i = 0; i < numIterations / 4; ++i) {
         Index l = idxDist(engine);
         Index u = idxDist(engine) % 7 + l + 1;
-        if (u >= values.size()) { continue; }
+        if (u >= values.size()) {
+            continue;
+        }
         testQuery(rmq, reference, l, u);
     }
 }
@@ -164,7 +163,7 @@ TYPED_TEST(AllRmqsTest, SuccinctBlockBorder) {
     }
     TypeParam rmq(vec);
     ASSERT_EQ(rmq(240, 260), 240);
-    for (Elem& v: vec) {
+    for (Elem& v : vec) {
         v = vec.back() - v;
     }
     rmq = TypeParam(vec);

@@ -7,13 +7,15 @@ namespace ads {
 
 ADS_CPP20_CONSTEXPR Index numLevels(Index length) noexcept {
     assert(length >= 0);
-    if (length <= 1) { return length; }
+    if (length <= 1) {
+        return length;
+    }
     return log2(Elem(length)) + 1;
 }
 
 ADS_CPP20_CONSTEXPR Index minimaSize(Index length) noexcept {
     Index levels = numLevels(length);
-    return length * levels;// TODO: Save some elements here?
+    return length * levels; // TODO: Save some elements here?
 }
 
 
@@ -77,9 +79,7 @@ public:
         return comp(derived().getArrayElement(leftMin), derived().getArrayElement(rightMin)) ? leftMin : rightMin;
     }
 
-    Index operator()(Index lower, Index upper) const {
-        return rmq(lower, upper);
-    }
+    Index operator()(Index lower, Index upper) const { return rmq(lower, upper); }
 
     [[nodiscard]] Index size() const noexcept { return derived().length; }
 
@@ -87,7 +87,7 @@ public:
 };
 
 
-//TODO: Use bitview etc, don't need two separate class templates
+// TODO: Use bitview etc, don't need two separate class templates
 template<typename T, typename IndexType, typename Comp>
 struct NlognRMQSeparateArrays : NlognRmqOps<NlognRMQSeparateArrays<T, IndexType, Comp>, Comp> {
     using Base = NlognRmqOps<NlognRMQSeparateArrays<T, IndexType, Comp>, Comp>;
@@ -103,17 +103,17 @@ struct NlognRMQSeparateArrays : NlognRmqOps<NlognRMQSeparateArrays<T, IndexType,
     NlognRMQSeparateArrays(std::initializer_list<T> list) : NlognRMQSeparateArrays(Span<const T>(list)) {}
 
     NlognRMQSeparateArrays(Index length, CreateWithSizeTag)
-        : array(makeUniqueForOverwrite<T>(length)), minima(makeUniqueForOverwrite<IndexType>(minimaSize(length))), length(length) {}
+        : array(makeUniqueForOverwrite<T>(length)), minima(makeUniqueForOverwrite<IndexType>(minimaSize(length))),
+          length(length) {}
 
     explicit NlognRMQSeparateArrays(Span<const T> values) : NlognRMQSeparateArrays(values.size(), CreateWithSizeTag{}) {
         this->init(values);
     }
 
-    explicit NlognRMQSeparateArrays(const std::vector<T>& values) : NlognRMQSeparateArrays(Span<const T>(values)) {
-    }
+    explicit NlognRMQSeparateArrays(const std::vector<T>& values) : NlognRMQSeparateArrays(Span<const T>(values)) {}
 
-    NlognRMQSeparateArrays(std::unique_ptr<T[]> ptr, Index length) : NlognRMQSeparateArrays(Span<const T>(ptr.get(), length)) {
-    }
+    NlognRMQSeparateArrays(std::unique_ptr<T[]> ptr, Index length)
+        : NlognRMQSeparateArrays(Span<const T>(ptr.get(), length)) {}
 
     const T& operator[](Index i) const noexcept { return getArrayElement(i); }
 
@@ -121,12 +121,8 @@ private:
     T& getArrayElement(Index i) noexcept { return array[i]; }
     const T& getArrayElement(Index i) const noexcept { return array[i]; }
 
-    [[nodiscard]] Index getMinimum(Index i) const noexcept {
-        return minima[i];
-    }
-    void setMinimum(Index i, const IndexType& value) const noexcept {
-        minima[i] = value;
-    }
+    [[nodiscard]] Index getMinimum(Index i) const noexcept { return minima[i]; }
+    void setMinimum(Index i, const IndexType& value) const noexcept { minima[i] = value; }
 };
 
 template<typename T, typename IndexType, typename Comp>
@@ -145,7 +141,8 @@ struct NlognRMQOneArray : NlognRmqOps<NlognRMQOneArray<T, IndexType, Comp>, Comp
 
     NlognRMQOneArray(std::initializer_list<T> list) : NlognRMQOneArray(Span<const T>(list.begin(), list.end())) {}
 
-    NlognRMQOneArray(Index length, CreateWithSizeTag) : array(makeUniqueForOverwrite<T>(completeSize(length))), length(length) {
+    NlognRMQOneArray(Index length, CreateWithSizeTag)
+        : array(makeUniqueForOverwrite<T>(completeSize(length))), length(length) {
         minima = View<IndexType>(array.ptr.get() + length, completeSize(length) - length);
     }
 
@@ -153,43 +150,34 @@ struct NlognRMQOneArray : NlognRmqOps<NlognRMQOneArray<T, IndexType, Comp>, Comp
         this->init(values);
     }
 
-    explicit NlognRMQOneArray(const std::vector<T>& values) : NlognRMQOneArray(Span<const T>(values)) {
-    }
+    explicit NlognRMQOneArray(const std::vector<T>& values) : NlognRMQOneArray(Span<const T>(values)) {}
 
-    NlognRMQOneArray(std::unique_ptr<T[]> ptr, Index length) : NlognRMQOneArray(Span<const T>(ptr.get(), length)) {
-    }
+    NlognRMQOneArray(std::unique_ptr<T[]> ptr, Index length) : NlognRMQOneArray(Span<const T>(ptr.get(), length)) {}
 
     static Index completeSize(Index length) noexcept {
         return length + roundUpDiv(minimaSize(length) * sizeof(IndexType), sizeof(T));
     }
 
-    [[nodiscard]] Index sizeInBits() const noexcept {
-        return completeSize(length) * sizeof(T) * 8;
-    }
+    [[nodiscard]] Index sizeInBits() const noexcept { return completeSize(length) * sizeof(T) * 8; }
 
     const T& operator[](Index i) const noexcept { return getArrayElement(i); }
 
-    [[nodiscard]] Span<const T> values() const noexcept {
-        return Span<const T>(array.ptr.get(), this->size());
-    }
+    [[nodiscard]] Span<const T> values() const noexcept { return Span<const T>(array.ptr.get(), this->size()); }
 
 private:
     T& getArrayElement(Index i) noexcept { return array.ptr[i]; }
     const T& getArrayElement(Index i) const noexcept { return array.ptr[i]; }
 
 
-    IndexType getMinimum(Index i) const noexcept {
-        return minima[i];
-    }
-    void setMinimum(Index i, const IndexType& value) noexcept {
-        minima.setBits(i, value);
-    }
+    IndexType getMinimum(Index i) const noexcept { return minima[i]; }
+    void setMinimum(Index i, const IndexType& value) noexcept { minima.setBits(i, value); }
 };
 
 template<typename T = Elem, typename IndexType = Index, typename Comp = std::less<>>
-using NlognRMQ = std::conditional_t<sizeof(T) == sizeof(IndexType), NlognRMQOneArray<T, IndexType, Comp>, NlognRMQSeparateArrays<T, IndexType, Comp>>;
+using NlognRMQ
+        = std::conditional_t<sizeof(T) == sizeof(IndexType), NlognRMQOneArray<T, IndexType, Comp>, NlognRMQSeparateArrays<T, IndexType, Comp>>;
 
 
-}// namespace ads
+} // namespace ads
 
-#endif//BITVECTOR_NLOGN_RMQ_HPP
+#endif // BITVECTOR_NLOGN_RMQ_HPP

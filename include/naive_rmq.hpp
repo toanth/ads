@@ -13,7 +13,7 @@ template<typename T>
 concept HasValueType = requires { typename T::value_type; };
 
 template<typename RmqType>
-struct RmqValueType : std::type_identity<Elem> {};// The succinct rmq doesn't have a value_type
+struct RmqValueType : std::type_identity<Elem> {}; // The succinct rmq doesn't have a value_type
 
 template<HasValueType RmqType>
 struct RmqValueType<RmqType> : std::type_identity<typename RmqType::value_type> {};
@@ -56,9 +56,7 @@ struct SimpleRMQ : std::vector<T> {
         return std::min_element(this->begin() + first, this->begin() + last, comp) - this->begin();
     }
 
-    [[nodiscard]] Index operator()(Index first, Index last) const noexcept {
-        return rmq(first, last);
-    }
+    [[nodiscard]] Index operator()(Index first, Index last) const noexcept { return rmq(first, last); }
 
     [[nodiscard]] Span<const T> values() const noexcept { return Span<const T>(*this); }
 
@@ -81,8 +79,8 @@ class NaiveRMQ {
         return numValues * (numValues + 1) / 2;
     }
 
-    NaiveRMQ(Index length, CreateWithSizeTag) : arr(makeUniqueForOverwrite<Index>(completeSize(length))), length(length) {
-    }
+    NaiveRMQ(Index length, CreateWithSizeTag)
+        : arr(makeUniqueForOverwrite<Index>(completeSize(length))), length(length) {}
 
     [[nodiscard]] Index arrIndex(Index first, Index last) const noexcept {
         assert(0 <= first && first < last && last <= length);
@@ -91,30 +89,23 @@ class NaiveRMQ {
         return n * (n + 1) / 2 + seqLen;
     }
 
-    [[nodiscard]] Index& minIdx(Index first, Index last) noexcept {
-        return arr[arrIndex(first, last)];
-    }
-    [[nodiscard]] Index minIdx(Index first, Index last) const noexcept {
-        return arr[arrIndex(first, last)];
-    }
-    [[nodiscard]] Index& minIdx(Index first) noexcept {
-        return minIdx(first, first + 1);
-    }
+    [[nodiscard]] Index& minIdx(Index first, Index last) noexcept { return arr[arrIndex(first, last)]; }
+    [[nodiscard]] Index minIdx(Index first, Index last) const noexcept { return arr[arrIndex(first, last)]; }
+    [[nodiscard]] Index& minIdx(Index first) noexcept { return minIdx(first, first + 1); }
 
 public:
     constexpr static const char name[] = "Naive RMQ";
     NaiveRMQ() = default;
 
-    template<typename Range, typename = std::void_t<decltype(maybe_ranges::begin(std::declval<Range&>()))>>// no concepts in C++17
-    explicit NaiveRMQ(const Range& values)
-        : NaiveRMQ(maybe_ranges::begin(values), maybe_ranges::end(values)) {
-    }
+    template<typename Range, typename = std::void_t<decltype(maybe_ranges::begin(std::declval<Range&>()))>> // no concepts in C++17
+    explicit NaiveRMQ(const Range& values) : NaiveRMQ(maybe_ranges::begin(values), maybe_ranges::end(values)) {}
 
     template<typename T>
     NaiveRMQ(std::initializer_list<T> list) : NaiveRMQ(list.begin(), list.end()) {}
 
     template<typename ForwardIter, typename Sentinel>
-    NaiveRMQ(ForwardIter beginIt, Sentinel endIt) noexcept : NaiveRMQ(maybe_ranges::distance(beginIt, endIt), CreateWithSizeTag{}) {
+    NaiveRMQ(ForwardIter beginIt, Sentinel endIt) noexcept
+        : NaiveRMQ(maybe_ranges::distance(beginIt, endIt), CreateWithSizeTag{}) {
         Index i = 0;
         std::vector<Elem> values(length);
         for (auto iter = beginIt; iter != endIt; ++iter, ++i) {
@@ -129,37 +120,23 @@ public:
         }
     }
 
-    [[nodiscard]] Index rmq(Index first, Index last) const noexcept {
-        return minIdx(first, last);
-    }
+    [[nodiscard]] Index rmq(Index first, Index last) const noexcept { return minIdx(first, last); }
 
-    [[nodiscard]] Index operator()(Index first, Index last) const noexcept {
-        return rmq(first, last);
-    }
+    [[nodiscard]] Index operator()(Index first, Index last) const noexcept { return rmq(first, last); }
 
-    [[nodiscard]] Index size() const noexcept {
-        return length;
-    }
+    [[nodiscard]] Index size() const noexcept { return length; }
 
-    [[nodiscard]] Index sizeInBits() const noexcept {
-        return completeSize(size()) * sizeof(Index) * 8;
-    }
+    [[nodiscard]] Index sizeInBits() const noexcept { return completeSize(size()) * sizeof(Index) * 8; }
 
-    constexpr static auto getValue = [](const NaiveRMQ& rmq, Index i) -> Index {
-        return rmq.minIdx(i, i + 1);
-    };
+    constexpr static auto getValue = [](const NaiveRMQ& rmq, Index i) -> Index { return rmq.minIdx(i, i + 1); };
 
     using ValueIter = RandAccessIter<NaiveRMQ, decltype(getValue)>;
 
-    [[nodiscard]] ValueIter valueIter(Index i) const {
-        return ValueIter(*this, getValue, i);
-    }
+    [[nodiscard]] ValueIter valueIter(Index i) const { return ValueIter(*this, getValue, i); }
 
-    [[nodiscard]] Subrange<ValueIter> values() const noexcept {
-        return {valueIter(0), valueIter(size())};
-    }
+    [[nodiscard]] Subrange<ValueIter> values() const noexcept { return {valueIter(0), valueIter(size())}; }
 };
 
-}// namespace ads
+} // namespace ads
 
-#endif//BITVECTOR_NAIVE_RMQ_HPP
+#endif // BITVECTOR_NAIVE_RMQ_HPP

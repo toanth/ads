@@ -21,7 +21,7 @@ concept IsLayout = requires(T& t, const T& ct) {
     { ct.getElem(Index()) } -> std::convertible_to<const Elem&>;
     { ct.getSuperblockCount(Index()) } -> std::convertible_to<const Elem&>;
     t.setSuperblockCount(Index(), Elem());
-    { ct.getBlockCount(Index(), Index()) } -> std::convertible_to<Index>;
+    { ct.getBlockCount(Index()) } -> std::convertible_to<Index>;
     t.setBlockCount(Index(), Index(), Index());
     { ct.numElems() } -> std::convertible_to<Index>;
     { ct.numBlocks() } -> std::convertible_to<Index>;
@@ -36,9 +36,7 @@ concept IsLayout = requires(T& t, const T& ct) {
 template<typename Layout, Index NumBits>
 struct DefaultLayoutImpl : BitStorage<NumBits> {
 
-    [[nodiscard]] constexpr const Layout& derived() const noexcept {
-        return static_cast<const Layout&>(*this);
-    }
+    [[nodiscard]] constexpr const Layout& derived() const noexcept { return static_cast<const Layout&>(*this); }
 
     [[nodiscard]] constexpr static Index numBlocks(Index numElems) noexcept {
         return roundUpDiv(numElems, Layout::blockSize());
@@ -81,33 +79,24 @@ struct CacheEfficientLayout : DefaultLayoutImpl<CacheEfficientLayout, 8> {
         // TODO: ensure that allocated memory is cache aligned
     }
 
-    constexpr static Index superblockSize() noexcept {
-        return 4;
-    }
+    constexpr static Index superblockSize() noexcept { return 4; }
 
-    constexpr static Index blockSize() noexcept {
-        return 1;
-    }
+    constexpr static Index blockSize() noexcept { return 1; }
 
-    constexpr static Index bytesPerBlockCount() noexcept {
-        return 1;
-    }
+    constexpr static Index bytesPerBlockCount() noexcept { return 1; }
 
     static Index allocatedSizeInElems(Index numElements) noexcept {
         return roundUpDiv(numElements, 4) * ELEMS_PER_CACHELINE;
     }
 
-    [[nodiscard]] Index allocatedSizeInElems() const noexcept {
-        return allocatedSizeInElems(numElems());
-    }
+    [[nodiscard]] Index allocatedSizeInElems() const noexcept { return allocatedSizeInElems(numElems()); }
 
-    [[nodiscard]] Index numElems() const noexcept {
-        return numElements;
-    }
+    [[nodiscard]] Index numElems() const noexcept { return numElements; }
 
     static Index getElemIdx(Index i) noexcept {
         assert(i >= 0);
-        return (i / superblockSize()) * (ELEMS_PER_CACHELINE) + i % superblockSize();// TODO: Make sure this gets optimized to bitshifts (possibly negative i may interfere)
+        return (i / superblockSize()) * (ELEMS_PER_CACHELINE)
+               + i % superblockSize(); // TODO: Make sure this gets optimized to bitshifts (possibly negative i may interfere)
     }
 
     [[nodiscard]] Elem& getElem(Index i) noexcept {
@@ -134,9 +123,7 @@ struct CacheEfficientLayout : DefaultLayoutImpl<CacheEfficientLayout, 8> {
         return BitwiseAccess<1>::getBits(&v, i % 64);
     }
 
-    void setBit(Index i, bool value) noexcept {
-        BitwiseAccess<1>::setBits(&getElemRef(i / 64), i % 64, value);
-    }
+    void setBit(Index i, bool value) noexcept { BitwiseAccess<1>::setBits(&getElemRef(i / 64), i % 64, value); }
 
     static Index getSuperblockCountIdx(Index superblockIdx) noexcept {
         assert(superblockIdx >= 0);
@@ -153,13 +140,16 @@ struct CacheEfficientLayout : DefaultLayoutImpl<CacheEfficientLayout, 8> {
         ptr[getSuperblockCountIdx(superblockIdx)] = count;
     }
 
-    [[nodiscard]] Index getBlockCount(Index superblockIdx, Index blockIdx) const noexcept {
-        assert(superblockIdx >= 0 && superblockIdx < numSuperblocks() && blockIdx >= 0 && blockIdx < numBlocks());
-        return (Index) BitwiseAccess<8>::getBits(ptr.get(), getSuperblockCount(superblockIdx) + 1, blockIdx);
+    [[nodiscard]] Index getBlockCount(Index blockIdx) const noexcept {
+        Index superblockIdx = blockIdx / numBlocksInSuperblock();
+        blockIdx %= numBlocksInSuperblock();
+        assert(superblockIdx >= 0 && superblockIdx < numSuperblocks());
+        return (Index)BitwiseAccess<8>::getBits(ptr.get(), getSuperblockCount(superblockIdx) + 1, blockIdx);
     }
 
-    void setBlockCount(Index superblockIdx, Index blockIdx, std::uint8_t value) noexcept {
+    void setBlockCount(Index superblockIdx, Index blockIdx, Index value) noexcept {
         assert(superblockIdx >= 0 && superblockIdx < numSuperblocks() && blockIdx >= 0 && blockIdx < numBlocks());
+        assert(value >= 0);
         Index i = getSuperblockCountIdx(superblockIdx) + 1;
         BitwiseAccess<8>::setBits(ptr.get(), i, blockIdx, value);
     }
@@ -168,24 +158,21 @@ struct CacheEfficientLayout : DefaultLayoutImpl<CacheEfficientLayout, 8> {
 
 /// TODO: Doxygen
 // TODO: Test with other block sizes, fix bugs
-template<Index SuperblockSize = (1 << 16) / 64, Index BlockSize = 1>// TODO: Increase block size
+template<Index SuperblockSize = (1 << 16) / 64, Index BlockSize = 8>
 struct SimpleLayout : DefaultLayoutImpl<SimpleLayout<SuperblockSize, BlockSize>, BlockSize * 8> {
 
     static_assert(0 < BlockSize && 0 < SuperblockSize && SuperblockSize % BlockSize == 0);
 
 private:
-    ADS_CONSTEVAL static Index numBytesOfBlockCount() noexcept {
-        return bytesNeededForIndexing(SuperblockSize);
-    }
+    ADS_CONSTEVAL static Index numBytesOfBlockCount() noexcept { return bytesNeededForIndexing(SuperblockSize * 64); }
 
 public:
     using Base = DefaultLayoutImpl<SimpleLayout<SuperblockSize, BlockSize>, BlockSize * 8>;
-    using BlocksView = View<IntType<numBytesOfBlockCount()>>;
+    using BlockCount = IntType<numBytesOfBlockCount()>;
+    using BlocksView = View<BlockCount>;
     Array<Elem> vec;
     View<Elem> superblocks;
     BlocksView blocks;
-    //    Elem* ADS_RESTRICT superblocks = nullptr;
-    //    unsigned char* ADS_RESTRICT blocks = nullptr;// examining the object representation is only valid through unsigned char* or std::byte*
 
     using Base::numBlocks;
     using Base::numBlocksInSuperblock;
@@ -198,77 +185,56 @@ public:
         blocks = BlocksView(superblocks.ptr + numSuperblocks(), numBlocks(numElements));
     }
 
-    [[nodiscard]] constexpr static Index superblockSize() noexcept {
-        return SuperblockSize;
-    }
+    [[nodiscard]] constexpr static Index superblockSize() noexcept { return SuperblockSize; }
 
-    [[nodiscard]] constexpr static Index blockSize() noexcept {
-        return BlockSize;
-    }
+    [[nodiscard]] constexpr static Index blockSize() noexcept { return BlockSize; }
 
     // TODO: Move to base class?
     [[nodiscard]] constexpr static Index bytesPerBlockCount() noexcept {
-        constexpr Index res = numBytesOfBlockCount(numBlocksInSuperblock());// force compile time evaluation in C++17 mode
+        constexpr Index res = numBytesOfBlockCount(numBlocksInSuperblock()); // force compile time evaluation in C++17 mode
         return res;
     }
 
-    [[nodiscard]] Index allocatedSizeInElems() const noexcept {
-        return allocatedSizeInElems(numElems());
-    }
+    [[nodiscard]] Index allocatedSizeInElems() const noexcept { return allocatedSizeInElems(numElems()); }
 
     [[nodiscard]] static Index allocatedSizeInElems(Index numElements) noexcept {
-        return numElements + blockSize() * numBlocks(numElements) + superblockSize() * numSuperblocks(numElements);
+        static_assert(sizeof(Elem) % sizeof(BlockCount) == 0);
+        return numElements + blockSize() * numBlocks(numElements) * roundUpDiv(sizeof(Elem), sizeof(BlockCount))
+               + superblockSize() * numSuperblocks(numElements);
     }
 
-    [[nodiscard]] bool getBit(Index i) const noexcept {
-        return bool(BitwiseAccess<1>::getBits(vec.ptr.get(), i));
-    }
+    [[nodiscard]] bool getBit(Index i) const noexcept { return bool(BitwiseAccess<1>::getBits(vec.ptr.get(), i)); }
 
-    void setBit(Index i, bool value) noexcept {
-        BitwiseAccess<1>::setBits(vec.ptr.get(), i, value);
-    }
+    void setBit(Index i, bool value) noexcept { BitwiseAccess<1>::setBits(vec.ptr.get(), i, value); }
 
-    [[nodiscard]] Elem& getElemRef(Index i) noexcept {
-        return vec.bitAccess.getRef(vec.ptr.get(), i);
-    }
+    [[nodiscard]] Elem& getElemRef(Index i) noexcept { return vec.bitAccess.getRef(vec.ptr.get(), i); }
 
-    [[nodiscard]] Elem getElem(Index i) const noexcept {
-        return vec[i];
-    }
+    [[nodiscard]] Elem getElem(Index i) const noexcept { return vec[i]; }
 
-    void setElem(Index i, Elem value) noexcept {
-        vec.setBits(i, value);
-    }
+    void setElem(Index i, Elem value) noexcept { vec.setBits(i, value); }
 
-    [[nodiscard]] Elem getSuperblockCount(Index i) const noexcept {
-        return superblocks[i];
-    }
+    [[nodiscard]] Elem getSuperblockCount(Index i) const noexcept { return superblocks[i]; }
 
-    void setSuperblockCount(Index i, Elem value) noexcept {
-        superblocks.setBits(i, value);
-    }
+    void setSuperblockCount(Index i, Elem value) noexcept { superblocks.setBits(i, value); }
 
-    [[nodiscard]] Index getBlockCount(Index superblockIdx, Index blockIdx) const noexcept {
-        Index idx = superblockIdx * numBlocksInSuperblock() + blockIdx;
-        return blocks[idx];
-    }
+    [[nodiscard]] Index getBlockCount(Index blockIdx) const noexcept { return blocks[blockIdx]; }
 
     void setBlockCount(Index superblockIdx, Index blockIdx, Index value) noexcept {
+        assert(superblockIdx >= 0 && superblockIdx < numSuperblocks() && blockIdx >= 0 && blockIdx < numBlocksInSuperblock());
+        assert(value >= 0);
         Index idx = superblockIdx * numBlocksInSuperblock() + blockIdx;
         blocks.setBits(idx, value);
     }
 
-    [[nodiscard]] Index numElems() const noexcept {
-        return superblocks.ptr - vec.ptr.get();
-    }
+    [[nodiscard]] Index numElems() const noexcept { return superblocks.ptr - vec.ptr.get(); }
 };
 
 #ifdef ADS_HAS_CPP20
 static_assert(IsLayout<CacheEfficientLayout>);
 static_assert(IsLayout<SimpleLayout<>>);
-static_assert(IsLayout<SimpleLayout<4>>);
+static_assert(IsLayout<SimpleLayout<16>>);
 #endif
 
-}// namespace ads
+} // namespace ads
 
-#endif//BITVECTOR_BITVEC_LAYOUTS_HPP
+#endif // BITVECTOR_BITVEC_LAYOUTS_HPP

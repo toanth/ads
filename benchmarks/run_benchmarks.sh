@@ -8,6 +8,7 @@ Usage: $0 [options] | $0 [options] -- [binary options]
 Run benchmarks with the given options.
 Options include:
 
+-o | --output-file: The name of the JSON output file. Defaults to benchmark_results.json.
 -b | --binary:      Path to the binary to execute. Defaults to "../build/Release/benchmarks/benchmarks".
 -c | --change-environment:  Temporarily change system settings to decrease measurement
                     variance similarly to ./setupTestEnv, which requires root privileges. To be used with caution.
@@ -31,8 +32,8 @@ if [[ $? -ne 4 ]]; then
     echo "getopt didn't work"
 fi
 
-LONGOPTS=binary:,change-environment,quick
-OPTIONS=b:.c,q
+LONGOPTS=output-file:,binary:,change-environment,quick
+OPTIONS=o:,b:,c,q
 
 PARSED="$(getopt --options=$OPTIONS --longoptions=$LONGOPTS --name "$0" -- "$@")"
 if [[ $? -ne 0 ]]; then
@@ -45,6 +46,7 @@ eval set -- "$PARSED"
 
 sudoChanges=0
 quick=0
+outputFile=benchmark_results.json
 binPath="../build/Release/benchmarks/benchmarks"
 
 moreThan4Cores=0 # if there are more than 4 logical CPUs, reserve 2 for benchmarking and turn off their SMT siblings
@@ -54,7 +56,11 @@ fi
 
 while true; do
     case "$1" in
-    --binary|-b)
+        --output-file|-o)
+          outputFile="$2"
+          shift 2
+          ;;
+        --binary|-b)
           binPath="$2"
           shift 2
           ;;
@@ -128,8 +134,7 @@ runBenchmark() {
 }
 
 export CLICOLOR_FORCE=1
-benchmarkResFile="benchmark_results.json"
-benchmarkOpts="$@ $binFlags --benchmark_out=$benchmarkResFile --benchmark_out_format=json --benchmark_counters_tabular=true"
+benchmarkOpts="$@ $binFlags --benchmark_out=$outputFile --benchmark_out_format=json --benchmark_counters_tabular=true"
 if [[ $quick == 0 ]]; then
     benchmarkOpts="$benchmarkOpts --benchmark_repetitions=3 --benchmark_report_aggregates_only=true"
 fi

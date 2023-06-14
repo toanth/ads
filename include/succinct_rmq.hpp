@@ -14,7 +14,7 @@ namespace ads {
 constexpr static bool openParen = true;
 constexpr static bool closeParen = false;
 
-template<typename T = Elem, Index BlockSize = 512>// TODO: Make sure the bitvector allocates cacheline-aligned
+template<typename T = Elem, Index BlockSize = 512> // TODO: Make sure the bitvector allocates cacheline-aligned
 struct RangeMinMaxTree {
     static_assert(BlockSize <= std::numeric_limits<T>::max() / 2);
     static_assert(BlockSize % 64 == 0);
@@ -30,9 +30,7 @@ struct RangeMinMaxTree {
 
     RangeMinMaxTree() = default;
 
-    [[nodiscard]] Index leafIdxInArr(Index leafNum) const noexcept {
-        return size - numLeaves + leafNum;
-    }
+    [[nodiscard]] Index leafIdxInArr(Index leafNum) const noexcept { return size - numLeaves + leafNum; }
 
     /// The reverse of leafIdxInArr
     [[nodiscard]] Index leafNum(Index leafIdxInArr) const noexcept {
@@ -40,18 +38,18 @@ struct RangeMinMaxTree {
         return leafIdxInArr - (size - numLeaves);
     }
 
-    [[nodiscard]] bool isRightChild(Index node) const noexcept {
-        return node % 2 == 1;
-    }
+    [[nodiscard]] bool isRightChild(Index node) const noexcept { return node % 2 == 1; }
 
-    // TODO: Different implementation: Store for each leaf the position of its minimum and the minimum excess in block (>= -2^BlockLength, <= 2^BlockLength),
-    // which can be done with 16 bits per leaf if the block size is no greater than 256 (min. excess in block can be relative to next block to keep numbers small).
-    // Implement and measure if faster (for the same block size, this additionally uses 16 bits per leaf, which is roughly 8 bits per node but may cause cache misses)
+    // TODO: Different implementation: Store for each leaf the position of its minimum and the minimum excess in block
+    // (>= -2^BlockLength, <= 2^BlockLength), which can be done with 16 bits per leaf if the block size is no greater
+    // than 256 (min. excess in block can be relative to next block to keep numbers small). Implement and measure if
+    // faster (for the same block size, this additionally uses 16 bits per leaf, which is roughly 8 bits per node but
+    // may cause cache misses)
 
     explicit RangeMinMaxTree(Bitvector<>&& bitvector) noexcept : bv(std::move(bitvector)) {
         numLeaves = roundUpDiv(bv.sizeInBits(), BlockSize);
         assert(numLeaves > 0);
-        size = numLeaves + (Elem(1) << roundUpLog2(Elem(numLeaves)));// the missing -1 makes this a 1-indexed heap
+        size = numLeaves + (Elem(1) << roundUpLog2(Elem(numLeaves))); // the missing -1 makes this a 1-indexed heap
         assert(leafIdxInArr(0) % 2 == 0 || leafIdxInArr(0) == 1);
         rmmArr = makeUniqueForOverwrite<T>(size);
         Index minExcessInBlock = 1;
@@ -67,7 +65,7 @@ struct RangeMinMaxTree {
                 minExcessInBlock = excess + 1;
             }
             bool bit = bv.getBit(i);
-            if (bit == openParen) {// TODO: There's probably a better way to do this than to read each bit individually - read bytes and use lookup table?
+            if (bit == openParen) { // TODO: There's probably a better way to do this than to read each bit individually - read bytes and use lookup table?
                 ++excess;
             } else {
                 --excess;
@@ -88,9 +86,13 @@ struct RangeMinMaxTree {
     void printTree() const {
         std::cout << " tree stored in array with " << size << " values, " << numLeaves << " leaves:" << std::endl;
         for (Index i = 1; i < this->size; ++i) {
-            if (i == this->leafIdxInArr(0)) { std::cout << "(leafs) "; }
+            if (i == this->leafIdxInArr(0)) {
+                std::cout << "(leafs) ";
+            }
             std::cout << this->rmmArr[i] << " ";
-            if (this->isRightChild(i)) { std::cout << ' '; }
+            if (this->isRightChild(i)) {
+                std::cout << ' ';
+            }
             if ((i & (i + 1)) == 0) {
                 std::cout << std::endl;
             }
@@ -106,14 +108,16 @@ struct RangeMinMaxTree {
     static constexpr MinRes noRes = {std::numeric_limits<Index>::max(), std::numeric_limits<Index>::max()};
 
     MinRes findMinInBlockImpl(Index lower, Index upper, Index& excessSoFar) const noexcept {
-        if (lower == upper) { return noRes; }
+        if (lower == upper) {
+            return noRes;
+        }
         Index excess = excessSoFar;
         Index minExcess = excess + 1;
         Index minPos = lower;
         for (Index i = lower; i < upper; ++i) {
             if (bv.getBit(i) == openParen) {
                 ++excess;
-            } else if (--excess < minExcess) {// choose leftmost index
+            } else if (--excess < minExcess) { // choose leftmost index
                 minExcess = excess;
                 minPos = i;
             }
@@ -191,7 +195,7 @@ struct RangeMinMaxTree {
             }
             v /= 2;
         }
-        Index minPos = rmmArr[rightMinPos] < rmmArr[leftMinPos] ? rightMinPos : leftMinPos;// choose left on ties
+        Index minPos = rmmArr[rightMinPos] < rmmArr[leftMinPos] ? rightMinPos : leftMinPos; // choose left on ties
         while (minPos < lower) {
             minPos *= 2;
             assert(minPos <= upper);
@@ -216,15 +220,13 @@ struct RangeMinMaxTree {
         assert((lowerCandidate.pos >= lower && lowerCandidate.pos < upper) || lowerCandidate.pos == noRes.pos);
         MinRes treeCandidate = findMinInTree(nextLowerBlockIdx, prevUpperBlockIdx);
         assert((treeCandidate.pos >= lower && treeCandidate.pos < upper) || treeCandidate.pos == noRes.pos);
-        MinRes lowerOrTreeCandidate = treeCandidate.minExcess < lowerCandidate.minExcess ? treeCandidate : lowerCandidate;// take lower when tied
+        MinRes lowerOrTreeCandidate = treeCandidate.minExcess < lowerCandidate.minExcess ? treeCandidate : lowerCandidate; // take lower when tied
         MinRes upperCandidate = findMinInBlock(prevUpperBlockIdx * BlockSize, upper);
         assert((upperCandidate.pos >= lower && upperCandidate.pos < upper) || upperCandidate.pos == noRes.pos);
-        return upperCandidate.minExcess < lowerOrTreeCandidate.minExcess ? upperCandidate : lowerOrTreeCandidate;// don't take upper when tied
+        return upperCandidate.minExcess < lowerOrTreeCandidate.minExcess ? upperCandidate : lowerOrTreeCandidate; // don't take upper when tied
     }
 
-    [[nodiscard]] Index bitvecRmq(Index lower, Index upper) const noexcept {
-        return rmqImpl(lower, upper).pos;
-    }
+    [[nodiscard]] Index bitvecRmq(Index lower, Index upper) const noexcept { return rmqImpl(lower, upper).pos; }
 
     [[nodiscard]] const Bitvector<>& getBitvector() const noexcept { return bv; }
 };
@@ -276,7 +278,9 @@ public:
 
     [[nodiscard]] Index rmq(Index lower, Index upper) const noexcept {
         assert(lower < upper);
-        if (lower + 1 == upper) { return lower; }
+        if (lower + 1 == upper) {
+            return lower;
+        }
         const Bitvector<>& dfuds = rmmTree.getBitvector();
         Index x = dfuds.select<closeParen>(lower);
         Index y = dfuds.select<closeParen>(upper - 1) + 1;
@@ -291,23 +295,17 @@ public:
         return dfuds.rank<closeParen>(w);
     }
 
-    [[nodiscard]] Index operator()(Index lower, Index upper) const noexcept {
-        return rmq(lower, upper);
-    }
+    [[nodiscard]] Index operator()(Index lower, Index upper) const noexcept { return rmq(lower, upper); }
 
-    [[nodiscard]] Index size() const noexcept {
-        return length;
-    }
+    [[nodiscard]] Index size() const noexcept { return length; }
 
     [[nodiscard]] Index sizeInBits() const noexcept {
         return Index(rmmTree.size * sizeof(typename RmmTree ::value_type) * 8 + rmmTree.getBitvector().sizeInBits());
     }
 
-    [[nodiscard]] const RmmTree& getTree() const noexcept {
-        return rmmTree;
-    }
+    [[nodiscard]] const RmmTree& getTree() const noexcept { return rmmTree; }
 };
 
-}// namespace ads
+} // namespace ads
 
-#endif//BITVECTOR_SUCCINCT_RMQ_HPP
+#endif // BITVECTOR_SUCCINCT_RMQ_HPP

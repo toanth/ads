@@ -75,7 +75,7 @@ TEST(EliasFano, ConstructionRandom) {
     std::mt19937_64 engine(createRandomEngine());
     std::uniform_int_distribution<Elem> dist;
     std::vector<Elem> elems(dist(engine) & ((1 << 16) - 1));
-    for (auto& elem: elems) {
+    for (auto& elem : elems) {
         elem = dist(engine);
     }
     std::sort(elems.begin(), elems.end());
@@ -119,7 +119,9 @@ TEST(EliasFano, PredecessorRandom) {
     for (Index i = 0; i < 10'000; ++i) {
         Elem searched = dist(engine);
         auto iter = std::upper_bound(vec.begin(), vec.end(), searched);
-        if (iter == vec.begin()) { continue; }
+        if (iter == vec.begin()) {
+            continue;
+        }
         Elem pred = *(iter - 1);
         ASSERT_EQ(pred, ef.predecessor(searched));
     }
@@ -137,7 +139,9 @@ TEST(EliasFano, SuccessorRandom) {
     for (Index i = 0; i < 10'000; ++i) {
         Elem searched = dist(engine);
         auto iter = std::lower_bound(vec.begin(), vec.end(), searched);
-        if (iter == vec.end()) { continue; }
+        if (iter == vec.end()) {
+            continue;
+        }
         Elem suc = *iter;
         ASSERT_EQ(suc, ef.successor(searched));
     }

@@ -13,7 +13,7 @@ struct NLogNBlockRmq : NlognRmqOps<NLogNBlockRmq<T, BlockSize, InBlockIdx, Block
     Index length = 0;
     const T* values = nullptr;
     InBlockIdx* minimumInBlock = nullptr;
-    std::unique_ptr<BlockNumIdx[]> minima = nullptr;// TODO: Use shared allocation? Measure
+    std::unique_ptr<BlockNumIdx[]> minima = nullptr; // TODO: Use shared allocation? Measure
 
     NLogNBlockRmq() = default;
 
@@ -28,28 +28,20 @@ struct NLogNBlockRmq : NlognRmqOps<NLogNBlockRmq<T, BlockSize, InBlockIdx, Block
     //    [[nodiscard]] T& getArrayElement(Index i) noexcept { return values[minimumInBlock[i]]; }
     [[nodiscard]] const T& getArrayElement(Index i) const noexcept { return values[i * BlockSize + minimumInBlock[i]]; }
 
-    [[nodiscard]] Index getMinimum(Index i) const noexcept {
-        return minima[i];
-    }
-    void setMinimum(Index i, BlockNumIdx value) const noexcept {
-        minima[i] = value;
-    }
+    [[nodiscard]] Index getMinimum(Index i) const noexcept { return minima[i]; }
+    void setMinimum(Index i, BlockNumIdx value) const noexcept { minima[i] = value; }
 };
 
 // TODO: Don't copy values from an rvalue input vector into the RMQ struct, applies to all RMQ variants.
 /// \brief Answers range minimum queries in "constant" time after linear preprocessing time while using linear space.
-/// Additionally divides blocks into subblocks to answer in-block queries somewhat efficiently while not using too much space.
-/// With the default template parameters, this class can only store arays of 2^48 elements, although that is easy to change
-/// by setting BlockNumIdx to std::uint64_y.
-/// \tparam T
-/// \tparam BlockSize
-/// \tparam InBlockIdx
-/// \tparam BlockNumIdx
-/// \tparam Comp
-//template<typename T = Elem, Index BlockSize = 1 << 16, typename BlockNumIdx = std::uint32_t,
-//         Index SubBlockSize = 1 << 8, typename Comp = std::less<>>
-template<typename T = Elem, Index BlockSize = 1 << 8, typename BlockNumIdx = std::uint64_t,
-         Index SubBlockSize = 1 << 3, typename Comp = std::less<>, bool SubBlockStoresSubBlockIdx = false>
+/// Additionally divides blocks into subblocks to answer in-block queries somewhat efficiently while not using too much
+/// space. With the default template parameters, this class can only store arays of 2^48 elements, although that is easy
+/// to change by setting BlockNumIdx to std::uint64_y. \tparam T \tparam BlockSize \tparam InBlockIdx \tparam
+/// BlockNumIdx \tparam Comp
+// template<typename T = Elem, Index BlockSize = 1 << 16, typename BlockNumIdx = std::uint32_t,
+//          Index SubBlockSize = 1 << 8, typename Comp = std::less<>>
+template<typename T = Elem, Index BlockSize = 1 << 8, typename BlockNumIdx = std::uint64_t, Index SubBlockSize = 1 << 3,
+        typename Comp = std::less<>, bool SubBlockStoresSubBlockIdx = false>
 class LinearSpaceRMQ {
     static_assert(BlockSize % SubBlockSize == 0, "subblock size must divide block size");
     using InBlockIdx = IntType<bytesNeededForIndexing(BlockSize)>;
@@ -58,8 +50,9 @@ class LinearSpaceRMQ {
     // Stores the original array of values
     // size() elements; 64 * n bits for default params
     std::unique_ptr<T[]> values = nullptr;
-    // O(n log n) space bitvecRmq structure over all blocks, which directly answers (sub)queries where lowre and upper are multiples of the block size.
-    // size() / BlockSize elements (rounded up), each storing a logarithmic number of indices; 32 * k log k (with k = n / 65536) bits by default; 64 * k log k, k = n / 256
+    // O(n log n) space bitvecRmq structure over all blocks, which directly answers (sub)queries where lowre and upper
+    // are multiples of the block size. size() / BlockSize elements (rounded up), each storing a logarithmic number of
+    // indices; 32 * k log k (with k = n / 65536) bits by default; 64 * k log k, k = n / 256
     BlockRmq blockRmq = BlockRmq();
     // For each block, stores its mininum relative to the block start. Used by the bock bitvecRmq.
     // size() / BlockSize elements, rounded up; 16 * n / 65636 bits; 8 * n / 256 bits
@@ -75,20 +68,17 @@ class LinearSpaceRMQ {
     /// The total allocated size in bits.
     Index numAllocatedBits = 0;
 
-    const T* ptrMin(const T* a, const T* b) const noexcept {
-        return comp()(*a, *b) ? a : b;
-    }
+    const T* ptrMin(const T* a, const T* b) const noexcept { return comp()(*a, *b) ? a : b; }
 
-    Comp comp() const noexcept {
-        return blockRmq.getComp();
-    }
+    Comp comp() const noexcept { return blockRmq.getComp(); }
 
 public:
-    //TODO: Alternative idea: partition 256value blocks into 16value subblocks and store for each subblock the relative index of its minimum
-    // in a 4 bit value, since there are 16 subblocks this requires 64 bits per block which may be stored directly after the block
-    // to reduce cache misses. These subblocks can speed up inner-block queries significantly. Also, subblock prefix and suffix arrays
-    // only need to store the subblock indices, which means each entry requires 4 instead of 8 bit (it would probably make the most sense to
-    // increase their block size to 16 values as well)
+    // TODO: Alternative idea: partition 256value blocks into 16value subblocks and store for each subblock the relative
+    // index of its minimum
+    //  in a 4 bit value, since there are 16 subblocks this requires 64 bits per block which may be stored directly
+    //  after the block to reduce cache misses. These subblocks can speed up inner-block queries significantly. Also,
+    //  subblock prefix and suffix arrays only need to store the subblock indices, which means each entry requires 4
+    //  instead of 8 bit (it would probably make the most sense to increase their block size to 16 values as well)
     constexpr static Index blockSize = BlockSize;
     constexpr static Index subBlockSize = SubBlockSize;
     constexpr static const Index subBlocksPerBlock = roundUpDiv(BlockSize, SubBlockSize);
@@ -98,13 +88,14 @@ public:
 
     LinearSpaceRMQ(std::initializer_list<T> list) : LinearSpaceRMQ(Span<const T>(list.begin(), list.end())) {}
 
-    explicit LinearSpaceRMQ(Span<const T> inputValues) : LinearSpaceRMQ(toUniquePtr(inputValues, roundUpDiv(inputValues.size(), SubBlockSize) * SubBlockSize),
-                                                                        roundUpDiv(inputValues.size(), SubBlockSize) * SubBlockSize) {}
+    explicit LinearSpaceRMQ(Span<const T> inputValues)
+        : LinearSpaceRMQ(toUniquePtr(inputValues, roundUpDiv(inputValues.size(), SubBlockSize) * SubBlockSize),
+                roundUpDiv(inputValues.size(), SubBlockSize) * SubBlockSize) {}
     explicit LinearSpaceRMQ(const std::vector<T>& inputValues) : LinearSpaceRMQ(Span<const T>(inputValues)) {}
     /// \brief Take an unique_ptr and a size to avoid paying for the extra capacity() - size() space of a vector
-    LinearSpaceRMQ(std::unique_ptr<T[]> inputValues, Index length) : values(std::move(inputValues)), blockRmq(),
-                                                                     length(length) {
-        assert(size() % SubBlockSize == 0);// The input array must have been extended by possibly values initialized elements
+    LinearSpaceRMQ(std::unique_ptr<T[]> inputValues, Index length)
+        : values(std::move(inputValues)), blockRmq(), length(length) {
+        assert(size() % SubBlockSize == 0); // The input array must have been extended by possibly values initialized elements
         const Index numBlocks = roundUpDiv(length, BlockSize);
         minimumInBlock = makeUniqueForOverwrite<InBlockIdx>(numBlocks);
         subBlockPrefixMinima = makeUniqueForOverwrite<SubblockIndex>(2 * subBlocksPerBlock * numBlocks);
@@ -126,25 +117,31 @@ public:
                 suffixMinSoFar = endOfBlock - 1;
                 subBlockPrefixMinima[i / SubBlockSize] = -1;
                 //                Index blockLength = endOfBlock - beginOfBlock;
-                subBlockSuffixMinima[(endOfBlock - values.get()) / SubBlockSize - 1] = -1;//blockLength / subBlockIdxQuotient - 1;
+                subBlockSuffixMinima[(endOfBlock - values.get()) / SubBlockSize - 1] = -1; // blockLength / subBlockIdxQuotient - 1;
             }
             const T* iter = std::min_element(values.get() + i, values.get() + i + SubBlockSize);
-            if (comp()(*iter, *prefixMinSoFar)) { prefixMinSoFar = iter; }
+            if (comp()(*iter, *prefixMinSoFar)) {
+                prefixMinSoFar = iter;
+            }
             if (subBlockIdx + 1 != subBlocksPerBlock) {
                 subBlockPrefixMinima[i / SubBlockSize + 1] = (prefixMinSoFar - beginOfBlock) / subBlockIdxQuotient;
             }
 
             iter = std::min_element(endOfBlock - (subBlockIdx + 1) * SubBlockSize, endOfBlock - subBlockIdx * SubBlockSize);
-            if (comp()(*iter, *suffixMinSoFar)) { suffixMinSoFar = iter; }
+            if (comp()(*iter, *suffixMinSoFar)) {
+                suffixMinSoFar = iter;
+            }
             if (subBlockIdx + 1 != subBlocksPerBlock) {
-                subBlockSuffixMinima[(endOfBlock - values.get()) / SubBlockSize - subBlockIdx - 2] = (suffixMinSoFar - beginOfBlock) / subBlockIdxQuotient;
+                subBlockSuffixMinima[(endOfBlock - values.get()) / SubBlockSize - subBlockIdx - 2]
+                        = (suffixMinSoFar - beginOfBlock) / subBlockIdxQuotient;
             }
         }
         assert(size() == 0 || *suffixMinSoFar == *prefixMinSoFar);
         minimumInBlock[(size() - 1) / BlockSize] = suffixMinSoFar - beginOfBlock;
         assert(suffixMinSoFar >= beginOfBlock && suffixMinSoFar < endOfBlock);
         blockRmq.build(values.get(), numBlocks, minimumInBlock.get());
-        numAllocatedBits = length * sizeof(T) + minimaSize(blockRmq.length) * sizeof(BlockNumIdx) + numBlocks * sizeof(InBlockIdx) + 2 * subBlocksPerBlock * numBlocks * sizeof(SubblockIndex);
+        numAllocatedBits = length * sizeof(T) + minimaSize(blockRmq.length) * sizeof(BlockNumIdx)
+                           + numBlocks * sizeof(InBlockIdx) + 2 * subBlocksPerBlock * numBlocks * sizeof(SubblockIndex);
         numAllocatedBits *= 8;
     }
 
@@ -169,10 +166,12 @@ public:
             Index lowerSubBlock = lower / SubBlockSize;
             if ((lowerSubBlock + 1) % subBlocksPerBlock != 0) {
                 Index subBlockSuffixIdx = subBlockSuffixMinima[lowerSubBlock];
-                const T* lowerBlockBeginPtr = values.get() + (lowerCompleteBlock - 1) * BlockSize;// TODO: Reverse order in subBlockSuffixMinima?
+                const T* lowerBlockBeginPtr
+                        = values.get() + (lowerCompleteBlock - 1) * BlockSize; // TODO: Reverse order in subBlockSuffixMinima?
                 suffixMinPtr = lowerBlockBeginPtr + subBlockSuffixIdx;
                 if constexpr (SubBlockStoresSubBlockIdx) {
-                    suffixMinPtr = std::min_element(lowerBlockBeginPtr + subBlockSuffixIdx * SubBlockSize, lowerBlockBeginPtr + (subBlockSuffixIdx + 1) * SubBlockSize);
+                    suffixMinPtr = std::min_element(lowerBlockBeginPtr + subBlockSuffixIdx * SubBlockSize,
+                            lowerBlockBeginPtr + (subBlockSuffixIdx + 1) * SubBlockSize);
                 }
                 assert(suffixMinPtr >= values.get() + lower && suffixMinPtr < values.get() + upper);
             }
@@ -194,7 +193,8 @@ public:
                 prefixMinPtr = upperBlockBeginPtr + subBlockPrefixIdx;
 
                 if constexpr (SubBlockStoresSubBlockIdx) {
-                    prefixMinPtr = std::min_element(upperBlockBeginPtr + subBlockPrefixIdx * SubBlockSize, upperBlockBeginPtr + (subBlockPrefixIdx + 1) * SubBlockSize);
+                    prefixMinPtr = std::min_element(upperBlockBeginPtr + subBlockPrefixIdx * SubBlockSize,
+                            upperBlockBeginPtr + (subBlockPrefixIdx + 1) * SubBlockSize);
                 }
                 assert(prefixMinPtr >= values.get() + lower && prefixMinPtr < values.get() + upper);
             }
@@ -208,19 +208,13 @@ public:
         return minPtr - values.get();
     }
 
-    Index operator()(Index lower, Index upper) const {
-        return rmq(lower, upper);
-    }
+    Index operator()(Index lower, Index upper) const { return rmq(lower, upper); }
 
-    [[nodiscard]] Index sizeInBits() const noexcept {
-        return numAllocatedBits;
-    }
+    [[nodiscard]] Index sizeInBits() const noexcept { return numAllocatedBits; }
 
-    [[nodiscard]] Index size() const noexcept {
-        return length;
-    }
+    [[nodiscard]] Index size() const noexcept { return length; }
 };
 
-}// namespace ads
+} // namespace ads
 
-#endif//BITVECTOR_LINEAR_SPACE_RMQ_HPP
+#endif // BITVECTOR_LINEAR_SPACE_RMQ_HPP

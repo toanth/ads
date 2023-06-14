@@ -14,7 +14,7 @@ class RandAccessIter {
 
 public:
     using iterator_category = std::random_access_iterator_tag;
-    using value_type = std::remove_reference_t<Ref>;// don't remove const
+    using value_type = std::remove_reference_t<Ref>; // don't remove const
     using difference_type = Index;
     using pointer = value_type*;
     using reference = Ref;
@@ -29,17 +29,13 @@ public:
         return *this;
     }
 
-    RandAccessIter& operator++() {
-        return *this += 1;
-    }
+    RandAccessIter& operator++() { return *this += 1; }
     RandAccessIter operator++(int) {
         RandAccessIter copy(*this);
         ++*this;
         return copy;
     }
-    RandAccessIter& operator--() {
-        return *this -= 1;
-    }
+    RandAccessIter& operator--() { return *this -= 1; }
     RandAccessIter operator--(int) {
         RandAccessIter copy(*this);
         --*this;
@@ -54,52 +50,28 @@ public:
         return *this;
     }
 
-    friend RandAccessIter operator+(RandAccessIter iter, Index n) {
-        return iter += n;
-    }
-    friend RandAccessIter operator+(Index n, RandAccessIter iter) {
-        return iter += n;
-    }
-    friend RandAccessIter operator-(RandAccessIter iter, Index n) {
-        return iter -= n;
-    }
-    friend Index operator-(RandAccessIter a, RandAccessIter b) {
-        return a.i - b.i;
-    }
+    friend RandAccessIter operator+(RandAccessIter iter, Index n) { return iter += n; }
+    friend RandAccessIter operator+(Index n, RandAccessIter iter) { return iter += n; }
+    friend RandAccessIter operator-(RandAccessIter iter, Index n) { return iter -= n; }
+    friend Index operator-(RandAccessIter a, RandAccessIter b) { return a.i - b.i; }
 
-    reference operator*() const {
-        return operator[](0);
-    }
+    reference operator*() const { return operator[](0); }
 
-    reference operator[](Index n) const {
-        return p(*cPtr, i + n);
-    }
+    reference operator[](Index n) const { return p(*cPtr, i + n); }
 
-    friend bool operator==(const RandAccessIter& lhs, const RandAccessIter& rhs) {
-        return lhs.i == rhs.i;
-    }
-    friend bool operator!=(const RandAccessIter& lhs, const RandAccessIter& rhs) {
-        return !(rhs == lhs);
-    }
+    friend bool operator==(const RandAccessIter& lhs, const RandAccessIter& rhs) { return lhs.i == rhs.i; }
+    friend bool operator!=(const RandAccessIter& lhs, const RandAccessIter& rhs) { return !(rhs == lhs); }
 
 #ifdef ADS_HAS_CPP20
     friend std::strong_ordering operator<=>(RandAccessIter, RandAccessIter) = default;
 #else
-    friend bool operator<(RandAccessIter lhs, RandAccessIter rhs) {
-        return lhs.i < rhs.i;
-    }
-    friend bool operator>(RandAccessIter lhs, RandAccessIter rhs) {
-        return rhs < lhs;
-    }
-    friend bool operator<=(RandAccessIter lhs, RandAccessIter rhs) {
-        return !(rhs < lhs);
-    }
-    friend bool operator>=(RandAccessIter lhs, RandAccessIter rhs) {
-        return !(lhs < rhs);
-    }
+    friend bool operator<(RandAccessIter lhs, RandAccessIter rhs) { return lhs.i < rhs.i; }
+    friend bool operator>(RandAccessIter lhs, RandAccessIter rhs) { return rhs < lhs; }
+    friend bool operator<=(RandAccessIter lhs, RandAccessIter rhs) { return !(rhs < lhs); }
+    friend bool operator>=(RandAccessIter lhs, RandAccessIter rhs) { return !(lhs < rhs); }
 #endif
 };
 
-}// namespace ads
+} // namespace ads
 
-#endif//BITVECTOR_RAND_ACCESS_ITER_HPP
+#endif // BITVECTOR_RAND_ACCESS_ITER_HPP

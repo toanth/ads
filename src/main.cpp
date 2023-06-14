@@ -34,16 +34,16 @@ Input readInput(std::string_view filename) {
 void writeOutput(std::string_view filename, Span<Elem> output) {
     std::ofstream file(filename.data());
     std::ofstream::sync_with_stdio(false);
-    for (Elem val: output) {
+    for (Elem val : output) {
         file << val << '\n';
     }
 }
 
-/// \brief Builds the Elias-Fano datastructure from `input.sequence` and uses it to compute the predecessors to `input.queries`.
-/// \param input A list of Integers that will make up the sequence stored in Elias-Fano and a list of integers for which the predecessors will be computed.
-/// \param spaceInBits An out param that stores the total space in bits needed by the Elias fano datastructure (on the heap and on the stack),
-/// without taking into account the space needed to store the input.
-/// \return The results of the predecessor queries.
+/// \brief Builds the Elias-Fano datastructure from `input.sequence` and uses it to compute the predecessors to
+/// `input.queries`. \param input A list of Integers that will make up the sequence stored in Elias-Fano and a list of
+/// integers for which the predecessors will be computed. \param spaceInBits An out param that stores the total space in
+/// bits needed by the Elias fano datastructure (on the heap and on the stack), without taking into account the space
+/// needed to store the input. \return The results of the predecessor queries.
 std::vector<Elem> eliasFano(Input input, Index& spaceInBits) {
     EliasFano<> ef(input.sequence);
     std::vector<Elem> result(input.queries.size());

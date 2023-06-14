@@ -13,13 +13,12 @@ class EliasFano {
     Index lowerBitMask;
     Index allocatedSizeInBits;
     Bitvector<BitvecLayout> upper;
-    BitStorage<dynSize> lower;// TODO: Change to BitView?
+    BitStorage<dynSize> lower; // TODO: Change to BitView?
 
 private:
     static constexpr Index numBitsInNumber = 8 * sizeof(Number);
 
-    EliasFano(Index numInts, CreateWithSizeTag)
-        : numInts(numInts) {
+    EliasFano(Index numInts, CreateWithSizeTag) : numInts(numInts) {
         Index lowerBitsPerNumber = numBitsInNumber - Index(std::ceil(std::log2(numInts)));
         Index lowerSizeInElems = roundUpDiv(lowerBitsPerNumber * numInts, 8 * sizeof(Elem));
         lower = BitStorage<dynSize>{makeUniqueForOverwrite<Elem>(lowerSizeInElems), {lowerBitsPerNumber}};
@@ -31,20 +30,17 @@ private:
 
 public:
     template<typename Integer, typename = std::enable_if_t<std::is_convertible_v<Integer, Index>>>
-    explicit EliasFano(Integer numInts) : EliasFano(numInts, CreateWithSizeTag{}) {
-    }
+    explicit EliasFano(Integer numInts) : EliasFano(numInts, CreateWithSizeTag{}) {}
 
-    template<typename Range, typename = std::void_t<decltype(maybe_ranges::begin(std::declval<Range&>()))>>// no concepts in C++17
-    explicit EliasFano(const Range& numbers)
-        : EliasFano(maybe_ranges::begin(numbers), maybe_ranges::end(numbers)) {
-    }
+    template<typename Range, typename = std::void_t<decltype(maybe_ranges::begin(std::declval<Range&>()))>> // no concepts in C++17
+    explicit EliasFano(const Range& numbers) : EliasFano(maybe_ranges::begin(numbers), maybe_ranges::end(numbers)) {}
 
-    EliasFano(std::initializer_list<Number> list) : EliasFano(maybe_ranges::begin(list), maybe_ranges::end(list)) {
-    }
+    EliasFano(std::initializer_list<Number> list) : EliasFano(maybe_ranges::begin(list), maybe_ranges::end(list)) {}
 
     // TODO: Instead of the worst case assumpption that max(first, last) == (1 << numBits) - 1, actually check the last element
     template<typename ForwardIter, typename Sentinel>
-    EliasFano(ForwardIter first, Sentinel last) noexcept : EliasFano(maybe_ranges::distance(first, last), CreateWithSizeTag{}) {
+    EliasFano(ForwardIter first, Sentinel last) noexcept
+        : EliasFano(maybe_ranges::distance(first, last), CreateWithSizeTag{}) {
         Elem currentUpperEntry = 0;
         Index lastUpperElemIdx = 0;
         Index elemIdx = 0;
@@ -60,7 +56,7 @@ public:
                 lastUpperElemIdx = currentUpperElemIdx;
                 currentUpperEntry = 0;
             }
-            currentUpperEntry |= Elem(1) << (newBitIdx % 64);// the order of bits in an element is reversed
+            currentUpperEntry |= Elem(1) << (newBitIdx % 64); // the order of bits in an element is reversed
             lower.setBits(elemIdx, Elem(*first));
             ++elemIdx;
             ++first;
@@ -75,24 +71,14 @@ public:
         upper.buildSelectMetadata(-1);
     }
 
-    [[nodiscard]] const Bitvector<BitvecLayout>& getUpper() const noexcept {
-        return upper;
-    }
+    [[nodiscard]] const Bitvector<BitvecLayout>& getUpper() const noexcept { return upper; }
 
-    [[nodiscard]] const BitStorage<dynSize>& getLower() const noexcept {
-        return lower;
-    }
-    [[nodiscard]] Index numLowerBitsPerNumber() const noexcept {
-        return lower.bitAccess.numBits;
-    }
+    [[nodiscard]] const BitStorage<dynSize>& getLower() const noexcept { return lower; }
+    [[nodiscard]] Index numLowerBitsPerNumber() const noexcept { return lower.bitAccess.numBits; }
 
-    [[nodiscard]] Elem getUpperPart(Index i) const {
-        return upper.selectOne(i) - i - 1;
-    }
+    [[nodiscard]] Elem getUpperPart(Index i) const { return upper.selectOne(i) - i - 1; }
 
-    [[nodiscard]] Elem getLowerPart(Index i) const {
-        return lower.getBits(i);
-    }
+    [[nodiscard]] Elem getLowerPart(Index i) const { return lower.getBits(i); }
 
     [[nodiscard]] Number get(Index i) const {
         if (i < 0 || i >= size()) {
@@ -103,21 +89,15 @@ public:
         return Number(lowerPart + (upperPart << numLowerBitsPerNumber()));
     }
 
-    [[nodiscard]] Number operator[](Index i) const {
-        return get(i);
-    }
+    [[nodiscard]] Number operator[](Index i) const { return get(i); }
 
     constexpr static auto getNumber = [](const EliasFano& ev, Index i) { return ev.get(i); };
 
     using NumberIter = RandAccessIter<EliasFano, decltype(getNumber)>;
 
-    NumberIter numberIter(Index i) const {
-        return NumberIter(*this, getNumber, i);
-    }
+    NumberIter numberIter(Index i) const { return NumberIter(*this, getNumber, i); }
 
-    Subrange<NumberIter> numbers() const noexcept {
-        return {numberIter(0), numberIter(size())};
-    }
+    Subrange<NumberIter> numbers() const noexcept { return {numberIter(0), numberIter(size())}; }
 
     [[nodiscard]] Number predecessor(Number n) const {
         Number upperSearchBits = n >> numLowerBitsPerNumber();
@@ -155,19 +135,13 @@ public:
         return get(last);
     }
 
-    [[nodiscard]] Index size() const noexcept {
-        return numInts;
-    }
+    [[nodiscard]] Index size() const noexcept { return numInts; }
 
-    [[nodiscard]] Index numAllocatedBits() const noexcept {
-        return allocatedSizeInBits;
-    }
+    [[nodiscard]] Index numAllocatedBits() const noexcept { return allocatedSizeInBits; }
 
-    [[nodiscard]] Index numUpperBitsPerNumber() const noexcept {
-        return numBitsInNumber - numLowerBitsPerNumber();
-    }
+    [[nodiscard]] Index numUpperBitsPerNumber() const noexcept { return numBitsInNumber - numLowerBitsPerNumber(); }
 };
 
-}// namespace ads
+} // namespace ads
 
-#endif//BITVECTOR_ELIAS_FANO_HPP
+#endif // BITVECTOR_ELIAS_FANO_HPP
