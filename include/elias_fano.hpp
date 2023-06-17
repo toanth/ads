@@ -65,10 +65,7 @@ public:
         for (++lastUpperElemIdx; lastUpperElemIdx < upper.sizeInElems(); ++lastUpperElemIdx) {
             upper.setElem(lastUpperElemIdx, 0);
         }
-        for (Index i = 0; i < upper.numSuperblocks(); ++i) {
-            upper.buildRankMetadata(i);
-        }
-        upper.buildSelectMetadata(-1);
+        upper.buildMetadata();
     }
 
     [[nodiscard]] const Bitvector<BitvecLayout>& getUpper() const noexcept { return upper; }

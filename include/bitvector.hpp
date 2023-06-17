@@ -20,9 +20,9 @@ class Bitvector : private Layout {
     using Base = Layout;
     using Base::getBlockCount;
     using Base::getElemRef;
-    using Base::getSuperblockCount;
+    using Base::getSuperBlockCount;
     using Base::setBlockCount;
-    using Base::setSuperblockCount;
+    using Base::setSuperBlockCount;
 
     Index numBits;
 
@@ -37,12 +37,12 @@ public:
     using Base::getBit;
     using Base::getElem;
     using Base::numBlocks;
-    using Base::numBlocksInSuperblock;
+    using Base::numBlocksInSuperBlock;
     using Base::numElems;
-    using Base::numSuperblocks;
+    using Base::numSuperBlocks;
     using Base::setBit;
     using Base::setElem;
-    using Base::superblockSize;
+    using Base::superBlockSize;
 
     Bitvector() noexcept : numBits(0) {}
 
@@ -52,7 +52,7 @@ public:
         for (Index i = 0; i < sizeInElems(); ++i) {
             setElem(i, fill);
         }
-        for (Index i = 0; i < numSuperblocks(); ++i) {
+        for (Index i = 0; i < numSuperBlocks(); ++i) {
             buildRankMetadata(i);
         }
     }
@@ -64,8 +64,8 @@ public:
         const Index log2ofBase = log2(Elem(base));
         const std::size_t charsPerElem = 64 / log2ofBase;
         Index i = 0;
-        for (Index superblock = 0; superblock < numSuperblocks(); ++superblock) {
-            for (Index j = 0; j < superblockSize(); ++j) {
+        for (Index superblock = 0; superblock < numSuperBlocks(); ++superblock) {
+            for (Index j = 0; j < superBlockSize(); ++j) {
                 if (str.empty()) break;
                 std::size_t numToParse = std::min(charsPerElem, str.size());
                 std::string_view toParse = str.substr(0, numToParse);
@@ -91,9 +91,9 @@ public:
 
 
     void buildRankMetadata(Index superblockIdx) noexcept {
-        assert(superblockIdx >= 0 && superblockIdx < numSuperblocks());
+        assert(superblockIdx >= 0 && superblockIdx < numSuperBlocks());
         if (superblockIdx == 0) {
-            setSuperblockCount(0, 0);
+            setSuperBlockCount(0, 0);
         }
         auto s = superblockElems(superblockIdx);
         Index inSuperblockSoFar = 0;
@@ -105,15 +105,15 @@ public:
             }
             inSuperblockSoFar += popcount(s[i]);
         }
-        assert(inSuperblockSoFar <= superblockSize() * 64);
-        if (superblockIdx < numSuperblocks() - 1) {
+        assert(inSuperblockSoFar <= superBlockSize() * 64);
+        if (superblockIdx < numSuperBlocks() - 1) {
             assert(s.size() % blockSize() == 0);
-            setSuperblockCount(superblockIdx + 1, getSuperblockCount(superblockIdx) + inSuperblockSoFar);
+            setSuperBlockCount(superblockIdx + 1, getSuperBlockCount(superblockIdx) + inSuperblockSoFar);
         }
     }
 
     void buildRankMetadata() noexcept {
-        for (Index i = 0; i < numSuperblocks(); ++i) {
+        for (Index i = 0; i < numSuperBlocks(); ++i) {
             buildRankMetadata(i);
         }
     }
@@ -143,10 +143,10 @@ public:
         --pos;
         Index elemIdx = pos / 64;
         Elem mask = Elem(-1) >> (63 - pos % 64);
-        Index superblockIdx = elemIdx / superblockSize();
+        Index superblockIdx = elemIdx / superBlockSize();
         Index blockIdx = elemIdx / blockSize();
-        //        std::cout << getSuperblockCount(superblockIdx) << " " << getBlockCount(superblockIdx, blockIdx) << " " << popcount(getElem(elemIdx) & mask) << std::endl;
-        Index res = getSuperblockCount(superblockIdx) + getBlockCount(blockIdx);
+        //        std::cout << getSuperBlockCount(superblockIdx) << " " << getBlockCount(superblockIdx, blockIdx) << " " << popcount(getElem(elemIdx) & mask) << std::endl;
+        Index res = getSuperBlockCount(superblockIdx) + getBlockCount(blockIdx);
         for (Index i = blockIdx * blockSize(); i < elemIdx; ++i) {
             res += popcount(getElem(i));
         }
@@ -202,12 +202,12 @@ public:
     }
 
     [[nodiscard]] Span<Elem> superblockElems(Index superblockIdx) noexcept {
-        Index size = superblockIdx == numSuperblocks() - 1 ? (numElems() - 1) % superblockSize() + 1 : superblockSize();
-        return Span<Elem>(&getElemRef(superblockIdx * superblockSize()), size);
+        Index size = superblockIdx == numSuperBlocks() - 1 ? (numElems() - 1) % superBlockSize() + 1 : superBlockSize();
+        return Span<Elem>(&getElemRef(superblockIdx * superBlockSize()), size);
     }
     [[nodiscard]] Span<const Elem> superblockElems(Index superblockIdx) const noexcept {
-        Index size = superblockIdx == numSuperblocks() - 1 ? (numElems() - 1) % superblockSize() + 1 : superblockSize();
-        return Span<const Elem>(&getElemRef(superblockIdx * superblockSize()), size);
+        Index size = superblockIdx == numSuperBlocks() - 1 ? (numElems() - 1) % superBlockSize() + 1 : superBlockSize();
+        return Span<const Elem>(&getElemRef(superblockIdx * superBlockSize()), size);
     }
 
     [[nodiscard]] Index numAllocatedBits() const noexcept { return allocatedSizeInElems() * sizeof(Elem) * 8; }

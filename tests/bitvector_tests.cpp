@@ -9,7 +9,7 @@ using TestLayout = SimpleLayout<>;
 TEST(BitvectorConstruction, Sizes) {
     {
         Bitvector<TestLayout> bv(64);
-        ASSERT_EQ(bv.numSuperblocks(), 1);
+        ASSERT_EQ(bv.numSuperBlocks(), 1);
         ASSERT_EQ(bv.sizeInBits(), 64);
         ASSERT_EQ(bv.sizeInElems(), 1);
         for (Index i = 0; i < 100'000; ++i) {
@@ -18,12 +18,12 @@ TEST(BitvectorConstruction, Sizes) {
             ASSERT_EQ(bv.bitView().size(), bv.sizeInBits());
             ASSERT_GE(bv.sizeInElems(), (i + 63) / 64); // TODO: Make exact?
             ASSERT_EQ(bv.elemView().size(), bv.sizeInElems());
-            ASSERT_EQ(bv.numSuperblocks(), (bv.sizeInElems() + bv.superblockSize() - 1) / bv.superblockSize());
+            ASSERT_EQ(bv.numSuperBlocks(), (bv.sizeInElems() + bv.superBlockSize() - 1) / bv.superBlockSize());
         }
     }
 
     Bitvector<TestLayout> bv("1");
-    ASSERT_EQ(bv.numSuperblocks(), 1);
+    ASSERT_EQ(bv.numSuperBlocks(), 1);
     ASSERT_EQ(bv.numBlocks(), 1);
     ASSERT_EQ(bv.sizeInBits(), 1);
     ASSERT_EQ(bv.sizeInElems(), 1);
@@ -34,7 +34,7 @@ TEST(BitvectorConstruction, Sizes) {
         Bitvector<TestLayout> bv(text);
         ASSERT_EQ(bv.sizeInBits(), i);
         ASSERT_GE(bv.sizeInElems(), (i + 63) / 64);
-        ASSERT_EQ(bv.numSuperblocks(), (bv.sizeInElems() + bv.superblockSize() - 1) / bv.superblockSize());
+        ASSERT_EQ(bv.numSuperBlocks(), (bv.sizeInElems() + bv.superBlockSize() - 1) / bv.superBlockSize());
         text.push_back('1');
     }
 }
@@ -116,7 +116,7 @@ TEST(BitvecRank, Small) {
 
 TEST(BitvecRank, OneSuperblock) {
     Bitvector<TestLayout> bv(0);
-    std::string s(bv.superblockSize(), '1');
+    std::string s(bv.superBlockSize(), '1');
     for (Index i = 0; i < s.size(); i += 2) {
         s[i] = '0';
     }
@@ -130,7 +130,7 @@ TEST(BitvecRank, OneSuperblock) {
 
 TEST(BitvecRank, ManySuperblocks) {
     Bitvector<TestLayout> bv(0);
-    std::string s(bv.superblockSize() * 7 + 123456, '1');
+    std::string s(bv.superBlockSize() * 7 + 123456, '1');
     for (Index i = 0; i < s.size(); i += 3) {
         s[i] = '0';
     }
@@ -200,7 +200,7 @@ TEST(Bitvector, PowerOfTwo) {
         for (Index j = (bv.numElems() - 1) * 64 + 1; j < bv.sizeInBits(); j += 2) {
             bv.setBit(j, true);
         }
-        for (Index j = 0; j < bv.numSuperblocks(); ++j) {
+        for (Index j = 0; j < bv.numSuperBlocks(); ++j) {
             bv.buildRankMetadata(j);
         }
         for (Index j = 1; j < bv.sizeInBits(); j = j * 3 - 1) {

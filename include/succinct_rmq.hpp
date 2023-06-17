@@ -266,7 +266,7 @@ public:
         }
         assert(bvIdx == 1);
         dfuds.setBit(0, openParen);
-        for (Index i = 0; i < dfuds.numSuperblocks(); ++i) {
+        for (Index i = 0; i < dfuds.numSuperBlocks(); ++i) {
             dfuds.buildRankMetadata(i);
         }
         rmmTree = RmmTree(std::move(dfuds));

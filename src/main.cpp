@@ -51,7 +51,7 @@ std::vector<Elem> eliasFano(Input input, Index& spaceInBits) {
     for (Index i = 0; i < result.size(); ++i) {
         result[i] = ef.predecessor(input.queries[i]);
     }
-    spaceInBits = ef.spaceInBits();
+    spaceInBits = ef.numAllocatedBits();
     return result;
 }
 

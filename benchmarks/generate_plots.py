@@ -14,23 +14,33 @@ def color_y_axis(ax, color):
         t.set_color(color)
 
 
+def is_quick_run(all_benchmarks):
+    return all_benchmarks[0]['name'] == all_benchmarks[0]['run_name']
+
+
 def check_same_config(data, baseline_data):
     config = data['context']
     baseline_config = baseline_data['context']
     for value in ['host_name', 'num_cpus', 'mhz_per_cpu', 'cpu_scaling_enabled', 'library_build_type']:
         if config[value] != baseline_config[value]:
-            print("Warning: " + value + " differs between current and baseline, comparisons may not be meaningful")
+            print("Warning: '" + value + "' differs between current and baseline, comparisons may not be meaningful")
+    if is_quick_run(data['benchmarks']):
+        print("Current results are from a quick run, measurements may be more noisy than usual")
+    if is_quick_run(baseline_data['benchmarks']):
+        print("Baseline was a quick run, measurements may be more noisy than usual")
 
 
-def get_runs(all_benchmarks, family_index, is_quick_run):
-    if is_quick_run:
+def get_runs(all_benchmarks, family_index, quick_run):
+    if quick_run:
         return [bm for bm in all_benchmarks if bm['family_index'] == family_index and bm['run_type'] == 'iteration']
     else:
         max_variation = max([float(bm['cpu_time']) for bm in all_benchmarks if
                              bm['family_index'] == family_index and bm['aggregate_name'] == 'cv'])
+        runs = [bm for bm in all_benchmarks if bm['family_index'] == family_index and bm['aggregate_name'] == 'median']
         if max_variation > 0.02:
-            print("Warning: high maximum measurement variation of " + str(max_variation * 100) + " percent")
-        return [bm for bm in all_benchmarks if bm['family_index'] == family_index and bm['aggregate_name'] == 'median']
+            print("Warning: High maximum measurement variation of "
+                  + str(max_variation * 100) + " percent for " + get_name(runs))
+        return runs
 
 
 def get_name(runs):
@@ -61,17 +71,18 @@ def generate_plots(data, baseline_data):
     if not all_benchmarks:
         raise ValueError("No benchmarks were run")
     num_families = all_benchmarks[-1]['family_index']
-    is_quick_run = all_benchmarks[0]['name'] == all_benchmarks[0]['run_name']
+    quick_run = is_quick_run(all_benchmarks)
     if baseline_data is not None:
         check_same_config(data, baseline_data)
 
     for i in range(0, num_families + 1):
-        runs = get_runs(all_benchmarks, i, is_quick_run)
+        runs = get_runs(all_benchmarks, i, quick_run)
         name = get_name(runs)
         if baseline_data is not None:
-            baseline_runs = get_runs(baseline_data['benchmarks'], i - num_skipped, is_quick_run)
+            baseline_benchmarks = baseline_data['benchmarks']
+            baseline_runs = get_runs(baseline_benchmarks, i - num_skipped, is_quick_run(baseline_benchmarks))
             if get_name(baseline_runs) != name:
-                print("Warning: No matching baseline results found")
+                print("Warning: No matching baseline results found for " + name)
                 num_skipped = num_skipped + 1
                 baseline_runs = None
         times, bits, num_iters, per_n = get_performance_measurements(runs)

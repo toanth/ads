@@ -106,7 +106,7 @@ runBenchmark() {
 
         # `cset shield --exec --`` runs the given program in the user cpuset, on which no other tasks are being run
         # `setarch $(uname -m) -R` disables ASLR to reduce variance (but obviously weakens security)
-        cset shield --exec -- setarch "$(uname -m)" -R "${binPath}" ${benchmarkOpts}
+        cset shield --exec -- setarch "$(uname -m)" -R "${binPath}" "$@"
 
         if [[ $moreThan4Cores == 1 ]]; then
             echo "Enabling cpus 1 and 3"
@@ -124,22 +124,25 @@ runBenchmark() {
             # `cset shield --exec --`` runs the given program in the user cpuset, on which no other tasks are being run
             # `setarch $(uname -m) -R` disables ASLR to reduce variance (but obviously weakens security)
             # because the user should have been set as the owner of the user cpuset, this should work without root privileges
-            cset shield --exec -- setarch "$(uname -m)" -R "${binPath}" ${benchmarkOpts}
+            cset shield --exec -- setarch "$(uname -m)" -R "${binPath}" "$@"
         else
             echo "Executing benchmarks in the normal system state"
             # `taskset -c 0` sets the task affinity to cpu 0, but doesn't prevent the scheduler from scheduling other programs there
-            taskset -c 0 setarch "$(uname -m)" -R "${binPath}" ${benchmarkOpts}
+            taskset -c 0 setarch "$(uname -m)" -R "${binPath}" "$@"
         fi
     fi
 }
 
 export CLICOLOR_FORCE=1
-benchmarkOpts="$@ $binFlags --benchmark_out=$outputFile --benchmark_out_format=json --benchmark_counters_tabular=true"
-if [[ $quick == 0 ]]; then
-    benchmarkOpts="$benchmarkOpts --benchmark_repetitions=3 --benchmark_report_aggregates_only=true"
+
+cd "${SCRIPTPATH}"
+(mkdir -p ../build/Release/ &&
+cd ../build/Release/ &&
+cmake -G Ninja -DCMAKE_BUILD_TYPE=Release ../../ &&
+cmake --build .) &&
+
+if [[ $quick == 1 ]]; then
+    runBenchmark --benchmark_out="$outputFile" --benchmark_out_format=json --benchmark_counters_tabular=true "$@"
+  else
+    runBenchmark --benchmark_out="$outputFile" --benchmark_out_format=json --benchmark_counters_tabular=true --benchmark_repetitions=3 --benchmark_report_aggregates_only=true "$@"
 fi
-
-echo "executing command ${binPath} $benchmarkOpts"
-
-(cd "${SCRIPTPATH}" &&
-time runBenchmark "$@")
