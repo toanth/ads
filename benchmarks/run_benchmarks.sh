@@ -92,6 +92,8 @@ runBenchmark() {
         oldGovernor=$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor)
         echo "cpufreq performance governor was ${oldGovernor} and will now be set to 'performance'"
         sudo cpupower frequency-set -g performance
+        echo "disabling turbo boost"
+        echo "0" | sudo tee /sys/devices/system/cpu/cpufreq/boost
         if [[ $moreThan4Cores == 1 ]]; then
             # reserve 2 CPUs so that we can also run perf, which should run on a different CPU
             # `cset shield -c 0,2 -k on` reserves the logical cpus 0 and 1 and moves all threads, including kernel threads, out of them
@@ -115,6 +117,8 @@ runBenchmark() {
             echo "resetting cset shield"
             sudo cset shield --reset
         fi
+        echo "enabling turbo boost"
+        echo "1" | sudo tee /sys/devices/system/cpu/cpufreq/boost
         echo "Resetting performance governor to ${oldGovernor}"
         sudo cpupower frequency-set -g ${oldGovernor}
     else

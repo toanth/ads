@@ -5,6 +5,7 @@ from os.path import realpath, dirname
 from pathlib import Path
 
 import matplotlib.pyplot as plt
+import numpy as np
 
 basepath = dirname(realpath(__file__)) + "/"
 
@@ -30,17 +31,29 @@ def check_same_config(data, baseline_data):
         print("Baseline was a quick run, measurements may be more noisy than usual")
 
 
+def print_avg_variation(benchmarks, quick_run):
+    if quick_run:
+        print("results are from a quick run, so there is no variation info available")
+    else:
+        variation = np.mean([float(bm['cpu_time']) for bm in benchmarks if bm['aggregate_name'] == 'cv'])
+        print(f"average coefficient of variation (ie standard deviation / mean): {variation * 100:.2f}%")
+
+
 def get_runs(all_benchmarks, family_index, quick_run):
     if quick_run:
-        return [bm for bm in all_benchmarks if bm['family_index'] == family_index and bm['run_type'] == 'iteration']
+        res = [bm for bm in all_benchmarks if bm['family_index'] == family_index and bm['run_type'] == 'iteration']
+        return res, np.array([[bm['cpu_time'] for bm in res], [0] * len(res)])
     else:
-        max_variation = max([float(bm['cpu_time']) for bm in all_benchmarks if
-                             bm['family_index'] == family_index and bm['aggregate_name'] == 'cv'])
-        runs = [bm for bm in all_benchmarks if bm['family_index'] == family_index and bm['aggregate_name'] == 'median']
-        if max_variation > 0.02:
+        info = [bm for bm in all_benchmarks if bm['family_index'] == family_index]
+        runs = [bm for bm in info if bm['aggregate_name'] == 'median']
+        stddevs = np.array([bm['cpu_time'] for bm in info if bm['aggregate_name'] == 'stddev'])
+        means = np.array([bm['cpu_time'] for bm in info if bm['aggregate_name'] == 'mean'])
+        error_bars = np.array([means, stddevs])
+        max_variation = max([float(bm['cpu_time']) for bm in info if bm['aggregate_name'] == 'cv'])
+        if max_variation > 0.05:
             print("Warning: High maximum measurement variation of "
                   + str(max_variation * 100) + " percent for " + get_name(runs))
-        return runs
+        return runs, error_bars
 
 
 def get_name(runs):
@@ -50,48 +63,60 @@ def get_name(runs):
     return name
 
 
-def get_performance_measurements(runs, force_relative=None):
+def get_repetitions(runs):
+    return int(runs[0]['repetitions'])
+
+
+def get_performance_measurements(runs, errors, force_relative=None):
     assert len(runs) > 1
     divide_by_n = 'perN' in runs[0]
     if force_relative is not None:
         divide_by_n = force_relative
     num_iters = [int(benchmark['run_name'].split('/')[-1]) for benchmark in runs]
-    times = [benchmark['cpu_time'] for benchmark in runs]
+    times = np.array([benchmark['cpu_time'] for benchmark in runs])
     if divide_by_n:
-        times = [times[i] / num_iters[i] for i in range(len(times))]
-    bits = [benchmark['bits'] for benchmark in runs]
-    bits = [bits[i] / num_iters[i] for i in range(len(times))]
-    return times, bits, num_iters, divide_by_n
+        times = times / num_iters
+        errors = errors / num_iters  # mean and stddev scale with constant factors
+    bits = np.array([benchmark['bits'] for benchmark in runs])
+    bits = bits / num_iters
+    assert (times.shape == bits.shape == errors[0].shape == errors[1].shape == (len(runs),))
+    return times, bits, num_iters, errors, divide_by_n
 
 
 def generate_plots(data, baseline_data):
     num_skipped = 0
     baseline_runs = None
+    baseline_errors = None
     all_benchmarks = data['benchmarks']
     if not all_benchmarks:
         raise ValueError("No benchmarks were run")
     num_families = all_benchmarks[-1]['family_index']
     quick_run = is_quick_run(all_benchmarks)
+    print_avg_variation(all_benchmarks, quick_run)
     if baseline_data is not None:
         check_same_config(data, baseline_data)
 
     for i in range(0, num_families + 1):
-        runs = get_runs(all_benchmarks, i, quick_run)
+        runs, errors = get_runs(all_benchmarks, i, quick_run)
         name = get_name(runs)
         if baseline_data is not None:
             baseline_benchmarks = baseline_data['benchmarks']
-            baseline_runs = get_runs(baseline_benchmarks, i - num_skipped, is_quick_run(baseline_benchmarks))
+            baseline_runs, baseline_errors = get_runs(baseline_benchmarks, i - num_skipped,
+                                                      is_quick_run(baseline_benchmarks))
             if get_name(baseline_runs) != name:
                 print("Warning: No matching baseline results found for " + name)
                 num_skipped = num_skipped + 1
                 baseline_runs = None
-        times, bits, num_iters, per_n = get_performance_measurements(runs)
+        times, bits, num_iters, errors, per_n = get_performance_measurements(runs, errors)
         if baseline_runs is not None:
-            baseline_times, baseline_bits, baseline_num_iters, _ = get_performance_measurements(baseline_runs, per_n)
+            baseline_times, baseline_bits, baseline_num_iters, baseline_errors, _ \
+                = get_performance_measurements(baseline_runs, baseline_errors, per_n)
             assert baseline_num_iters == num_iters
             fig, ax = plt.subplots(ncols=2, figsize=(10, 5), layout='constrained')
-            ax[0].plot(num_iters, times, 'b-s', label='current')
-            ax[0].plot(baseline_num_iters, baseline_times, 'g-o', label='baseline')
+            ax[0].plot(num_iters, times, 'b-s', label='current (median)')
+            ax[0].errorbar(num_iters, errors[0], errors[1], fmt='b.', label='current µ ± σ')
+            ax[0].plot(baseline_num_iters, baseline_times, 'g-o', label='baseline (median)')
+            ax[0].errorbar(baseline_num_iters, baseline_errors[0], baseline_errors[1], fmt='g.', label='baseline µ ± σ')
             ax[0].set_xlabel('n')
             ax[0].set_xscale('log')
             if per_n:
@@ -100,9 +125,10 @@ def generate_plots(data, baseline_data):
                 ax[0].set_ylabel('time in ' + runs[0]['time_unit'])
             ax[0].set_yscale('log')
             ax[0].grid()
-            ax[0].set_title("time")
+            title = "time"
             if per_n:
-                ax[0].set_title("time (divided by n)")
+                title += " (divided by n)"
+            ax[0].set_title(title)
             rel_time = ax[0].twinx()
             time_percent = [100 * times[i] / baseline_times[i] for i in range(len(times))]
             color_y_axis(rel_time, 'c')
@@ -125,13 +151,17 @@ def generate_plots(data, baseline_data):
             rel_space.axhline(y=100, color='c', linestyle='--')
             color_y_axis(rel_space, 'c')
             rel_space.set_ylabel('relative space in percent')
-            plt.suptitle(name)
+            plt.suptitle(name + f"\n#repetitions: {get_repetitions(runs)}, {get_repetitions(baseline_runs)}")
             fig.legend(loc='outside upper right')
         else:
             fig, ax = plt.subplots()
             ax2 = ax.twinx()
-            ax.plot(num_iters, times, 'b-s', label='time')
-            ax2.plot(num_iters, bits, 'c-o', label='space')
+            time_name = "time (median)"
+            if per_n:
+                time_name += " / n"
+            ax.plot(num_iters, times, 'b-s', label=time_name)
+            ax.errorbar(num_iters, errors[0], errors[1], fmt='b.', label='time µ ± σ')
+            ax2.plot(num_iters, bits, 'c-o', label='space / n')
             color_y_axis(ax, 'b')
             ax.set_xlabel('n')
             ax.set_xscale('log')
@@ -145,8 +175,8 @@ def generate_plots(data, baseline_data):
             ax2.set_ylabel('number of bits divided by n')
             ax2.set_yscale('log')
             ax2.set_ylim([None, 1000])
-            fig.legend()
-            plt.title(name)
+            fig.legend(loc='outside upper right')
+            plt.title(name + f"\n#repetitions: {get_repetitions(runs)}")
         yield fig, name
 
 

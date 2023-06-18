@@ -12,9 +12,10 @@ Options include:
 --set:              Applies the changes to reduce benchmark variance. Be careful to read what this does before executing this as
                     forgetting to unset them will leave your system in a state you will probably find undesirable
                     (such as loosing access to four logical CPUs). Also, the previous settings aren't preserved, so in the (unlikely) case
-                    that you are using custom settings (such as a cpupower frequency scheduler other than schedutil, these settings will
-                    be overwritten)
+                    that you are using custom settings (such as a cpupower frequency scheduler other than schedutil), these settings will
+                    be overwritten until a reboot.
 --unset:            Reverts the system-wide changes to reasonable defaults, which were probably used before this script was executed.
+                    Note that all changes made by this script (both set and unset) are lost on reboot.
 --help:             Print this message.
 EOF
 }
@@ -79,6 +80,8 @@ if [[ $doUnset == 0 ]]; then
     oldGovernor=$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor)
     echo "cpufreq performance governor was ${oldGovernor} and will now be set to 'performance'"
     sudo cpupower frequency-set -g performance
+    echo "disabling turbo boost"
+    echo "0" | sudo tee /sys/devices/system/cpu/cpufreq/boost
     if [[ $moreThan4Cores == 1 ]]; then
         # reserve 2 CPUs so that we can also run perf, which should run on a different CPU
         # `cset shield -c 0-3 -k on` reserves the logical cpus 0 and 1 and moves all threads, including kernel threads, out of them
@@ -103,6 +106,8 @@ else
         echo "resetting cset shield"
         sudo cset shield --reset
     fi
+    echo "enabling turbo boost"
+    echo "1" | sudo tee /sys/devices/system/cpu/cpufreq/boost
     echo "Setting performance governor to 'schedutil'"
     sudo cpupower frequency-set -g schedutil
 fi
