@@ -25,7 +25,9 @@ def check_same_config(data, bms, baseline_data, baseline_bms):
     baseline_config = baseline_data['context']
     for value in ['host_name', 'num_cpus', 'mhz_per_cpu', 'cpu_scaling_enabled', 'library_build_type']:
         if config[value] != baseline_config[value]:
-            print("Warning: '" + value + "' differs between current and baseline, comparisons may not be meaningful")
+            print(
+                f"Warning: {value} differs between current ({config[value]}) and baseline ({baseline_config[value]}),"
+                "comparisons may not be meaningful")
     if is_quick_run(bms):
         print("Current results are from a quick run, measurements may be more noisy than usual")
     if is_quick_run(baseline_bms):
@@ -36,7 +38,8 @@ def print_avg_variation(benchmarks, quick_run):
     if quick_run:
         print("results are from a quick run, so there is no variation info available")
     else:
-        variation = np.mean([float(bm['cpu_time']) for bm in benchmarks if bm['aggregate_name'] == 'cv'])
+        cvs = [float(bm['cpu_time']) for _, runs in benchmarks.items() for bm in runs if bm['aggregate_name'] == 'cv']
+        variation = np.mean(cvs)
         print(f"average coefficient of variation (ie standard deviation / mean): {variation * 100:.2f}%")
 
 
@@ -50,22 +53,28 @@ def get_benchmarks(data):
 
 def get_runs(all_benchmarks, family_index, quick_run):
     if quick_run:
+        if family_index >= len(all_benchmarks):
+            return None, None
         res = [bm for bm in all_benchmarks[family_index] if bm['run_type'] == 'iteration']
         return res, np.array([[bm['cpu_time'] for bm in res], [0] * len(res)])
     else:
-        info = all_benchmarks[family_index]
-        runs = [bm for bm in info if bm['aggregate_name'] == 'median']
-        stddevs = np.array([bm['cpu_time'] for bm in info if bm['aggregate_name'] == 'stddev'])
-        means = np.array([bm['cpu_time'] for bm in info if bm['aggregate_name'] == 'mean'])
-        error_bars = np.array([means, stddevs])
-        max_variation = max([float(bm['cpu_time']) for bm in info if bm['aggregate_name'] == 'cv'])
-        if max_variation > 0.05:
-            print("Warning: High maximum measurement variation of "
-                  + str(max_variation * 100) + " percent for " + get_name(runs))
-        return runs, error_bars
+        if not family_index in all_benchmarks:
+            return None, None
+    info = all_benchmarks[family_index]
+    runs = [bm for bm in info if bm['aggregate_name'] == 'median']
+    stddevs = np.array([bm['cpu_time'] for bm in info if bm['aggregate_name'] == 'stddev'])
+    means = np.array([bm['cpu_time'] for bm in info if bm['aggregate_name'] == 'mean'])
+    error_bars = np.array([means, stddevs])
+    max_variation = max([float(bm['cpu_time']) for bm in info if bm['aggregate_name'] == 'cv'])
+    if max_variation > 0.05:
+        print("Warning: High maximum measurement variation of "
+              + str(max_variation * 100) + " percent for " + get_name(runs))
+    return runs, error_bars
 
 
 def get_name(runs):
+    if runs is None:
+        return "<None>"
     name = runs[0]['run_name'].split('/')[0].split('<')[0]
     if name[:3] == "BM_":
         name = name[3:]

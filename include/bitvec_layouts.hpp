@@ -144,9 +144,14 @@ struct CacheEfficientLayout {
 };
 
 
-/// TODO: Doxygen
-// TODO: Test with other block sizes, fix bugs
-template<Index SuperblockSize = (1 << 16) / 64, Index BlockSize = 1, typename SuperBlockCount = Elem>
+/// \brief The default layout for the Bitvector.
+/// \tparam BlockSize The number of Elems in a block. This is the most important hyperparameter as it matters most for additional space requirements
+///  and for performance. On at least some systems, the number of popcount invocations, which is in [0, BlockSize), is the most significant
+/// factor for rank() performance.
+/// \tparam SuperblockSize The number of Elems in a superblock. This determines the amount of bytes needed to store a single block count.
+/// \tparam SuperBlockCount The type used to store superblock counts. Some small memory requirement reductions are possible
+/// if the size of the bitvector in bits is known in advance to fit into a smaller type than Elem.
+template<Index BlockSize = 8, Index SuperblockSize = (1 << 16) / 64, typename SuperBlockCount = Elem>
 struct SimpleLayout {
 
     static_assert(0 < BlockSize && 0 < SuperblockSize && SuperblockSize % BlockSize == 0);
@@ -232,7 +237,7 @@ public:
 
 #ifdef ADS_HAS_CPP20
 static_assert(IsLayout<CacheEfficientLayout>);
-static_assert(IsLayout<SimpleLayout<>>);
+static_assert(IsLayout<SimpleLayout<1>>);
 static_assert(IsLayout<SimpleLayout<16>>);
 #endif
 

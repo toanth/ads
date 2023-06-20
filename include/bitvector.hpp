@@ -52,9 +52,16 @@ public:
         for (Index i = 0; i < sizeInElems(); ++i) {
             setElem(i, fill);
         }
-        for (Index i = 0; i < numSuperBlocks(); ++i) {
-            buildRankMetadata(i);
+        buildMetadata();
+    }
+
+    explicit Bitvector(Span<Elem> elems) noexcept : Bitvector(elems, elems.size() * 64) {}
+
+    Bitvector(Span<Elem> elems, Index numBits) noexcept : Bitvector(numBits) {
+        for (Index i = 0; i < sizeInElems(); ++i) {
+            setElem(i, elems[i]);
         }
+        buildMetadata();
     }
 
     explicit Bitvector(std::string_view str, Index base = 2) : Bitvector(Index(str.size()) * log2(Elem(base))) {
@@ -137,23 +144,38 @@ public:
         if (pos >= sizeInBits() || pos < 0) [[unlikely]] {
             throw std::invalid_argument("invalid position for rank query");
         }
-        if (pos == 0) [[unlikely]] {
+        return rankOneUnchecked(pos);
+    }
+
+    /// Unlike rankOne(), this dDoesn't check that `pos` is valid, although that gives close to no measurable performance benefits.
+    /// However, the combined ASSUME macros do improve performance by quite a bit (if the compiler couldn't assume that pos >= 0,
+    //// performance would actually be significantly lower than with the throwing checks)
+    [[nodiscard]] Index rankOneUnchecked(Index pos) const noexcept {
+        ADS_ASSUME(0 <= pos);
+        ADS_ASSUME(pos < sizeInBits());
+        if (pos <= 0) [[unlikely]] {
             return 0;
         }
         --pos;
+        ADS_ASSUME(pos >= 0);
         Index elemIdx = pos / 64;
         Elem mask = Elem(-1) >> (63 - pos % 64);
         Index superblockIdx = elemIdx / superBlockSize();
+        ADS_ASSUME(superblockIdx >= 0);
         Index blockIdx = elemIdx / blockSize();
-        //        std::cout << getSuperBlockCount(superblockIdx) << " " << getBlockCount(superblockIdx, blockIdx) << " " << popcount(getElem(elemIdx) & mask) << std::endl;
+        ADS_ASSUME(blockIdx >= 0);
         Index res = getSuperBlockCount(superblockIdx) + getBlockCount(blockIdx);
+        ADS_ASSUME(res >= 0);
         for (Index i = blockIdx * blockSize(); i < elemIdx; ++i) {
+            ADS_ASSUME(elemIdx - i < numBlocksInSuperBlock());
             res += popcount(getElem(i));
         }
         return res + popcount(getElem(elemIdx) & mask);
     }
 
     [[nodiscard]] Index rankZero(Index pos) const { return pos - rankOne(pos); }
+
+    [[nodiscard]] Index rankZeroUnchecked(Index pos) const noexcept { return pos - rankOneUnchecked(pos); }
 
     template<bool IsOne>
     [[nodiscard]] Index rank(Index pos) const noexcept {
@@ -167,7 +189,7 @@ public:
     template<bool IsOne>
     [[nodiscard]] Index select(Index bitRank) const {
         if (bitRank < 0 || bitRank >= sizeInBits()) [[unlikely]] {
-            throw std::invalid_argument("invalid rank for select query");
+            throw std::invalid_argument("invalid rank for select query: " + std::to_string(bitRank));
         }
         Index lower = 0, upper = sizeInBits(), mid = -1;
         Index r = -1;
@@ -183,8 +205,10 @@ public:
         return rank<IsOne>(lower) == bitRank && getBit(lower) == IsOne ? lower : -1;
     }
 
+    /// Return the position `i` such that `getBit(i)` returns the `rank`th one, counting from 0.
     [[nodiscard]] Index selectOne(Index rank) const { return select<true>(rank); }
 
+    /// Return the position `i` such that `getBit(i)` returns the `rank`th zero, counting from 0
     [[nodiscard]] Index selectZero(Index rank) const { return select<false>(rank); }
 
 

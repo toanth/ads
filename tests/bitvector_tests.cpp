@@ -228,10 +228,9 @@ TEST(Bitvector, Random) {
     Index maxRank = bv.rankOne(bv.sizeInBits() - 1);
     for (Index i = 0; i < bv.sizeInBits(); ++i) {
         ASSERT_EQ(bv.rankZero(i), results[i]) << i;
-        // TODO: Define rank as num values <= i instead of <i?
-        //        ASSERT_EQ(bv.selectOne(bv.rankOne((i))), i);
-        //        if (i < maxRank) {
-        //            ASSERT_EQ(bv.rankOne(bv.selectOne(i)), i);
-        //        }
+        ASSERT_GE(bv.selectOne(bv.rankOne((i))), i);
+        if (i < maxRank) {
+            ASSERT_EQ(bv.rankOne(bv.selectOne(i)), i);
+        }
     }
 }

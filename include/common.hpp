@@ -42,6 +42,30 @@ using Index = std::ptrdiff_t;
 // TODO: Instead of a global Elem alias, define per template to allow smaller sizes
 using Elem = std::uint64_t;
 
+
+#if __has_cpp_attribute(assume)
+#define ADS_ASSUME(x)                                                                                                  \
+    assert(x);                                                                                                         \
+    [[assume(x)]]
+#elif defined __clang__
+#define ADS_ASSUME(x)                                                                                                  \
+    assert(x);                                                                                                         \
+    __builtin_assume(x)
+#elif defined(__GNUC__) && !defined(__ICC)
+// the following doesn't ignore side effects, but unfortunately, there is no better way to implement this in gcc
+// -- since assume is only used internally, this isn't a huge deal
+#define ADS_ASSUME(x)                                                                                                  \
+    assert(x);                                                                                                         \
+    if (x) {                                                                                                           \
+    } else {                                                                                                           \
+        __builtin_unreachable();                                                                                       \
+    }
+#elif defined _MSC_VER || defined __ICC
+#define ADS_ASSUME(x)                                                                                                  \
+    assert(x);                                                                                                         \
+    __assume(x)
+#endif // __has_cpp_attribute(assume)
+
 struct CreateWithSizeTag {};
 
 namespace detail {
@@ -193,7 +217,7 @@ public:
     constexpr Span(T* ptr, Index size) noexcept : first(ptr), last(ptr + size) { assert(size >= 0); }
     constexpr Span(T* first, T* last) noexcept : first(first), last(last) { assert(size() >= 0); }
 
-    template<typename Container> // Don't even try to check that `Container` models contiguous_range in C++17
+    template<typename Container, typename = std::enable_if_t<std::is_same_v<typename Container::value_type, std::remove_cv_t<T>>>>
     /*implicit*/ Span(Container& c) : Span(c.data(), c.size()) { // NOLINT(google-explicit-constructor)
     }
 

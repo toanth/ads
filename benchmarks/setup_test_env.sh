@@ -1,7 +1,5 @@
 #!/bin/bash
 
-SCRIPTPATH="$( cd "$(dirname "$0")" ; pwd -P )"
-
 usage() {
     cat << EOF >&2
 Usage: $0 [options]
