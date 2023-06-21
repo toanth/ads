@@ -88,7 +88,7 @@ public:
 
     [[nodiscard]] Number operator[](Index i) const { return get(i); }
 
-    constexpr static auto getNumber = [](const EliasFano& ev, Index i) { return ev.get(i); };
+    constexpr static auto getNumber = [](const auto& ef, Index i) -> Number { return ef.get(i); };
 
     using NumberIter = RandAccessIter<EliasFano, decltype(getNumber)>;
 

@@ -24,12 +24,28 @@ class Bitvector : private Layout {
     using Base::setBlockCount;
     using Base::setSuperBlockCount;
 
+    using typename Base::BlockCount;
+    using typename Base::SuperBlockCount;
+
+    const Layout& layout() const noexcept { return static_cast<const Layout&>(*this); }
+
     Index numBits;
 
     static Index numElems(Index numBits) noexcept {
         assert(numBits >= 0);
         return roundUpDiv(numBits, 64);
     }
+
+    constexpr static auto getSuperBlockCountFunc
+            = [](const auto& bv, Index i) -> SuperBlockCount { return bv.layout().getSuperBlockCount(i); };
+
+    using SuperBlockCountIter = RandAccessIter<Bitvector, decltype(getSuperBlockCountFunc)>;
+    SuperBlockCountIter sbIter(Index i) const { return SuperBlockCountIter(*this, getSuperBlockCountFunc, i); }
+
+    Subrange<SuperBlockCountIter> superBlockCountView() const noexcept {
+        return Subrange<SuperBlockCountIter>{sbIter(0), sbIter(numSuperBlocks())};
+    }
+
 
 public:
     using Base::allocatedSizeInElems;
@@ -39,6 +55,8 @@ public:
     using Base::numBlocks;
     using Base::numBlocksInSuperBlock;
     using Base::numElems;
+    using Base::numElemsInBlock;
+    using Base::numElemsInSuperBlock;
     using Base::numSuperBlocks;
     using Base::setBit;
     using Base::setElem;
@@ -72,7 +90,7 @@ public:
         const std::size_t charsPerElem = 64 / log2ofBase;
         Index i = 0;
         for (Index superblock = 0; superblock < numSuperBlocks(); ++superblock) {
-            for (Index j = 0; j < superBlockSize(); ++j) {
+            for (Index j = 0; j < numElemsInSuperBlock(); ++j) {
                 if (str.empty()) break;
                 std::size_t numToParse = std::min(charsPerElem, str.size());
                 std::string_view toParse = str.substr(0, numToParse);
@@ -105,16 +123,16 @@ public:
         auto s = superblockElems(superblockIdx);
         Index inSuperblockSoFar = 0;
         for (Index i = 0; i < s.size(); ++i) {
-            if (i % blockSize() == 0) {
+            if (i % numElemsInBlock() == 0) {
                 //                std::cout << "setting block count for block " << i << " to " << inSuperblockSoFar << ", s[i] is "
                 //                          << std::hex << s[i] << std::dec << ", popcount " << popcount(s[i]) << std::endl;
-                setBlockCount(superblockIdx, i / blockSize(), inSuperblockSoFar);
+                setBlockCount(superblockIdx, i / numElemsInBlock(), inSuperblockSoFar);
             }
             inSuperblockSoFar += popcount(s[i]);
         }
-        assert(inSuperblockSoFar <= superBlockSize() * 64);
+        assert(inSuperblockSoFar <= superBlockSize());
         if (superblockIdx < numSuperBlocks() - 1) {
-            assert(s.size() % blockSize() == 0);
+            assert(s.size() % numElemsInBlock() == 0);
             setSuperBlockCount(superblockIdx + 1, getSuperBlockCount(superblockIdx) + inSuperblockSoFar);
         }
     }
@@ -160,13 +178,13 @@ public:
         ADS_ASSUME(pos >= 0);
         Index elemIdx = pos / 64;
         Elem mask = Elem(-1) >> (63 - pos % 64);
-        Index superblockIdx = elemIdx / superBlockSize();
+        Index superblockIdx = elemIdx / numElemsInSuperBlock();
         ADS_ASSUME(superblockIdx >= 0);
-        Index blockIdx = elemIdx / blockSize();
+        Index blockIdx = elemIdx / numElemsInBlock();
         ADS_ASSUME(blockIdx >= 0);
         Index res = getSuperBlockCount(superblockIdx) + getBlockCount(blockIdx);
         ADS_ASSUME(res >= 0);
-        for (Index i = blockIdx * blockSize(); i < elemIdx; ++i) {
+        for (Index i = blockIdx * numElemsInBlock(); i < elemIdx; ++i) {
             ADS_ASSUME(elemIdx - i < numBlocksInSuperBlock());
             res += popcount(getElem(i));
         }
@@ -187,15 +205,71 @@ public:
     }
 
     template<bool IsOne>
+    [[nodiscard]] Index selectSuperBlockIdx(Index bitRank) const {
+        constexpr Index linearFallbackSize = 64;
+        auto rankFunc = [this](Index i) noexcept {
+            ADS_ASSUME(i >= 0);
+            ADS_ASSUME(i < numSuperBlocks());
+            Index rankOne = getSuperBlockCount(i);
+            ADS_ASSUME(rankOne >= 0);
+            if constexpr (IsOne) {
+                return rankOne;
+            } else {
+                Index numBitsBefore = i * superBlockSize();
+                ADS_ASSUME(rankOne <= numBitsBefore);
+                return numBitsBefore - rankOne;
+            }
+        };
+        ADS_ASSUME(bitRank >= 0);
+        Index l = bitRank / superBlockSize();
+        Index u = numSuperBlocks();
+        ADS_ASSUME(l <= u);
+        if (u - l > linearFallbackSize) {
+            // set u close to the expected location for iid ones with 50% probability, then increase exponentially
+            // until it is an upper bound. Unlike binary search, this starts with a less pessimistic search window and
+            // should hopefully be easier on the branch predictor
+            u = l + 1; // add one in case l == 0
+            do {
+                u *= 2;
+                if (u >= numSuperBlocks()) {
+                    u = numSuperBlocks();
+                    break;
+                }
+            } while (rankFunc(u) <= bitRank);
+            while (l + linearFallbackSize < u) {
+                ADS_ASSUME(0 <= l);
+                ADS_ASSUME(l < u);
+                Index mid = (l + u) / 2;
+                Index midRank = rankFunc(mid);
+                ADS_ASSUME(midRank >= rankFunc(l));
+                if (midRank <= bitRank) {
+                    l = mid;
+                } else {
+                    u = mid;
+                }
+            }
+        }
+        ADS_ASSUME(u - l <= linearFallbackSize);
+        for (Index i = l; i < u; ++i) {
+            if (rankFunc(i) > bitRank) {
+                return i - 1;
+            }
+        }
+        return u - 1;
+    }
+
+    template<bool IsOne>
     [[nodiscard]] Index select(Index bitRank) const {
         if (bitRank < 0 || bitRank >= sizeInBits()) [[unlikely]] {
             throw std::invalid_argument("invalid rank for select query: " + std::to_string(bitRank));
         }
-        Index lower = 0, upper = sizeInBits(), mid = -1;
-        Index r = -1;
+        Index superBlockIdx = selectSuperBlockIdx<IsOne>(bitRank);
+        Index lower = superBlockIdx * superBlockSize();
+        Index upper = std::min(lower + superBlockSize(), sizeInBits());
+        //        Index lower = 0, upper = sizeInBits(), mid = -1;
         while (upper - lower > 1) { // TODO: linear fallback
-            mid = (lower + upper) / 2;
-            r = rank<IsOne>(mid);
+            Index mid = (lower + upper) / 2;
+            Index r = rank<IsOne>(mid);
             if (r <= bitRank) {
                 lower = mid;
             } else {
@@ -226,12 +300,14 @@ public:
     }
 
     [[nodiscard]] Span<Elem> superblockElems(Index superblockIdx) noexcept {
-        Index size = superblockIdx == numSuperBlocks() - 1 ? (numElems() - 1) % superBlockSize() + 1 : superBlockSize();
-        return Span<Elem>(&getElemRef(superblockIdx * superBlockSize()), size);
+        Index size = superblockIdx == numSuperBlocks() - 1 ? (numElems() - 1) % numElemsInSuperBlock() + 1 :
+                                                             numElemsInSuperBlock();
+        return Span<Elem>(&getElemRef(superblockIdx * numElemsInSuperBlock()), size);
     }
     [[nodiscard]] Span<const Elem> superblockElems(Index superblockIdx) const noexcept {
-        Index size = superblockIdx == numSuperBlocks() - 1 ? (numElems() - 1) % superBlockSize() + 1 : superBlockSize();
-        return Span<const Elem>(&getElemRef(superblockIdx * superBlockSize()), size);
+        Index size = superblockIdx == numSuperBlocks() - 1 ? (numElems() - 1) % numElemsInSuperBlock() + 1 :
+                                                             numElemsInSuperBlock();
+        return Span<const Elem>(&getElemRef(superblockIdx * numElemsInSuperBlock()), size);
     }
 
     [[nodiscard]] Index numAllocatedBits() const noexcept { return allocatedSizeInElems() * sizeof(Elem) * 8; }

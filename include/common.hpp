@@ -1,6 +1,7 @@
 #ifndef ADS_COMMON_HPP
 #define ADS_COMMON_HPP
 
+#include <algorithm>
 #include <cassert>
 #include <cstdint>
 #include <cstring>
@@ -43,28 +44,30 @@ using Index = std::ptrdiff_t;
 using Elem = std::uint64_t;
 
 
+
 #if __has_cpp_attribute(assume)
-#define ADS_ASSUME(x)                                                                                                  \
-    assert(x);                                                                                                         \
-    [[assume(x)]]
+#define ADS_ASSUME_IMPL(x) [[assume(x)]]
 #elif defined __clang__
-#define ADS_ASSUME(x)                                                                                                  \
-    assert(x);                                                                                                         \
-    __builtin_assume(x)
+#define ADS_ASSUME_IMPL(x) __builtin_assume(x)
 #elif defined(__GNUC__) && !defined(__ICC)
 // the following doesn't ignore side effects, but unfortunately, there is no better way to implement this in gcc
 // -- since assume is only used internally, this isn't a huge deal
-#define ADS_ASSUME(x)                                                                                                  \
-    assert(x);                                                                                                         \
+#define ADS_ASSUME_IMPL(x)                                                                                             \
     if (x) {                                                                                                           \
     } else {                                                                                                           \
         __builtin_unreachable();                                                                                       \
     }
 #elif defined _MSC_VER || defined __ICC
-#define ADS_ASSUME(x)                                                                                                  \
-    assert(x);                                                                                                         \
-    __assume(x)
+#define ADS_ASSUME_IMPL(x) __assume(x)
 #endif // __has_cpp_attribute(assume)
+
+#ifdef NDEBUG
+#define ADS_ASSUME(x)                                                                                                  \
+    assert(x); /* will probably be optimized to assert(true), but still useful on the off-chance it won't */           \
+    ADS_ASSUME_IMPL(x)
+#else // don't use assume as that could (and probably would) cause the compiler to treat the assert as assert(true)
+#define ADS_ASSUME(x) assert(x)
+#endif
 
 struct CreateWithSizeTag {};
 

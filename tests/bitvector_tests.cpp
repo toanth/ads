@@ -18,7 +18,7 @@ TEST(BitvectorConstruction, Sizes) {
             ASSERT_EQ(bv.bitView().size(), bv.sizeInBits());
             ASSERT_GE(bv.sizeInElems(), (i + 63) / 64); // TODO: Make exact?
             ASSERT_EQ(bv.elemView().size(), bv.sizeInElems());
-            ASSERT_EQ(bv.numSuperBlocks(), (bv.sizeInElems() + bv.superBlockSize() - 1) / bv.superBlockSize());
+            ASSERT_EQ(bv.numSuperBlocks(), (bv.sizeInElems() + bv.numElemsInSuperBlock() - 1) / bv.numElemsInSuperBlock());
         }
     }
 
@@ -34,7 +34,7 @@ TEST(BitvectorConstruction, Sizes) {
         Bitvector<TestLayout> bv(text);
         ASSERT_EQ(bv.sizeInBits(), i);
         ASSERT_GE(bv.sizeInElems(), (i + 63) / 64);
-        ASSERT_EQ(bv.numSuperBlocks(), (bv.sizeInElems() + bv.superBlockSize() - 1) / bv.superBlockSize());
+        ASSERT_EQ(bv.numSuperBlocks(), (bv.sizeInElems() + bv.numElemsInSuperBlock() - 1) / bv.numElemsInSuperBlock());
         text.push_back('1');
     }
 }
@@ -179,6 +179,18 @@ TEST(BitvecSelect, Large) {
     }
 }
 
+TEST(BitvecSelect, 2SuperBlocksPlus2) {
+    Bitvector<TestLayout> bv;
+    bv = Bitvector<TestLayout>(bv.superBlockSize() * 2 + 2, 1);
+    ASSERT_EQ(bv.rankOne(bv.sizeInBits() - 1), bv.sizeInElems());
+    for (Index i = 0; i < bv.sizeInBits() - bv.sizeInElems(); ++i) {
+        ASSERT_EQ(bv.selectZero(i), i + i / 63 + 1) << i << " " << bv.sizeInBits();
+    }
+    for (Index i = 0; i < bv.sizeInElems(); ++i) {
+        ASSERT_EQ(bv.selectOne(i), i * 64) << i << " " << bv.sizeInBits();
+    }
+}
+
 
 TEST(Bitvector, EmptyOrOneElem) {
     Bitvector<TestLayout> bv(0);
@@ -225,12 +237,21 @@ TEST(Bitvector, Random) {
         results[i] = results[i - 1] + (str[i - 1] == '0');
     }
     Bitvector<TestLayout> bv(str);
-    Index maxRank = bv.rankOne(bv.sizeInBits() - 1);
+    Index numOnes = bv.rankOne(bv.sizeInBits() - 1);
+    if (bv.getBit(bv.sizeInBits() - 1)) {
+        ++numOnes;
+    }
     for (Index i = 0; i < bv.sizeInBits(); ++i) {
-        ASSERT_EQ(bv.rankZero(i), results[i]) << i;
-        ASSERT_GE(bv.selectOne(bv.rankOne((i))), i);
-        if (i < maxRank) {
-            ASSERT_EQ(bv.rankOne(bv.selectOne(i)), i);
+        ASSERT_EQ(bv.rankZero(i), results[i]) << i << " " << bv.sizeInBits();
+        Index rank = bv.rankOne(i);
+        if (rank < numOnes) {
+            ASSERT_GE(bv.selectOne(rank), i) << bv.sizeInBits();
+        } else {
+            ASSERT_EQ(rank, numOnes);
+            ASSERT_EQ(bv.selectOne(rank), -1);
+        }
+        if (i < numOnes) {
+            ASSERT_EQ(bv.rankOne(bv.selectOne(i)), i) << bv.sizeInBits();
         }
     }
 }

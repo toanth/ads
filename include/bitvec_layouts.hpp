@@ -14,7 +14,9 @@ concept IsLayout = requires(T& t, const T& ct) {
     T();
     T(Index());
     { T::superBlockSize() } -> std::convertible_to<Index>;
+    { T::numElemsInSuperBlock() } -> std::convertible_to<Index>;
     { T::blockSize() } -> std::convertible_to<Index>;
+    { T::numElemsInBlock() } -> std::convertible_to<Index>;
     { T::numBlocksInSuperBlock() } -> std::convertible_to<Index>;
     { T::bytesPerBlockCount() } -> std::convertible_to<Index>;
     { ct.allocatedSizeInElems() } -> std::convertible_to<Index>;
@@ -38,6 +40,10 @@ concept IsLayout = requires(T& t, const T& ct) {
 // Still, for small bitvectors, this may be a good option
 struct CacheEfficientLayout {
 
+
+    using BlockCount = Elem;
+    using SuperBlockCount = Elem;
+
     Array<Elem> vec = Array<Elem>();
     Index numElements;
 
@@ -49,21 +55,26 @@ struct CacheEfficientLayout {
         // TODO: ensure that allocated memory is cache aligned
     }
 
-    constexpr static Index superBlockSize() noexcept { return 4; }
 
-    constexpr static Index blockSize() noexcept { return 1; }
+    constexpr static Index numElemsInSuperBlock() noexcept { return 4; }
+
+    constexpr static Index superBlockSize() noexcept { return numElemsInSuperBlock() * 64; }
+
+    constexpr static Index numElemsInBlock() noexcept { return 1; }
+
+    constexpr static Index blockSize() noexcept { return numElemsInBlock() * 64; }
 
     constexpr static Index bytesPerBlockCount() noexcept { return 1; }
 
 
     [[nodiscard]] constexpr static Index numBlocks(Index numElems) noexcept {
-        return roundUpDiv(numElems, blockSize());
+        return roundUpDiv(numElems, numElemsInBlock());
     }
 
-    [[nodiscard]] constexpr Index numBlocks() const noexcept { return roundUpDiv(numElems(), blockSize()); }
+    [[nodiscard]] constexpr Index numBlocks() const noexcept { return numBlocks(numElems()); }
 
     [[nodiscard]] constexpr static Index numSuperBlocks(Index numElems) noexcept {
-        return roundUpDiv(numElems, superBlockSize());
+        return roundUpDiv(numElems, numElemsInSuperBlock());
     }
 
     [[nodiscard]] constexpr Index numSuperBlocks() const noexcept { return numSuperBlocks(numElems()); }
@@ -82,27 +93,30 @@ struct CacheEfficientLayout {
     [[nodiscard]] constexpr Index numElems() const noexcept { return numElements; }
 
     static constexpr Index getElemIdx(Index i) noexcept {
-        assert(i >= 0);
-        return (i / superBlockSize()) * (ELEMS_PER_CACHELINE)
-               + i % superBlockSize(); // TODO: Make sure this gets optimized to bitshifts (possibly negative i may interfere)
+        ADS_ASSUME(i >= 0);
+        return (i / numElemsInSuperBlock()) * (ELEMS_PER_CACHELINE) + i % numElemsInSuperBlock();
     }
 
     [[nodiscard]] Elem& getElem(Index i) noexcept {
-        assert(i >= 0 && i < numElements);
+        ADS_ASSUME(i >= 0);
+        ADS_ASSUME(i < numElements);
         return vec.ptr[i];
     }
     [[nodiscard]] Elem getElem(Index i) const noexcept {
-        assert(i >= 0 && i < numElements);
+        ADS_ASSUME(i >= 0);
+        ADS_ASSUME(i < numElements);
         return vec[getElemIdx(i)];
     }
 
     void setElem(Index i, Elem value) noexcept {
-        assert(i >= 0 && i < numElements);
+        ADS_ASSUME(i >= 0);
+        ADS_ASSUME(i < numElements);
         vec.ptr[getElemIdx(i)] = value;
     }
 
     Elem& getElemRef(Index i) noexcept {
-        assert(i >= 0 && i < numElements);
+        ADS_ASSUME(i >= 0);
+        ADS_ASSUME(i < numElements);
         return vec.ptr[getElemIdx(i)];
     }
 
@@ -114,30 +128,29 @@ struct CacheEfficientLayout {
     void setBit(Index i, bool value) noexcept { BitwiseAccess<1>::setBits(&getElemRef(i / 64), i % 64, value); }
 
     static Index getSuperblockCountIdx(Index superblockIdx) noexcept {
-        assert(superblockIdx >= 0);
-        return superblockIdx * ELEMS_PER_CACHELINE + superBlockSize();
+        ADS_ASSUME(superblockIdx >= 0);
+        return superblockIdx * ELEMS_PER_CACHELINE + numElemsInSuperBlock();
     }
 
     [[nodiscard]] Elem getSuperBlockCount(Index superblockIdx) const noexcept {
-        assert(superblockIdx >= 0 && superblockIdx < numSuperBlocks());
         return vec[getSuperblockCountIdx(superblockIdx)];
     }
 
     void setSuperBlockCount(Index superblockIdx, Elem count) noexcept {
-        assert(superblockIdx >= 0 && superblockIdx < numSuperBlocks());
         vec.ptr[getSuperblockCountIdx(superblockIdx)] = count;
     }
 
     [[nodiscard]] Index getBlockCount(Index blockIdx) const noexcept {
         Index superblockIdx = blockIdx / numBlocksInSuperBlock();
         blockIdx %= numBlocksInSuperBlock();
-        assert(superblockIdx >= 0 && superblockIdx < numSuperBlocks());
+        ADS_ASSUME(superblockIdx >= 0);
+        ADS_ASSUME(superblockIdx < numSuperBlocks());
         return (Index)BitwiseAccess<8>::getBits(vec.ptr.get(), getSuperBlockCount(superblockIdx) + 1, blockIdx);
     }
 
     void setBlockCount(Index superblockIdx, Index blockIdx, Index value) noexcept {
-        assert(superblockIdx >= 0 && superblockIdx < numSuperBlocks() && blockIdx >= 0 && blockIdx < numBlocks());
-        assert(value >= 0);
+        ADS_ASSUME(superblockIdx >= 0 && superblockIdx < numSuperBlocks() && blockIdx >= 0 && blockIdx < numBlocks());
+        ADS_ASSUME(value >= 0);
         Index i = getSuperblockCountIdx(superblockIdx) + 1;
         BitwiseAccess<8>::setBits(vec.ptr.get(), i, blockIdx, value);
     }
@@ -145,29 +158,33 @@ struct CacheEfficientLayout {
 
 
 /// \brief The default layout for the Bitvector.
-/// \tparam BlockSize The number of Elems in a block. This is the most important hyperparameter as it matters most for additional space requirements
+/// \tparam BlockSizeInElems The number of Elems in a block. This is the most important hyperparameter as it matters most for additional space requirements
 ///  and for performance. On at least some systems, the number of popcount invocations, which is in [0, BlockSize), is the most significant
 /// factor for rank() performance.
-/// \tparam SuperblockSize The number of Elems in a superblock. This determines the amount of bytes needed to store a single block count.
-/// \tparam SuperBlockCount The type used to store superblock counts. Some small memory requirement reductions are possible
+/// \tparam SuperBlockSizeInElems The number of Elems in a superblock. This determines the amount of bytes needed to store a single block count, so this
+/// parameter shouldn't be chosen too large. Must be a multiple of BlockSize.
+/// \tparam SuperBlockCountT The type used to store superblock counts. Some small memory requirement reductions are possible
 /// if the size of the bitvector in bits is known in advance to fit into a smaller type than Elem.
-template<Index BlockSize = 8, Index SuperblockSize = (1 << 16) / 64, typename SuperBlockCount = Elem>
+template<Index BlockSizeInElems = 8, Index SuperBlockSizeInElems = (1 << 16) / 64, typename SuperBlockCountT = Elem>
 struct SimpleLayout {
 
-    static_assert(0 < BlockSize && 0 < SuperblockSize && SuperblockSize % BlockSize == 0);
+    static_assert(0 < BlockSizeInElems && 0 < SuperBlockSizeInElems && SuperBlockSizeInElems % BlockSizeInElems == 0);
 
 
 public:
-    [[nodiscard]] constexpr static Index superBlockSize() noexcept { return SuperblockSize; }
+    [[nodiscard]] constexpr static Index numElemsInSuperBlock() noexcept { return SuperBlockSizeInElems; }
+    [[nodiscard]] constexpr static Index superBlockSize() noexcept { return SuperBlockSizeInElems * 64; }
 
-    [[nodiscard]] constexpr static Index blockSize() noexcept { return BlockSize; }
+    [[nodiscard]] constexpr static Index numElemsInBlock() noexcept { return BlockSizeInElems; }
+    [[nodiscard]] constexpr static Index blockSize() noexcept { return BlockSizeInElems * 64; }
 
     [[nodiscard]] ADS_CONSTEVAL static Index bytesPerBlockCount() noexcept {
-        return bytesNeededForIndexing(SuperblockSize * 64);
+        return bytesNeededForIndexing(superBlockSize());
     }
 
     using BlockCount = IntType<bytesPerBlockCount()>;
     using BlockCounts = View<BlockCount>;
+    using SuperBlockCount = SuperBlockCountT;
     using SuperBlockCounts = View<SuperBlockCount>;
     Array<Elem> vec;
     BlockCounts blocks;
@@ -181,13 +198,13 @@ public:
     }
 
     [[nodiscard]] constexpr static Index numBlocks(Index numElems) noexcept {
-        return roundUpDiv(numElems, blockSize());
+        return roundUpDiv(numElems, numElemsInBlock());
     }
 
     [[nodiscard]] constexpr Index numBlocks() const noexcept { return numBlocks(numElems()); }
 
     [[nodiscard]] constexpr static Index numSuperBlocks(Index numElems) noexcept {
-        return roundUpDiv(numElems, superBlockSize());
+        return roundUpDiv(numElems, numElemsInSuperBlock());
     }
 
     [[nodiscard]] constexpr Index numSuperBlocks() const noexcept { return numSuperBlocks(numElems()); }

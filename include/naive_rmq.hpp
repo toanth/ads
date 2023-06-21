@@ -128,7 +128,7 @@ public:
 
     [[nodiscard]] Index sizeInBits() const noexcept { return completeSize(size()) * sizeof(Index) * 8; }
 
-    constexpr static auto getValue = [](const NaiveRMQ& rmq, Index i) -> Index { return rmq.minIdx(i, i + 1); };
+    constexpr static auto getValue = [](const auto& rmq, Index i) -> Index { return rmq.minIdx(i, i + 1); };
 
     using ValueIter = RandAccessIter<NaiveRMQ, decltype(getValue)>;
 
