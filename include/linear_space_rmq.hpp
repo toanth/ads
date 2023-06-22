@@ -9,7 +9,7 @@ namespace ads {
 
 // TODO: For small sizes, use naive rmq instead of nlogn bitvecRmq?
 template<typename T, Index BlockSize, typename InBlockIdx, typename BlockNumIdx, typename Comp>
-struct NLogNBlockRmq : NlognRmqOps<NLogNBlockRmq<T, BlockSize, InBlockIdx, BlockNumIdx, Comp>, Comp> {
+struct NLogNBlockRmq : NLogNRmqOps<NLogNBlockRmq<T, BlockSize, InBlockIdx, BlockNumIdx, Comp>, Comp> {
     Index length = 0;
     const T* values = nullptr;
     InBlockIdx* minimumInBlock = nullptr;
@@ -73,6 +73,7 @@ class LinearSpaceRMQ {
     Comp comp() const noexcept { return blockRmq.getComp(); }
 
 public:
+    using value_type = T;
     // TODO: Alternative idea: partition 256value blocks into 16value subblocks and store for each subblock the relative
     // index of its minimum
     //  in a 4 bit value, since there are 16 subblocks this requires 64 bits per block which may be stored directly
@@ -91,7 +92,11 @@ public:
     explicit LinearSpaceRMQ(Span<const T> inputValues)
         : LinearSpaceRMQ(toUniquePtr(inputValues, roundUpDiv(inputValues.size(), SubBlockSize) * SubBlockSize),
                 roundUpDiv(inputValues.size(), SubBlockSize) * SubBlockSize) {}
+
     explicit LinearSpaceRMQ(const std::vector<T>& inputValues) : LinearSpaceRMQ(Span<const T>(inputValues)) {}
+
+    LinearSpaceRMQ(T* inputValues, Index length) : LinearSpaceRMQ(Span<const T>(inputValues, length)) {}
+
     /// \brief Take an unique_ptr and a size to avoid paying for the extra capacity() - size() space of a vector
     LinearSpaceRMQ(std::unique_ptr<T[]> inputValues, Index length)
         : values(std::move(inputValues)), blockRmq(), length(length) {

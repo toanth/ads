@@ -10,21 +10,31 @@ class EliasFano {
 
     Index numInts = 0;
     //    Index numLowerBitsPerNumber = 0;
-    Index lowerBitMask;
-    Index allocatedSizeInBits;
-    Bitvector<BitvecLayout> upper;
-    BitStorage<dynSize> lower; // TODO: Change to BitView?
+    Index lowerBitMask = 0;
+    Index allocatedSizeInElems = 0;
+    Allocation<> allocation = Allocation<>();
+    Bitvector<BitvecLayout> upper = Bitvector<BitvecLayout>();
+    BitView<dynSize> lower = BitView<dynSize>();
 
 private:
     static constexpr Index numBitsInNumber = 8 * sizeof(Number);
 
     EliasFano(Index numInts, CreateWithSizeTag) : numInts(numInts) {
-        Index lowerBitsPerNumber = numBitsInNumber - Index(std::ceil(std::log2(numInts)));
-        Index lowerSizeInElems = roundUpDiv(lowerBitsPerNumber * numInts, 8 * sizeof(Elem));
-        lower = BitStorage<dynSize>{makeUniqueForOverwrite<Elem>(lowerSizeInElems), {lowerBitsPerNumber}};
-        lowerBitMask = (Number(1) << lowerBitsPerNumber) - 1;
-        upper = Bitvector<BitvecLayout>(numInts + (1 << numUpperBitsPerNumber()) + 1);
-        allocatedSizeInBits = (lowerSizeInElems + upper.allocatedSizeInElems()) * sizeof(Elem) * 8;
+        // add 1 before taking the log to prevent problems when numInts is 0 or 1, which would cause a shift by numBitsInNumber
+        Index numLowerBitsPerNumber = numBitsInNumber - Index(std::ceil(std::log2(numInts + 1)));
+        Index lowerSizeInElems = roundUpDiv(numLowerBitsPerNumber * numInts, 8 * sizeof(Elem));
+        Index upperSizeInBits = numInts + (1 << (numBitsInNumber - numLowerBitsPerNumber)) + 1;
+        Index allocatedUpperSizeInElems = Bitvector<BitvecLayout>::allocatedSizeInElems(roundUpDiv(upperSizeInBits, 64));
+        assert(numLowerBitsPerNumber > 0 && (numLowerBitsPerNumber < numBitsInNumber || numInts == 0));
+
+        allocatedSizeInElems = lowerSizeInElems + allocatedUpperSizeInElems;
+        allocation = Allocation<>(allocatedSizeInElems);
+        lowerBitMask = (Number(1) << numLowerBitsPerNumber) - 1;
+        lower = BitView<dynSize>(allocation.memory(), lowerSizeInElems);
+        lower.bitAccess.numBits = numLowerBitsPerNumber;
+        assert(lowerSizeInElems == lower.numT);
+        upper = Bitvector<BitvecLayout>(upperSizeInBits, allocation.memory() + lowerSizeInElems);
+        assert(upper.allocatedSizeInElems() == allocatedUpperSizeInElems);
     }
 
 
@@ -70,7 +80,10 @@ public:
 
     [[nodiscard]] const Bitvector<BitvecLayout>& getUpper() const noexcept { return upper; }
 
-    [[nodiscard]] const BitStorage<dynSize>& getLower() const noexcept { return lower; }
+    [[nodiscard]] const BitView<dynSize>& getLower() const noexcept { return lower; }
+
+    [[nodiscard]] Index numUpperBitsPerNumber() const noexcept { return numBitsInNumber - numLowerBitsPerNumber(); }
+
     [[nodiscard]] Index numLowerBitsPerNumber() const noexcept { return lower.bitAccess.numBits; }
 
     [[nodiscard]] Elem getUpperPart(Index i) const { return upper.selectOne(i) - i - 1; }
@@ -78,7 +91,7 @@ public:
     [[nodiscard]] Elem getLowerPart(Index i) const { return lower.getBits(i); }
 
     [[nodiscard]] Number get(Index i) const {
-        if (i < 0 || i >= size()) {
+        if (i < 0 || i >= size()) [[unlikely]] {
             throw std::invalid_argument("EliasFano::get() Index out of range");
         }
         Elem upperPart = getUpperPart(i);
@@ -134,9 +147,7 @@ public:
 
     [[nodiscard]] Index size() const noexcept { return numInts; }
 
-    [[nodiscard]] Index numAllocatedBits() const noexcept { return allocatedSizeInBits; }
-
-    [[nodiscard]] Index numUpperBitsPerNumber() const noexcept { return numBitsInNumber - numLowerBitsPerNumber(); }
+    [[nodiscard]] Index numAllocatedBits() const noexcept { return allocatedSizeInElems * sizeof(Elem) * 8; }
 };
 
 } // namespace ads

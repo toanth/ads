@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <charconv>
 #include <cstdint>
 #include <cstring>
 #include <iostream>
@@ -25,6 +26,13 @@ constexpr static bool hasCpp20 = true;
 #define ADS_HAS_CPP20
 #define ADS_CONSTEVAL consteval
 #define ADS_CPP20_CONSTEXPR constexpr
+#define ADS_INTEGRAL std::integral
+
+#if __cplusplus >= 202300L
+#define ADS_IF_CONSTEVAL if consteval
+#else
+#define ADS_IF_CONSTEVAL if (std::is_constant_evaluated())
+#endif
 
 namespace maybe_ranges = std::ranges;
 
@@ -33,8 +41,11 @@ namespace maybe_ranges = std::ranges;
 constexpr static bool hasCpp20 = false;
 #define ADS_CONSTEVAL constexpr
 #define ADS_CPP20_CONSTEXPR inline
+#define ADS_INTEGRAL typename
 
 namespace maybe_ranges = std;
+
+#define ADS_IF_CONSTEVAL if constexpr (false)
 
 #endif
 
@@ -99,17 +110,50 @@ using IntType = typename detail::IntTypeImpl<NumBytes>::Type;
 
 #define ADS_RESTRICT __restrict
 
-// TODO: Used?
-template<typename Dest>
-ADS_CPP20_CONSTEXPR Dest ptrBitCast(const unsigned char* src) noexcept {
-#ifdef ADS_HAS_CPP20
-    using T = char[sizeof(Dest)];
-    return std::bit_cast<Dest>((T*)src);
-#else
-    Dest res;
-    std::memcpy(&res, src, sizeof(Dest));
-    return res;
-#endif
+
+template<typename T>
+ADS_CPP20_CONSTEXPR void uninitializedValueConstructN(T* ADS_RESTRICT dest, Index n) noexcept {
+    assert(n >= 0);
+    ADS_IF_CONSTEVAL {
+        for (Index i = 0; i < n; ++i) {
+            std::construct_at(dest + i);
+        }
+    }
+    else {
+        std::uninitialized_value_construct_n(dest, n);
+    }
+}
+
+/// Unlike std::from_chars, the compile time version doesn't return an error code on errors,
+/// instead throwing an exception which results in a compile time error.
+/// Also, this version only handles non-negative integers with base <= 16 and requires the entire input to be valid.
+template<ADS_INTEGRAL T>
+constexpr std::from_chars_result fromChars(const char* first, const char* last, T& value, int base = 10) noexcept {
+    ADS_IF_CONSTEVAL {
+        value = T(0);
+        T digit;
+        const char* it = first;
+        if (it == last) {
+            throw std::invalid_argument{"fromChars called at compile time with empty input"};
+        }
+        for (; it != last; ++it) {
+            if (*it >= '0' && *it <= '9') {
+                digit = *it - '0';
+            } else if (*it >= 'a' && *it <= 'z') {
+                digit = T(10) + (*it - 'a');
+            } else if (*it >= 'A' && *it <= 'Z') {
+                digit = T(10) + (*it - 'A');
+            } else {
+                throw std::invalid_argument{"invalid character found"};
+            }
+            value *= base;
+            value += digit;
+        }
+        return std::from_chars_result{it, {}};
+    }
+    else {
+        return std::from_chars(first, last, value, static_cast<int>(base));
+    }
 }
 
 
@@ -121,6 +165,16 @@ constexpr Index roundUpDiv(Index divisor, Index quotient) noexcept {
 ADS_CONSTEVAL static Index bytesNeededForIndexing(Index numElements) noexcept {
     // no constexpr std::bit_floor in C++17; using <= instead of < is fine because no entry actually stores this number
     return numElements <= 256 ? 1 : 1 + bytesNeededForIndexing(roundUpDiv(numElements, 256));
+}
+
+template<typename Integer>
+ADS_CPP20_CONSTEXPR Integer abs(Integer val) noexcept {
+    ADS_IF_CONSTEVAL {
+        return val < 0 ? -val : val;
+    }
+    else {
+        return std::abs(val);
+    }
 }
 
 template<typename UnsignedInteger> // no concepts in C++17 :(

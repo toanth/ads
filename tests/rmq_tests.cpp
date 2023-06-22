@@ -15,10 +15,10 @@ class AllRmqsTest : public ::testing::Test {};
 template<ADS_RMQ_CONCEPT RmqType>
 class UsefulRmqsTest : public ::testing::Test {};
 
-using AllRmqTypes = ::testing::Types<NaiveRMQ<>, NlognRMQ<>, LinearSpaceRMQ<>, SuccinctRMQ>;
+using AllRmqTypes = ::testing::Types<NaiveRMQ<>, NLogNRmq<>, LinearSpaceRMQ<>, SuccinctRMQ>;
 TYPED_TEST_SUITE(AllRmqsTest, AllRmqTypes);
 
-using UsefulRmqTypes = ::testing::Types<NlognRMQ<>, LinearSpaceRMQ<>, SuccinctRMQ>;
+using UsefulRmqTypes = ::testing::Types<NLogNRmq<>, LinearSpaceRMQ<>, SuccinctRMQ>;
 TYPED_TEST_SUITE(UsefulRmqsTest, UsefulRmqTypes);
 
 
@@ -59,7 +59,7 @@ void testSmallRmq(std::vector<Elem> values) {
 template<typename RMQ>
 void testLargeRmq(std::vector<Elem> values) {
     RMQ rmq(values);
-    NlognRMQ<> reference(values);
+    NLogNRmq<> reference(values);
     auto engine = createRandomEngine();
     std::uniform_int_distribution<Index> idxDist(0, Index(values.size()));
     Index numIterations = values.size() / 10 + 10 * Index(std::sqrt(values.size())) + 10;
@@ -83,7 +83,7 @@ TEST(LinearSpaceRMQ, BlockBorders) {
     std::vector<Elem> values(randomValues(1 << 18));
     LinearSpaceRMQ<> rmq(values);
     Index blockSize = LinearSpaceRMQ<>::blockSize;
-    NlognRMQ<> reference(values);
+    NLogNRmq<> reference(values);
     for (Index i = 0; i < values.size(); i += blockSize) {
         for (Index j = i + blockSize; j < values.size(); j += blockSize) {
             testQuery(rmq, reference, i, j);
@@ -95,7 +95,7 @@ TEST(LinearSpaceRMQ, SubBlockBorders) {
     std::vector<Elem> values(randomValues(1 << 16));
     LinearSpaceRMQ<> rmq(values);
     Index subBlockSize = LinearSpaceRMQ<>::subBlockSize;
-    NlognRMQ<> reference(values);
+    NLogNRmq<> reference(values);
     for (Index i = 0, iteration = 0; i < values.size(); i += subBlockSize * ++iteration) {
         for (Index j = i + subBlockSize; j < values.size(); j += subBlockSize) {
             testQuery(rmq, reference, i, j);
@@ -107,7 +107,7 @@ TEST(LinearSpaceRMQ, AlmostSubBlockBorders) {
     std::vector<Elem> values(randomValues(1 << 16));
     LinearSpaceRMQ<> rmq(values);
     Index subBlockSize = LinearSpaceRMQ<>::subBlockSize;
-    NlognRMQ<> reference(values);
+    NLogNRmq<> reference(values);
     for (Index i = 0, iteration = 0; i < values.size(); i += subBlockSize * ++iteration) {
         for (Index j = i + subBlockSize; j < values.size(); j += subBlockSize) {
             Index l = std::max(int(i + (iteration + j) % 3 - 1), 0);

@@ -3,17 +3,33 @@
 
 using namespace ads;
 
-// using TestLayout = CacheEfficientLayout;
-using TestLayout = SimpleLayout<>;
+using SmallSuperBlocks = SimpleLayout<1, (1 << 8) / 64, std::uint32_t>;
+using NonsensicalSuperBlocks = SimpleLayout<2, (1 << 14) / 64, std::uint64_t>;
+using OneBlockPerSuperBlock = SimpleLayout<64, 64>;
+using LargeBlockCounts = SimpleLayout<4, (1 << 16)>;
 
-TEST(BitvectorConstruction, Sizes) {
+template<ADS_LAYOUT_CONCEPT Layout>
+class ManyBitvecLayoutsTest : public ::testing::Test {};
+
+template<ADS_LAYOUT_CONCEPT Layout>
+class EfficientBitvecLayoutsTest : public ::testing::Test {};
+
+using ManyLayouts
+        = ::testing::Types<CacheEfficientLayout, SimpleLayout<>, SmallSuperBlocks, NonsensicalSuperBlocks, OneBlockPerSuperBlock, LargeBlockCounts>;
+using EfficientLayouts = ::testing::Types<CacheEfficientLayout, SimpleLayout<>>;
+TYPED_TEST_SUITE(ManyBitvecLayoutsTest, ManyLayouts);
+TYPED_TEST_SUITE(EfficientBitvecLayoutsTest, EfficientLayouts);
+
+TYPED_TEST(ManyBitvecLayoutsTest, ConstructionSizes) {
     {
-        Bitvector<TestLayout> bv(64);
+        Allocation<> allocation(Bitvector<TypeParam>::allocatedSizeInElems(1));
+        Bitvector<TypeParam> bv(64, allocation.memory());
         ASSERT_EQ(bv.numSuperBlocks(), 1);
         ASSERT_EQ(bv.sizeInBits(), 64);
         ASSERT_EQ(bv.sizeInElems(), 1);
+        ASSERT_EQ(bv.allocatedSizeInElems(), allocation.size());
         for (Index i = 0; i < 100'000; ++i) {
-            bv = Bitvector<TestLayout>(i);
+            bv = Bitvector<TypeParam>(i);
             ASSERT_EQ(bv.sizeInBits(), i);
             ASSERT_EQ(bv.bitView().size(), bv.sizeInBits());
             ASSERT_GE(bv.sizeInElems(), (i + 63) / 64); // TODO: Make exact?
@@ -22,7 +38,7 @@ TEST(BitvectorConstruction, Sizes) {
         }
     }
 
-    Bitvector<TestLayout> bv("1");
+    Bitvector<TypeParam> bv("1");
     ASSERT_EQ(bv.numSuperBlocks(), 1);
     ASSERT_EQ(bv.numBlocks(), 1);
     ASSERT_EQ(bv.sizeInBits(), 1);
@@ -31,7 +47,7 @@ TEST(BitvectorConstruction, Sizes) {
     std::string text;
     text.reserve(10'000);
     for (Index i = 0; i < 10'000; ++i) {
-        Bitvector<TestLayout> bv(text);
+        Bitvector<TypeParam> bv(text);
         ASSERT_EQ(bv.sizeInBits(), i);
         ASSERT_GE(bv.sizeInElems(), (i + 63) / 64);
         ASSERT_EQ(bv.numSuperBlocks(), (bv.sizeInElems() + bv.numElemsInSuperBlock() - 1) / bv.numElemsInSuperBlock());
@@ -39,8 +55,8 @@ TEST(BitvectorConstruction, Sizes) {
     }
 }
 
-TEST(BitvectorConstruction, Elements) {
-    Bitvector<TestLayout> bv(1);
+TYPED_TEST(ManyBitvecLayoutsTest, ConstructionElements) {
+    Bitvector<TypeParam> bv(1);
     bv.setElem(0, 1);
     bv.buildRankMetadata(0);
     ASSERT_EQ(bv.sizeInBits(), 1);
@@ -50,7 +66,7 @@ TEST(BitvectorConstruction, Elements) {
     ASSERT_EQ(bv.toString(), "1");
     ASSERT_EQ(bv, Bitvector<>("1"));
     ASSERT_GT(bv, Bitvector<>("0"));
-    bv = Bitvector(64);
+    bv = Bitvector<TypeParam>(64);
     bv.setElem(0, Elem(1) << 63);
     bv.buildRankMetadata(0);
     ASSERT_EQ(bv.sizeInBits(), 64);
@@ -60,8 +76,8 @@ TEST(BitvectorConstruction, Elements) {
     ASSERT_GT(bv, Bitvector<>("0"));
 }
 
-TEST(BitvectorConstruction, FromStringview) {
-    Bitvector<TestLayout> bv("01");
+TYPED_TEST(ManyBitvecLayoutsTest, ConstructionFromStringview) {
+    Bitvector<TypeParam> bv("01");
     ASSERT_EQ(bv.sizeInBits(), 2);
     ASSERT_EQ(bv.getBit(0), 0);
     ASSERT_EQ(bv.getBit(1), 1);
@@ -70,29 +86,31 @@ TEST(BitvectorConstruction, FromStringview) {
     }
     ASSERT_EQ(bv.toString(), "01");
     std::string s("101110011101");
-    bv = Bitvector<TestLayout>(s);
+    bv = Bitvector<TypeParam>(s);
     ASSERT_EQ(bv.sizeInElems(), 1);
     for (Index i = 0; i < s.size(); ++i) {
         ASSERT_EQ(bv.getBit(i), s[i] == '1');
     }
     s = std::string(200, '1');
     s[63] = s[64 + 63] = s[64 * 2 + 63] = '0';
-    bv = Bitvector<TestLayout>(s);
+    Allocation<> allocation(Bitvector<TypeParam>::allocatedSizeInElems(roundUpDiv(s.size(), 64)));
+    bv = Bitvector<TypeParam>(s, 2, allocation.memory());
     ASSERT_EQ(bv.sizeInElems(), 4);
+    ASSERT_EQ(bv.allocatedSizeInElems(), allocation.size());
     for (Index i = 0; i < 3; ++i) {
         ASSERT_EQ(bv.getElem(i), Elem(-1) / 2);
     }
     for (Index i = 0; i < 64; ++i) {
         ASSERT_EQ(bv.getBit(64 * 3 + i), i < 200 - 64 * 3);
     }
-    bv = Bitvector<TestLayout>(std::string(11, 'e'), 16);
+    bv = Bitvector<TypeParam>(std::string(11, 'e'), 16);
     for (Index i = 0; i < 11 * 4; ++i) {
         ASSERT_EQ(bv.getBit(i), i % 4 != 3) << i;
     }
 }
 
-TEST(BitvecRank, Only1s) {
-    Bitvector<TestLayout> bv("111");
+TYPED_TEST(ManyBitvecLayoutsTest, RankOnly1s) {
+    Bitvector<TypeParam> bv("111");
     ASSERT_EQ(bv.getElem(0), Elem(0b111));
     for (Index i = 0; i < 3; ++i) {
         ASSERT_EQ(bv.rankOne(i), i) << i;
@@ -100,8 +118,8 @@ TEST(BitvecRank, Only1s) {
     }
 }
 
-TEST(BitvecRank, Small) {
-    Bitvector<TestLayout> bv("110011001100");
+TYPED_TEST(ManyBitvecLayoutsTest, RankSmall) {
+    Bitvector<TypeParam> bv("110011001100");
     for (Index i = 0; i < 3; ++i) {
         ASSERT_EQ(bv.rankZero(4 * i), 2 * i);
         ASSERT_EQ(bv.rankZero(4 * i + 1), 2 * i);
@@ -114,63 +132,63 @@ TEST(BitvecRank, Small) {
     }
 }
 
-TEST(BitvecRank, OneSuperblock) {
-    Bitvector<TestLayout> bv(0);
+TYPED_TEST(ManyBitvecLayoutsTest, RankOneSuperblock) {
+    Bitvector<TypeParam> bv(0);
     std::string s(bv.superBlockSize(), '1');
     for (Index i = 0; i < s.size(); i += 2) {
         s[i] = '0';
     }
-    bv = Bitvector<TestLayout>(s);
+    bv = Bitvector<TypeParam>(s);
     ASSERT_EQ(bv.toString(), s);
     for (Index i = 0; i < s.size(); ++i) {
-        ASSERT_EQ(bv.rankZero(i), (i + 1) / 2);
-        ASSERT_EQ(bv.rankOne(i), i / 2);
+        ASSERT_EQ(bv.rankZero(i), (i + 1) / 2) << i;
+        ASSERT_EQ(bv.rankOne(i), i / 2) << i;
     }
 }
 
-TEST(BitvecRank, ManySuperblocks) {
-    Bitvector<TestLayout> bv(0);
+TYPED_TEST(ManyBitvecLayoutsTest, RankManySuperblocks) {
+    Bitvector<TypeParam> bv(0);
     std::string s(bv.superBlockSize() * 7 + 123456, '1');
     for (Index i = 0; i < s.size(); i += 3) {
         s[i] = '0';
     }
-    bv = Bitvector<TestLayout>(s);
+    bv = Bitvector<TypeParam>(s);
     for (Index i = 0; i < s.size(); ++i) {
         ASSERT_EQ(bv.rankZero(i), (i + 2) / 3) << i;
         ASSERT_EQ(bv.rankOne(i), (2 * i) / 3) << i;
     }
 }
 
-TEST(BitvecSelect, Only1s) {
-    Bitvector<TestLayout> bv("1111");
+TYPED_TEST(ManyBitvecLayoutsTest, SelectOnly1s) {
+    Bitvector<TypeParam> bv("1111");
     for (Index i = 0; i < bv.sizeInBits(); ++i) {
         ASSERT_EQ(bv.selectOne(i), i) << i;
         ASSERT_EQ(bv.selectZero(i), -1) << i;
     }
-    bv = Bitvector<TestLayout>(std::string(200'000, '1'));
+    bv = Bitvector<TypeParam>(std::string(200'000, '1'));
     for (Index i = 0; i < bv.sizeInBits(); ++i) {
         ASSERT_EQ(bv.rankOne(i), i) << i;
     }
 }
 
-TEST(BitvecSelect, Small) {
+TYPED_TEST(ManyBitvecLayoutsTest, SelectSmall) {
     std::string s("1100000000000000000000000000001");
-    Bitvector<TestLayout> bv(s);
+    Bitvector<TypeParam> bv(s);
     ASSERT_EQ(bv.selectOne(0), 0);
     ASSERT_EQ(bv.selectOne(1), 1);
     ASSERT_EQ(bv.selectOne(2), s.size() - 1);
     for (Index i = 0; i < s.size() - 3; ++i) {
         ASSERT_EQ(bv.selectZero(i), i + 2);
     }
-    bv = Bitvector<TestLayout>("0111");
+    bv = Bitvector<TypeParam>("0111");
     ASSERT_EQ(bv.selectOne(0), 1);
     ASSERT_EQ(bv.selectOne(1), 2);
     ASSERT_EQ(bv.selectZero(0), 0);
 }
 
-TEST(BitvecSelect, Large) {
+TYPED_TEST(ManyBitvecLayoutsTest, SelectLarge) {
     std::string s(12345, 'c');
-    Bitvector<TestLayout> bv(s, 16);
+    Bitvector<TypeParam> bv(s, 16);
     for (Index i = 0; i < s.size(); ++i) {
         ASSERT_EQ(bv.selectZero(2 * i), 4 * i + 2);
         ASSERT_EQ(bv.selectZero(2 * i + 1), 4 * i + 3);
@@ -179,9 +197,9 @@ TEST(BitvecSelect, Large) {
     }
 }
 
-TEST(BitvecSelect, 2SuperBlocksPlus2) {
-    Bitvector<TestLayout> bv;
-    bv = Bitvector<TestLayout>(bv.superBlockSize() * 2 + 2, 1);
+TYPED_TEST(ManyBitvecLayoutsTest, Select2SuperBlocksPlus2) {
+    Bitvector<TypeParam> bv;
+    bv = Bitvector<TypeParam>(bv.superBlockSize() * 2 + 2, 1);
     ASSERT_EQ(bv.rankOne(bv.sizeInBits() - 1), bv.sizeInElems());
     for (Index i = 0; i < bv.sizeInBits() - bv.sizeInElems(); ++i) {
         ASSERT_EQ(bv.selectZero(i), i + i / 63 + 1) << i << " " << bv.sizeInBits();
@@ -192,20 +210,20 @@ TEST(BitvecSelect, 2SuperBlocksPlus2) {
 }
 
 
-TEST(Bitvector, EmptyOrOneElem) {
-    Bitvector<TestLayout> bv(0);
+TYPED_TEST(ManyBitvecLayoutsTest, EmptyOrOneElem) {
+    Bitvector<TypeParam> bv(0);
     ASSERT_EQ(bv.sizeInBits(), 0);
     ASSERT_EQ(bv.sizeInElems(), 0);
-    bv = Bitvector<TestLayout>("1");
+    bv = Bitvector<TypeParam>("1");
     ASSERT_EQ(bv.sizeInBits(), 1);
     ASSERT_EQ(bv.sizeInElems(), 1);
     ASSERT_EQ(bv.rankOne(0), 0);
     ASSERT_EQ(bv.rankZero(0), 0);
 }
 
-TEST(Bitvector, PowerOfTwo) {
+TYPED_TEST(EfficientBitvecLayoutsTest, PowerOfTwo) {
     for (Index i = 1; i <= (Elem(1) << 26); i *= 4) {
-        Bitvector<TestLayout> bv(i, 0);
+        Bitvector<TypeParam> bv(i, Elem(0));
         for (Index j = 0; j < bv.numElems() - 1; ++j) {
             bv.setElem(j, 0xaaaa'aaaa'aaaa'aaaaull);
         }
@@ -222,7 +240,7 @@ TEST(Bitvector, PowerOfTwo) {
     }
 }
 
-TEST(Bitvector, Random) {
+TYPED_TEST(ManyBitvecLayoutsTest, Random) {
     auto engine = createRandomEngine();
     auto dist = std::uniform_int_distribution<Index>(0, 400'000);
     std::string str(dist(engine), '0');
@@ -236,7 +254,7 @@ TEST(Bitvector, Random) {
     for (Index i = 1; i < str.size(); ++i) {
         results[i] = results[i - 1] + (str[i - 1] == '0');
     }
-    Bitvector<TestLayout> bv(str);
+    Bitvector<TypeParam> bv(str);
     Index numOnes = bv.rankOne(bv.sizeInBits() - 1);
     if (bv.getBit(bv.sizeInBits() - 1)) {
         ++numOnes;
@@ -255,3 +273,14 @@ TEST(Bitvector, Random) {
         }
     }
 }
+
+#ifdef ADS_HAS_CPP20
+TYPED_TEST(ManyBitvecLayoutsTest, Constexpr) {
+    using T = Bitvector<TypeParam>;
+    static_assert(T("1").sizeInBits() == 1);
+    static_assert(!T("00011").getBit(2));
+    static_assert(T("00011").getBit(3));
+    static_assert(T("10101").rankZero(3) == 1);
+    static_assert(T("10101").selectOne(1) == 2);
+}
+#endif

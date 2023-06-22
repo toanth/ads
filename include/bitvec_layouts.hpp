@@ -44,14 +44,14 @@ struct CacheEfficientLayout {
     using BlockCount = Elem;
     using SuperBlockCount = Elem;
 
-    Array<Elem> vec = Array<Elem>();
+    Allocation<> alloc; // must be the first member to prevent UB in the dtor
+    View<Elem> vec = View<Elem>();
     Index numElements;
 
-    CacheEfficientLayout() noexcept : numElements(0) {}
+    constexpr CacheEfficientLayout() noexcept : numElements(0) {}
 
-    explicit CacheEfficientLayout(Index numElems) noexcept {
-        vec.ptr = makeUniqueForOverwrite<Elem>(allocatedSizeInElems(numElems));
-        numElements = numElems;
+    explicit constexpr CacheEfficientLayout(Index numElems, Elem* mem = nullptr) noexcept
+        : alloc(allocatedSizeInElems(numElems), mem), vec(alloc.memory(), alloc.size()), numElements(numElems) {
         // TODO: ensure that allocated memory is cache aligned
     }
 
@@ -97,62 +97,64 @@ struct CacheEfficientLayout {
         return (i / numElemsInSuperBlock()) * (ELEMS_PER_CACHELINE) + i % numElemsInSuperBlock();
     }
 
-    [[nodiscard]] Elem& getElem(Index i) noexcept {
+    [[nodiscard]] constexpr Elem& getElem(Index i) noexcept {
         ADS_ASSUME(i >= 0);
         ADS_ASSUME(i < numElements);
         return vec.ptr[i];
     }
-    [[nodiscard]] Elem getElem(Index i) const noexcept {
+    [[nodiscard]] constexpr Elem getElem(Index i) const noexcept {
         ADS_ASSUME(i >= 0);
         ADS_ASSUME(i < numElements);
         return vec[getElemIdx(i)];
     }
 
-    void setElem(Index i, Elem value) noexcept {
+    constexpr void setElem(Index i, Elem value) noexcept {
         ADS_ASSUME(i >= 0);
         ADS_ASSUME(i < numElements);
         vec.ptr[getElemIdx(i)] = value;
     }
 
-    Elem& getElemRef(Index i) noexcept {
+    [[nodiscard]] constexpr Elem& getElemRef(Index i) noexcept {
         ADS_ASSUME(i >= 0);
         ADS_ASSUME(i < numElements);
         return vec.ptr[getElemIdx(i)];
     }
 
-    [[nodiscard]] bool getBit(Index i) const noexcept {
+    [[nodiscard]] constexpr bool getBit(Index i) const noexcept {
         Elem v = getElem(i / 64);
         return BitwiseAccess<1>::getBits(&v, i % 64);
     }
 
-    void setBit(Index i, bool value) noexcept { BitwiseAccess<1>::setBits(&getElemRef(i / 64), i % 64, value); }
+    constexpr void setBit(Index i, bool value) noexcept {
+        BitwiseAccess<1>::setBits(&getElemRef(i / 64), i % 64, value);
+    }
 
-    static Index getSuperblockCountIdx(Index superblockIdx) noexcept {
+    [[nodiscard]] static constexpr Index getSuperBlockCountIdx(Index superblockIdx) noexcept {
         ADS_ASSUME(superblockIdx >= 0);
         return superblockIdx * ELEMS_PER_CACHELINE + numElemsInSuperBlock();
     }
 
-    [[nodiscard]] Elem getSuperBlockCount(Index superblockIdx) const noexcept {
-        return vec[getSuperblockCountIdx(superblockIdx)];
+    [[nodiscard]] constexpr Elem getSuperBlockCount(Index superblockIdx) const noexcept {
+        return vec[getSuperBlockCountIdx(superblockIdx)];
     }
 
-    void setSuperBlockCount(Index superblockIdx, Elem count) noexcept {
-        vec.ptr[getSuperblockCountIdx(superblockIdx)] = count;
+    constexpr void setSuperBlockCount(Index superblockIdx, Elem count) noexcept {
+        vec.ptr[getSuperBlockCountIdx(superblockIdx)] = count;
     }
 
-    [[nodiscard]] Index getBlockCount(Index blockIdx) const noexcept {
+    [[nodiscard]] constexpr Index getBlockCount(Index blockIdx) const noexcept {
         Index superblockIdx = blockIdx / numBlocksInSuperBlock();
         blockIdx %= numBlocksInSuperBlock();
         ADS_ASSUME(superblockIdx >= 0);
         ADS_ASSUME(superblockIdx < numSuperBlocks());
-        return (Index)BitwiseAccess<8>::getBits(vec.ptr.get(), getSuperBlockCount(superblockIdx) + 1, blockIdx);
+        return (Index)BitwiseAccess<8>::getBits(vec.ptr, getSuperBlockCountIdx(superblockIdx) + 1, blockIdx);
     }
 
-    void setBlockCount(Index superblockIdx, Index blockIdx, Index value) noexcept {
+    constexpr void setBlockCount(Index superblockIdx, Index blockIdx, Index value) noexcept {
         ADS_ASSUME(superblockIdx >= 0 && superblockIdx < numSuperBlocks() && blockIdx >= 0 && blockIdx < numBlocks());
         ADS_ASSUME(value >= 0);
-        Index i = getSuperblockCountIdx(superblockIdx) + 1;
-        BitwiseAccess<8>::setBits(vec.ptr.get(), i, blockIdx, value);
+        Index i = getSuperBlockCountIdx(superblockIdx) + 1;
+        BitwiseAccess<8>::setBits(vec.ptr, i, blockIdx, value);
     }
 };
 
@@ -186,14 +188,16 @@ public:
     using BlockCounts = View<BlockCount>;
     using SuperBlockCount = SuperBlockCountT;
     using SuperBlockCounts = View<SuperBlockCount>;
-    Array<Elem> vec;
-    BlockCounts blocks;
+    Allocation<> alloc; // must be the first data member to prevent UB in the dtor
+    View<Elem> vec;
     SuperBlockCounts superBlocks;
+    BlockCounts blocks;
 
     SimpleLayout() noexcept = default;
 
-    explicit SimpleLayout(Index numElements) : vec{makeUniqueForOverwrite<Elem>(allocatedSizeInElems(numElements))} {
-        superBlocks = SuperBlockCounts(vec.ptr.get() + numElements, numSuperBlocks(numElements));
+    explicit constexpr SimpleLayout(Index numElements, Elem* mem = nullptr)
+        : alloc(allocatedSizeInElems(numElements), mem), vec(alloc.memory(), numElements) {
+        superBlocks = SuperBlockCounts(alloc.memory() + numElements, numSuperBlocks(numElements));
         blocks = BlockCounts(superBlocks.ptr + numSuperBlocks(), numBlocks(numElements));
     }
 
@@ -214,42 +218,39 @@ public:
         return superBlockSize() / blockSize();
     }
 
-    [[nodiscard]] Index allocatedSizeInElems() const noexcept { return allocatedSizeInElems(numElems()); }
+    [[nodiscard]] constexpr Index allocatedSizeInElems() const noexcept { return allocatedSizeInElems(numElems()); }
 
-    [[nodiscard]] static Index allocatedSizeInElems(Index numElements) noexcept {
+    [[nodiscard]] static constexpr Index allocatedSizeInElems(Index numElements) noexcept {
         static_assert(sizeof(Elem) % sizeof(BlockCount) == 0);
         static_assert(sizeof(Elem) % sizeof(SuperBlockCount) == 0);
         return numElements + roundUpDiv(numBlocks(numElements) * sizeof(BlockCount), sizeof(Elem))
                + roundUpDiv(numSuperBlocks(numElements) * sizeof(SuperBlockCount), sizeof(Elem));
     }
 
-    [[nodiscard]] bool getBit(Index i) const noexcept { return bool(BitwiseAccess<1>::getBits(vec.ptr.get(), i)); }
+    [[nodiscard]] constexpr bool getBit(Index i) const noexcept { return bool(BitwiseAccess<1>::getBits(vec.ptr, i)); }
 
-    void setBit(Index i, bool value) noexcept { BitwiseAccess<1>::setBits(vec.ptr.get(), i, value); }
+    constexpr void setBit(Index i, bool value) noexcept { BitwiseAccess<1>::setBits(vec.ptr, i, value); }
 
-    [[nodiscard]] Elem& getElemRef(Index i) noexcept { return vec.bitAccess.getRef(vec.ptr.get(), i); }
+    [[nodiscard]] constexpr Elem& getElemRef(Index i) noexcept { return vec.bitAccess.getRef(vec.ptr, i); }
 
-    [[nodiscard]] Elem getElem(Index i) const noexcept { return vec[i]; }
+    [[nodiscard]] constexpr Elem getElem(Index i) const noexcept { return vec[i]; }
 
-    void setElem(Index i, Elem value) noexcept { vec.setBits(i, value); }
+    constexpr void setElem(Index i, Elem value) noexcept { vec.setBits(i, value); }
 
-    [[nodiscard]] Elem getSuperBlockCount(Index i) const noexcept { return superBlocks[i]; }
+    [[nodiscard]] constexpr Elem getSuperBlockCount(Index i) const noexcept { return superBlocks[i]; }
 
-    void setSuperBlockCount(Index i, Elem value) noexcept { superBlocks.setBits(i, value); }
+    constexpr void setSuperBlockCount(Index i, Elem value) noexcept { superBlocks.setBits(i, value); }
 
-    [[nodiscard]] Index getBlockCount(Index blockIdx) const noexcept { return blocks[blockIdx]; }
+    [[nodiscard]] constexpr Index getBlockCount(Index blockIdx) const noexcept { return blocks[blockIdx]; }
 
-    void setBlockCount(Index superBlockIdx, Index blockIdx, Index value) noexcept {
+    constexpr void setBlockCount(Index superBlockIdx, Index blockIdx, Index value) noexcept {
         assert(superBlockIdx >= 0 && superBlockIdx < numSuperBlocks() && blockIdx >= 0 && blockIdx < numBlocksInSuperBlock());
         assert(value >= 0);
         Index idx = superBlockIdx * numBlocksInSuperBlock() + blockIdx;
         blocks.setBits(idx, value);
     }
 
-    [[nodiscard]] Index numElems() const noexcept {
-        assert(((const char*)(superBlocks.ptr) - (const char*)vec.ptr.get()) % sizeof(Elem) == 0);
-        return reinterpret_cast<const Elem*>(superBlocks.ptr) - vec.ptr.get();
-    }
+    [[nodiscard]] constexpr Index numElems() const noexcept { return vec.numT; }
 };
 
 #ifdef ADS_HAS_CPP20

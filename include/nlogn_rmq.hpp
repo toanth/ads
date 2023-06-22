@@ -19,8 +19,12 @@ ADS_CPP20_CONSTEXPR Index minimaSize(Index length) noexcept {
 }
 
 
+/// \brief \Operations for the  n log n rmq structure. A separate class template because the linear rmq also uses a
+/// slightly different n log n rmq, which is also implemented using this class template.
+/// \tparam Derived The actual RMQ type.
+/// \tparam Comp comparator, defaults to std::less<>
 template<typename Derived, typename Comp>
-class NlognRmqOps {
+class NLogNRmqOps {
 
     [[no_unique_address]] Comp comp = Comp();
 
@@ -87,49 +91,12 @@ public:
 };
 
 
-// TODO: Use bitview etc, don't need two separate class templates
-template<typename T, typename IndexType, typename Comp>
-struct NlognRMQSeparateArrays : NlognRmqOps<NlognRMQSeparateArrays<T, IndexType, Comp>, Comp> {
-    using Base = NlognRmqOps<NlognRMQSeparateArrays<T, IndexType, Comp>, Comp>;
+template<typename T = Elem, typename IndexType = Index, typename Comp = std::less<>>
+struct NLogNRmq : NLogNRmqOps<NLogNRmq<T, IndexType, Comp>, Comp> {
+    using Base = NLogNRmqOps<NLogNRmq<T, IndexType, Comp>, Comp>;
     friend Base;
-    std::unique_ptr<T[]> array = nullptr;
-    std::unique_ptr<IndexType[]> minima = nullptr;
-    Index length = 0;
-
-    constexpr static const char name[] = "n log n space RMQ (2)";
-
-    NlognRMQSeparateArrays() = default;
-
-    NlognRMQSeparateArrays(std::initializer_list<T> list) : NlognRMQSeparateArrays(Span<const T>(list)) {}
-
-    NlognRMQSeparateArrays(Index length, CreateWithSizeTag)
-        : array(makeUniqueForOverwrite<T>(length)), minima(makeUniqueForOverwrite<IndexType>(minimaSize(length))),
-          length(length) {}
-
-    explicit NlognRMQSeparateArrays(Span<const T> values) : NlognRMQSeparateArrays(values.size(), CreateWithSizeTag{}) {
-        this->init(values);
-    }
-
-    explicit NlognRMQSeparateArrays(const std::vector<T>& values) : NlognRMQSeparateArrays(Span<const T>(values)) {}
-
-    NlognRMQSeparateArrays(std::unique_ptr<T[]> ptr, Index length)
-        : NlognRMQSeparateArrays(Span<const T>(ptr.get(), length)) {}
-
-    const T& operator[](Index i) const noexcept { return getArrayElement(i); }
-
-private:
-    T& getArrayElement(Index i) noexcept { return array[i]; }
-    const T& getArrayElement(Index i) const noexcept { return array[i]; }
-
-    [[nodiscard]] Index getMinimum(Index i) const noexcept { return minima[i]; }
-    void setMinimum(Index i, const IndexType& value) const noexcept { minima[i] = value; }
-};
-
-template<typename T, typename IndexType, typename Comp>
-struct NlognRMQOneArray : NlognRmqOps<NlognRMQOneArray<T, IndexType, Comp>, Comp> {
-    using Base = NlognRmqOps<NlognRMQOneArray<T, IndexType, Comp>, Comp>;
-    friend Base;
-    Array<T> array = Array<T>();
+    Allocation<T> allocation = Allocation<T>(); // must be the first data member so that its destructor is called last
+    View<T> array = View<T>();
     View<IndexType> minima = View<IndexType>();
     Index length = 0;
 
@@ -137,22 +104,25 @@ struct NlognRMQOneArray : NlognRmqOps<NlognRMQOneArray<T, IndexType, Comp>, Comp
 
     constexpr static const char name[] = "n log n space RMQ (1)";
 
-    NlognRMQOneArray() = default;
+    NLogNRmq() = default;
 
-    NlognRMQOneArray(std::initializer_list<T> list) : NlognRMQOneArray(Span<const T>(list.begin(), list.end())) {}
+    NLogNRmq(std::initializer_list<T> list) : NLogNRmq(Span<const T>(list.begin(), list.end())) {}
 
-    NlognRMQOneArray(Index length, CreateWithSizeTag)
-        : array(makeUniqueForOverwrite<T>(completeSize(length))), length(length) {
-        minima = View<IndexType>(array.ptr.get() + length, completeSize(length) - length);
+    NLogNRmq(Index length, CreateWithSizeTag, T* mem = nullptr)
+        : allocation(completeSize(length), mem), length(length) {
+        T* ptr = allocation.memory();
+        array = View<T>(ptr, length);
+        minima = View<IndexType>(ptr + length, completeSize(length) - length);
     }
 
-    explicit NlognRMQOneArray(Span<const T> values) : NlognRMQOneArray(values.size(), CreateWithSizeTag{}) {
+    explicit NLogNRmq(Span<const T> values, T* mem = nullptr) : NLogNRmq(values.size(), CreateWithSizeTag{}, mem) {
         this->init(values);
     }
 
-    explicit NlognRMQOneArray(const std::vector<T>& values) : NlognRMQOneArray(Span<const T>(values)) {}
+    explicit NLogNRmq(const std::vector<T>& values, T* mem = nullptr) : NLogNRmq(Span<const T>(values), mem) {}
 
-    NlognRMQOneArray(std::unique_ptr<T[]> ptr, Index length) : NlognRMQOneArray(Span<const T>(ptr.get(), length)) {}
+    NLogNRmq(T* ptr, Index length, T* mem = nullptr) : NLogNRmq(Span<const T>(ptr, length), mem) {}
+
 
     static Index completeSize(Index length) noexcept {
         return length + roundUpDiv(minimaSize(length) * sizeof(IndexType), sizeof(T));
@@ -172,11 +142,6 @@ private:
     IndexType getMinimum(Index i) const noexcept { return minima[i]; }
     void setMinimum(Index i, const IndexType& value) noexcept { minima.setBits(i, value); }
 };
-
-template<typename T = Elem, typename IndexType = Index, typename Comp = std::less<>>
-using NlognRMQ
-        = std::conditional_t<sizeof(T) == sizeof(IndexType), NlognRMQOneArray<T, IndexType, Comp>, NlognRMQSeparateArrays<T, IndexType, Comp>>;
-
 
 } // namespace ads
 

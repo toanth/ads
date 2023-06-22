@@ -23,7 +23,7 @@ template<typename RmqType, typename ValueType = typename RmqValueType<RmqType>::
 concept Rmq = requires(const RmqType& r) {
     RmqType();
     RmqType(std::vector<ValueType>());
-    RmqType(std::unique_ptr<ValueType[]>(), Index());
+    RmqType((ValueType*)(nullptr), Index());
     RmqType(std::initializer_list<ValueType>());
     { RmqType::name } -> std::convertible_to<std::string>;
     { r(Index(), Index()) } -> std::convertible_to<Index>;
@@ -49,7 +49,7 @@ struct SimpleRMQ : std::vector<T> {
 
     explicit SimpleRMQ(const std::vector<T>& vec) : Base(vec) {}
 
-    SimpleRMQ(std::unique_ptr<T[]> ptr, Index length) : Base(ptr.get(), ptr.get() + length) {}
+    SimpleRMQ(T* ptr, Index length) : Base(ptr, ptr + length) {}
 
     [[nodiscard]] Index rmq(Index first, Index last) const noexcept {
         assert(first < last);

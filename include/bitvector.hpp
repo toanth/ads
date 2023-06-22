@@ -27,22 +27,22 @@ class Bitvector : private Layout {
     using typename Base::BlockCount;
     using typename Base::SuperBlockCount;
 
-    const Layout& layout() const noexcept { return static_cast<const Layout&>(*this); }
-
     Index numBits;
 
-    static Index numElems(Index numBits) noexcept {
+    constexpr static Index numElems(Index numBits) noexcept {
         assert(numBits >= 0);
         return roundUpDiv(numBits, 64);
     }
 
     constexpr static auto getSuperBlockCountFunc
-            = [](const auto& bv, Index i) -> SuperBlockCount { return bv.layout().getSuperBlockCount(i); };
+            = [](const auto& bv, Index i) -> SuperBlockCount { return bv.getSuperBlockCount(i); };
 
     using SuperBlockCountIter = RandAccessIter<Bitvector, decltype(getSuperBlockCountFunc)>;
-    SuperBlockCountIter sbIter(Index i) const { return SuperBlockCountIter(*this, getSuperBlockCountFunc, i); }
+    constexpr SuperBlockCountIter sbIter(Index i) const {
+        return SuperBlockCountIter(*this, getSuperBlockCountFunc, i);
+    }
 
-    Subrange<SuperBlockCountIter> superBlockCountView() const noexcept {
+    constexpr Subrange<SuperBlockCountIter> superBlockCountView() const noexcept {
         return Subrange<SuperBlockCountIter>{sbIter(0), sbIter(numSuperBlocks())};
     }
 
@@ -62,27 +62,30 @@ public:
     using Base::setElem;
     using Base::superBlockSize;
 
-    Bitvector() noexcept : numBits(0) {}
+    constexpr Bitvector() noexcept : numBits(0) {}
 
-    explicit Bitvector(Index numBits) noexcept : Base(numElems(numBits)), numBits(numBits) {}
+    explicit constexpr Bitvector(Index numBits, Elem* mem = nullptr) noexcept
+        : Base(numElems(numBits), mem), numBits(numBits) {}
 
-    Bitvector(Index numBits, Elem fill) : Bitvector(numBits) {
+    constexpr Bitvector(Index numBits, Elem fill, Elem* mem = nullptr) : Bitvector(numBits, mem) {
         for (Index i = 0; i < sizeInElems(); ++i) {
             setElem(i, fill);
         }
         buildMetadata();
     }
 
-    explicit Bitvector(Span<Elem> elems) noexcept : Bitvector(elems, elems.size() * 64) {}
+    explicit constexpr Bitvector(Span<Elem> elems, Elem* mem = nullptr) noexcept
+        : Bitvector(elems, elems.size() * 64, mem) {}
 
-    Bitvector(Span<Elem> elems, Index numBits) noexcept : Bitvector(numBits) {
+    constexpr Bitvector(Span<Elem> elems, Index numBits, Elem* mem = nullptr) noexcept : Bitvector(numBits, mem) {
         for (Index i = 0; i < sizeInElems(); ++i) {
             setElem(i, elems[i]);
         }
         buildMetadata();
     }
 
-    explicit Bitvector(std::string_view str, Index base = 2) : Bitvector(Index(str.size()) * log2(Elem(base))) {
+    explicit constexpr Bitvector(std::string_view str, Index base = 2, Elem* mem = nullptr)
+        : Bitvector(Index(str.size()) * log2(Elem(base)), mem) {
         if (base != 2 && base != 4 && base != 16) [[unlikely]] {
             throw std::invalid_argument("base must be one of 2, 4, or 16");
         }
@@ -95,7 +98,7 @@ public:
                 std::size_t numToParse = std::min(charsPerElem, str.size());
                 std::string_view toParse = str.substr(0, numToParse);
                 std::uint64_t res;
-                auto err = std::from_chars(toParse.data(), toParse.data() + toParse.size(), res, int(base));
+                auto err = fromChars(toParse.data(), toParse.data() + toParse.size(), res, int(base));
                 if (err.ec != std::errc()) [[unlikely]] {
                     throw std::invalid_argument(std::make_error_code(err.ec).message());
                 } else if (err.ptr != toParse.data() + toParse.size()) [[unlikely]] {
@@ -114,8 +117,10 @@ public:
         assert(str.empty());
     }
 
+    ADS_CPP20_CONSTEXPR Bitvector(Bitvector&&) noexcept = default;            // disables copy ctor
+    ADS_CPP20_CONSTEXPR Bitvector& operator=(Bitvector&&) noexcept = default; // disables copy assignment
 
-    void buildRankMetadata(Index superblockIdx) noexcept {
+    constexpr void buildRankMetadata(Index superblockIdx) noexcept {
         assert(superblockIdx >= 0 && superblockIdx < numSuperBlocks());
         if (superblockIdx == 0) {
             setSuperBlockCount(0, 0);
@@ -137,15 +142,15 @@ public:
         }
     }
 
-    void buildRankMetadata() noexcept {
+    constexpr void buildRankMetadata() noexcept {
         for (Index i = 0; i < numSuperBlocks(); ++i) {
             buildRankMetadata(i);
         }
     }
 
-    void buildMetadata() noexcept { buildRankMetadata(); }
+    constexpr void buildMetadata() noexcept { buildRankMetadata(); }
 
-    void buildSelectMetadata(Index) noexcept {
+    constexpr void buildSelectMetadata(Index) noexcept {
         // idea: store array of superblock start indices
         // superblock size 1024 zeros, minimum size 1024 bit = 2^10 bit = 128 Byte = 16 Elem,
         // maximum size 65536 bit = 2^16 bit = 8192 Byte = 1024 Elems; memory usage <= 8 Byte = 64 bit per 2^10 bits =
@@ -158,7 +163,7 @@ public:
         // -- what about select 0? reuse select 1? how?
     }
 
-    [[nodiscard]] Index rankOne(Index pos) const {
+    [[nodiscard]] constexpr Index rankOne(Index pos) const {
         if (pos >= sizeInBits() || pos < 0) [[unlikely]] {
             throw std::invalid_argument("invalid position for rank query");
         }
@@ -168,7 +173,7 @@ public:
     /// Unlike rankOne(), this dDoesn't check that `pos` is valid, although that gives close to no measurable performance benefits.
     /// However, the combined ASSUME macros do improve performance by quite a bit (if the compiler couldn't assume that pos >= 0,
     //// performance would actually be significantly lower than with the throwing checks)
-    [[nodiscard]] Index rankOneUnchecked(Index pos) const noexcept {
+    [[nodiscard]] constexpr Index rankOneUnchecked(Index pos) const noexcept {
         ADS_ASSUME(0 <= pos);
         ADS_ASSUME(pos < sizeInBits());
         if (pos <= 0) [[unlikely]] {
@@ -185,18 +190,18 @@ public:
         Index res = getSuperBlockCount(superblockIdx) + getBlockCount(blockIdx);
         ADS_ASSUME(res >= 0);
         for (Index i = blockIdx * numElemsInBlock(); i < elemIdx; ++i) {
-            ADS_ASSUME(elemIdx - i < numBlocksInSuperBlock());
+            ADS_ASSUME(elemIdx - i < numElemsInBlock());
             res += popcount(getElem(i));
         }
         return res + popcount(getElem(elemIdx) & mask);
     }
 
-    [[nodiscard]] Index rankZero(Index pos) const { return pos - rankOne(pos); }
+    [[nodiscard]] constexpr Index rankZero(Index pos) const { return pos - rankOne(pos); }
 
-    [[nodiscard]] Index rankZeroUnchecked(Index pos) const noexcept { return pos - rankOneUnchecked(pos); }
+    [[nodiscard]] constexpr Index rankZeroUnchecked(Index pos) const noexcept { return pos - rankOneUnchecked(pos); }
 
     template<bool IsOne>
-    [[nodiscard]] Index rank(Index pos) const noexcept {
+    [[nodiscard]] constexpr Index rank(Index pos) const noexcept {
         if constexpr (IsOne) {
             return rankOne(pos);
         } else {
@@ -205,7 +210,7 @@ public:
     }
 
     template<bool IsOne>
-    [[nodiscard]] Index selectSuperBlockIdx(Index bitRank) const {
+    [[nodiscard]] constexpr Index selectSuperBlockIdx(Index bitRank) const {
         constexpr Index linearFallbackSize = 64;
         auto rankFunc = [this](Index i) noexcept {
             ADS_ASSUME(i >= 0);
@@ -259,7 +264,7 @@ public:
     }
 
     template<bool IsOne>
-    [[nodiscard]] Index select(Index bitRank) const {
+    [[nodiscard]] constexpr Index select(Index bitRank) const {
         if (bitRank < 0 || bitRank >= sizeInBits()) [[unlikely]] {
             throw std::invalid_argument("invalid rank for select query: " + std::to_string(bitRank));
         }
@@ -280,10 +285,10 @@ public:
     }
 
     /// Return the position `i` such that `getBit(i)` returns the `rank`th one, counting from 0.
-    [[nodiscard]] Index selectOne(Index rank) const { return select<true>(rank); }
+    [[nodiscard]] constexpr Index selectOne(Index rank) const { return select<true>(rank); }
 
     /// Return the position `i` such that `getBit(i)` returns the `rank`th zero, counting from 0
-    [[nodiscard]] Index selectZero(Index rank) const { return select<false>(rank); }
+    [[nodiscard]] constexpr Index selectZero(Index rank) const { return select<false>(rank); }
 
 
     // Idea: superblock size is 4 Elems = 32 Byte = 256 bit, use 1 Byte to store number of 0s in superblock -- numbers
@@ -292,47 +297,51 @@ public:
     // Byte) + Superblock count (8 Byte) + block count (1 Byte) * 4 == 44 Byte, wasting 20 Byte or : Superblock size is
     // less than 2^16 bit = 65636 bit = 4096 Byte = 512 Elems because s = (log n) / 2 <= 32, s' = s * s <= 1024
 
-    [[nodiscard]] Index sizeInBits() const noexcept { return numBits; }
+    [[nodiscard]] constexpr Index sizeInBits() const noexcept { return numBits; }
 
-    [[nodiscard]] Index sizeInElems() const noexcept {
+    [[nodiscard]] constexpr Index sizeInElems() const noexcept {
         assert(numElems() == roundUpDiv(numBits, 64));
         return numElems();
     }
 
-    [[nodiscard]] Span<Elem> superblockElems(Index superblockIdx) noexcept {
+    [[nodiscard]] constexpr Span<Elem> superblockElems(Index superblockIdx) noexcept {
         Index size = superblockIdx == numSuperBlocks() - 1 ? (numElems() - 1) % numElemsInSuperBlock() + 1 :
                                                              numElemsInSuperBlock();
         return Span<Elem>(&getElemRef(superblockIdx * numElemsInSuperBlock()), size);
     }
-    [[nodiscard]] Span<const Elem> superblockElems(Index superblockIdx) const noexcept {
+    [[nodiscard]] constexpr Span<const Elem> superblockElems(Index superblockIdx) const noexcept {
         Index size = superblockIdx == numSuperBlocks() - 1 ? (numElems() - 1) % numElemsInSuperBlock() + 1 :
                                                              numElemsInSuperBlock();
         return Span<const Elem>(&getElemRef(superblockIdx * numElemsInSuperBlock()), size);
     }
 
-    [[nodiscard]] Index numAllocatedBits() const noexcept { return allocatedSizeInElems() * sizeof(Elem) * 8; }
+    [[nodiscard]] constexpr Index numAllocatedBits() const noexcept {
+        return allocatedSizeInElems() * sizeof(Elem) * 8;
+    }
 
     constexpr static auto getBitFunc = [](const auto& bv, Index i) -> bool { return bv.getBit(i); };
     constexpr static auto getElemFunc = [](const auto& bv, Index i) -> Elem { return bv.getElem(i); };
 
     using BitIter = RandAccessIter<Bitvector, decltype(getBitFunc)>;
 
-    BitIter bitIter(Index i) const { return BitIter(*this, getBitFunc, i); }
+    constexpr BitIter bitIter(Index i) const { return BitIter(*this, getBitFunc, i); }
 
-    Subrange<BitIter> bitView() const noexcept { return Subrange<BitIter>{bitIter(0), bitIter(numBits)}; }
+    constexpr Subrange<BitIter> bitView() const noexcept { return Subrange<BitIter>{bitIter(0), bitIter(numBits)}; }
 
     using ElemIter = RandAccessIter<Bitvector, decltype(getElemFunc)>;
 
-    ElemIter elemIter(Index i) const { return ElemIter(*this, getElemFunc, i); }
+    constexpr ElemIter elemIter(Index i) const { return ElemIter(*this, getElemFunc, i); }
 
-    Subrange<ElemIter> elemView() const noexcept { return Subrange<ElemIter>{elemIter(0), elemIter(numElems())}; }
+    constexpr Subrange<ElemIter> elemView() const noexcept {
+        return Subrange<ElemIter>{elemIter(0), elemIter(numElems())};
+    }
 
     friend std::ostream& operator<<(std::ostream& os, const Bitvector& bv) {
         std::copy(bv.bitView().begin(), bv.bitView().end(), std::ostream_iterator<bool>(os, ""));
         return os;
     }
 
-    [[nodiscard]] std::string toString() const noexcept {
+    [[nodiscard]] constexpr std::string toString() const noexcept {
         std::string res;
         for (bool b : bitView()) {
             if (b) {
@@ -347,19 +356,19 @@ public:
 
 
 template<ADS_LAYOUT_CONCEPT L1, ADS_LAYOUT_CONCEPT L2>
-bool operator==(const Bitvector<L1>& lhs, const Bitvector<L2>& rhs) {
+constexpr bool operator==(const Bitvector<L1>& lhs, const Bitvector<L2>& rhs) {
     return lhs.sizeInBits() == rhs.sizeInBits()
            && std::equal(lhs.elemView().begin(), lhs.elemView().end(), rhs.elemView().begin());
 }
 template<ADS_LAYOUT_CONCEPT L1, ADS_LAYOUT_CONCEPT L2>
-bool operator!=(const Bitvector<L1>& lhs, const Bitvector<L2>& rhs) {
+constexpr bool operator!=(const Bitvector<L1>& lhs, const Bitvector<L2>& rhs) {
     return !(rhs == lhs);
 }
 
 #ifdef ADS_HAS_CPP20
 
 template<ADS_LAYOUT_CONCEPT L1, ADS_LAYOUT_CONCEPT L2>
-std::strong_ordering operator<=>(const Bitvector<L1>& lhs, const Bitvector<L2>& rhs) noexcept {
+constexpr std::strong_ordering operator<=>(const Bitvector<L1>& lhs, const Bitvector<L2>& rhs) noexcept {
     if (lhs.sizeInBits() != rhs.sizeInBits()) {
         return std::lexicographical_compare_three_way(
                 lhs.bitView().begin(), lhs.bitView().end(), rhs.bitView().begin(), rhs.bitView().end());
@@ -371,7 +380,7 @@ std::strong_ordering operator<=>(const Bitvector<L1>& lhs, const Bitvector<L2>& 
 #else
 
 template<ADS_LAYOUT_CONCEPT L1, ADS_LAYOUT_CONCEPT L2>
-bool operator<(const Bitvector<L1>& lhs, const Bitvector<L2>& rhs) {
+constexpr bool operator<(const Bitvector<L1>& lhs, const Bitvector<L2>& rhs) {
     if (lhs.sizeInBits() != rhs.sizeInBits()) {
         return std::lexicographical_compare(
                 lhs.bitView().begin(), lhs.bitView().end(), rhs.bitView().begin(), rhs.bitView().end());
@@ -380,15 +389,15 @@ bool operator<(const Bitvector<L1>& lhs, const Bitvector<L2>& rhs) {
             lhs.elemView().begin(), lhs.elemView().end(), rhs.elemView().begin(), rhs.elemView().end());
 }
 template<ADS_LAYOUT_CONCEPT L1, ADS_LAYOUT_CONCEPT L2>
-bool operator>(const Bitvector<L1>& lhs, const Bitvector<L2>& rhs) {
+constexpr bool operator>(const Bitvector<L1>& lhs, const Bitvector<L2>& rhs) {
     return rhs < lhs;
 }
 template<ADS_LAYOUT_CONCEPT L1, ADS_LAYOUT_CONCEPT L2>
-bool operator<=(const Bitvector<L1>& lhs, const Bitvector<L2>& rhs) {
+constexpr bool operator<=(const Bitvector<L1>& lhs, const Bitvector<L2>& rhs) {
     return !(rhs < lhs);
 }
 template<ADS_LAYOUT_CONCEPT L1, ADS_LAYOUT_CONCEPT L2>
-bool operator>=(const Bitvector<L1>& lhs, const Bitvector<L2>& rhs) {
+constexpr bool operator>=(const Bitvector<L1>& lhs, const Bitvector<L2>& rhs) {
     return !(lhs < rhs);
 }
 
