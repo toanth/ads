@@ -131,10 +131,11 @@ public:
             inSuperblockSoFar += popcount(s[i]);
         }
         assert(inSuperblockSoFar <= superBlockSize());
-        if (superblockIdx < numSuperBlocks() - 1) {
+        if (superblockIdx + 1 < numSuperBlocks()) {
             assert(s.size() % numElemsInBlock() == 0);
-            setSuperBlockCount(superblockIdx + 1, getSuperBlockCount(superblockIdx) + inSuperblockSoFar);
         }
+        // there are numSuperBlocks() + 1 super block counts
+        setSuperBlockCount(superblockIdx + 1, getSuperBlockCount(superblockIdx) + inSuperblockSoFar);
     }
 
     void buildRankMetadata() noexcept {
@@ -204,41 +205,46 @@ public:
         }
     }
 
+private:
     template<bool IsOne>
-    [[nodiscard]] Index selectSuperBlockIdx(Index bitRank) const {
-        constexpr Index linearFallbackSize = 64;
+    [[nodiscard]] Index selectSuperBlockIdx(Index& bitRank) const {
+        constexpr Index linearFallbackSize = 8;
         auto rankFunc = [this](Index i) noexcept {
             ADS_ASSUME(i >= 0);
-            ADS_ASSUME(i < numSuperBlocks());
+            ADS_ASSUME(i <= numSuperBlocks());
             Index rankOne = getSuperBlockCount(i);
             ADS_ASSUME(rankOne >= 0);
             if constexpr (IsOne) {
                 return rankOne;
             } else {
+                // if i is numSuperBlocks(), this can be greater than the number of zeros in the bitvector,
+                // but that's not a problem
                 Index numBitsBefore = i * superBlockSize();
                 ADS_ASSUME(rankOne <= numBitsBefore);
                 return numBitsBefore - rankOne;
             }
         };
         ADS_ASSUME(bitRank >= 0);
-        Index l = bitRank / superBlockSize();
+        Index l = bitRank / superBlockSize() + 1; // + 1 because we're searching for the first superblock where the rank is greater than bitRank
         Index u = numSuperBlocks();
+        ADS_ASSUME(l > 0);
         ADS_ASSUME(l <= u);
         if (u - l > linearFallbackSize) {
             // set u close to the expected location for iid ones with 50% probability, then increase exponentially
             // until it is an upper bound. Unlike binary search, this starts with a less pessimistic search window and
-            // should hopefully be easier on the branch predictor
-            u = l + 1; // add one in case l == 0
+            // should hopefully be easier on the branch predictor. This improves performance for random values but hurts for especially hard cases.
+            u = l;
             do {
+                l = u;
                 u *= 2;
                 if (u >= numSuperBlocks()) {
                     u = numSuperBlocks();
                     break;
                 }
             } while (rankFunc(u) <= bitRank);
-            while (l + linearFallbackSize < u) {
-                ADS_ASSUME(0 <= l);
-                ADS_ASSUME(l < u);
+            while (u - l > linearFallbackSize) {
+                ADS_ASSUME(0 < l);
+                ADS_ASSUME(l <= u);
                 Index mid = (l + u) / 2;
                 Index midRank = rankFunc(mid);
                 ADS_ASSUME(midRank >= rankFunc(l));
@@ -250,22 +256,111 @@ public:
             }
         }
         ADS_ASSUME(u - l <= linearFallbackSize);
+        ADS_ASSUME(l <= u);
         for (Index i = l; i < u; ++i) {
             if (rankFunc(i) > bitRank) {
+                bitRank -= rankFunc(i - 1);
                 return i - 1;
             }
         }
+        ADS_ASSUME(rankFunc(u) >= bitRank);
+        bitRank -= rankFunc(u - 1);
         return u - 1;
     }
 
+    // Idea: For numElemsInBlock >= 4 (and superBlockSize 2^16 bits), the block index can be represented with 1 byte,
+    // so using e.g. 32 block indices for selectOne and additional 32 indices for selectZero takes up only 128 Byte = 16
+    // Elems, and allows narrowing the search down to 8 blocks on average
+    // Also, it's probably safe to optimize for the case of n < 2^48 bits, which means superblock indices can be
+    // represented with 32 bit values. Using numSuperBlocks() indices per bit value to select superblocks may be a good
+    // idea. All this can be implemented in a layout that derives from the simple layout, in which case selectBlockIdx()
+    // etc should be CRTP "virtual" methods of the layout.
+    // TODO: Also, it may be worth investigating if binary search works better if the range isn't split in two equal
+    // sized halves but instead the requested bitRank as a fraction of the total rank in the (bv|superblock|block) is
+    // used to generate the pivot element. The problem of this approach is that it can be very inefficient for
+    // adversarial patters such as a superblock with 100 ones, all of which are in the last 100 bits and a selectOne(0)
+    // query. Maybe some combination with splitting in equal-sized halves can give reasonable worst-case guarantees?
+    template<bool IsOne>
+    [[nodiscard]] Index selectBlockIdx(Index& bitRank, Index superBlockIdx) const noexcept {
+        auto rankFunc = [this](Index i) noexcept {
+            Index rankOne = getBlockCount(i);
+            if constexpr (IsOne) {
+                return rankOne;
+            } else {
+                Index numBitsBefore = (i % numBlocksInSuperBlock()) * blockSize();
+                ADS_ASSUME(rankOne <= numBitsBefore);
+                return numBitsBefore - rankOne;
+            }
+        };
+        constexpr Index linearFallbackSize = 8 * sizeof(Elem) / sizeof(BlockCount);
+        ADS_ASSUME(superBlockIdx >= 0);
+        ADS_ASSUME(superBlockIdx < numSuperBlocks());
+        ADS_ASSUME(bitRank >= 0);
+        // we're searching for the first block with count strictly greater than bitRank
+        Index l = superBlockIdx * numBlocksInSuperBlock() + 1;
+        Index u = std::min(l + numBlocksInSuperBlock() - 1, numBlocks());
+        ADS_ASSUME(u >= l);
+        ADS_ASSUME(u - l < numBlocksInSuperBlock());
+        while (u - l > linearFallbackSize) {
+            Index mid = (l + u) / 2;
+            Index midRank = rankFunc(mid);
+            if (midRank > bitRank) {
+                u = mid;
+            } else {
+                l = mid;
+            }
+        }
+        ADS_ASSUME(u >= l);
+        ADS_ASSUME(u - l <= linearFallbackSize);
+        ADS_ASSUME(l > superBlockIdx * numBlocksInSuperBlock());
+        for (Index i = l; i < u; ++i) {
+            ADS_ASSUME(i == 0 || getBlockCount(i) >= getBlockCount(i - 1));
+            if (rankFunc(i) > bitRank) {
+                bitRank -= rankFunc(i - 1);
+                return i - 1;
+            }
+        }
+        bitRank -= rankFunc(u - 1);
+        return u - 1;
+    }
+
+    template<bool IsOne>
+    [[nodiscard]] Index selectElem(Index& bitRank, Index blockIdx) const noexcept {
+        Index first = blockIdx * numElemsInBlock();
+        auto rankFunc = [this](Index i) noexcept {
+            Elem e = getElem(i);
+            if constexpr (IsOne) {
+                return popcount(e);
+            } else {
+                return 64 - popcount(e);
+            }
+        };
+        for (Index i = first; i < numElems(); ++i) {
+            Index rank = rankFunc(i);
+            ADS_ASSUME(rank >= 0);
+            if (rank > bitRank) {
+                return i;
+            }
+            bitRank -= rank;
+            ADS_ASSUME(bitRank >= 0);
+        }
+        return numElems() - 1;
+    }
+
+public:
     template<bool IsOne>
     [[nodiscard]] Index select(Index bitRank) const {
         if (bitRank < 0 || bitRank >= sizeInBits()) [[unlikely]] {
             throw std::invalid_argument("invalid rank for select query: " + std::to_string(bitRank));
         }
+        Index removeThis = bitRank;
         Index superBlockIdx = selectSuperBlockIdx<IsOne>(bitRank);
-        Index lower = superBlockIdx * superBlockSize();
-        Index upper = std::min(lower + superBlockSize(), sizeInBits());
+        Index blockIdx = selectBlockIdx<IsOne>(bitRank, superBlockIdx);
+        Index elemIdx = selectElem<IsOne>(bitRank, blockIdx);
+        bitRank = removeThis;
+        Index lower = elemIdx * 64;
+        Index upper = std::min(lower + 64, sizeInBits());
+        ADS_ASSUME(lower < upper);
         //        Index lower = 0, upper = sizeInBits(), mid = -1;
         while (upper - lower > 1) { // TODO: linear fallback
             Index mid = (lower + upper) / 2;

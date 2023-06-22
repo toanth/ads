@@ -85,7 +85,7 @@ struct CacheEfficientLayout {
     }
 
     static constexpr Index allocatedSizeInElems(Index numElements) noexcept {
-        return roundUpDiv(numElements, 4) * ELEMS_PER_CACHELINE;
+        return (1 + roundUpDiv(numElements, numElemsInSuperBlock())) * ELEMS_PER_CACHELINE;
     }
 
     [[nodiscard]] constexpr Index allocatedSizeInElems() const noexcept { return allocatedSizeInElems(numElems()); }
@@ -193,8 +193,8 @@ public:
     SimpleLayout() noexcept = default;
 
     explicit SimpleLayout(Index numElements) : vec{makeUniqueForOverwrite<Elem>(allocatedSizeInElems(numElements))} {
-        superBlocks = SuperBlockCounts(vec.ptr.get() + numElements, numSuperBlocks(numElements));
-        blocks = BlockCounts(superBlocks.ptr + numSuperBlocks(), numBlocks(numElements));
+        superBlocks = SuperBlockCounts(vec.ptr.get() + numElements, numSuperBlocks(numElements) + 1);
+        blocks = BlockCounts(superBlocks.ptr + numSuperBlocks() + 1, numBlocks(numElements));
     }
 
     [[nodiscard]] constexpr static Index numBlocks(Index numElems) noexcept {
@@ -220,7 +220,7 @@ public:
         static_assert(sizeof(Elem) % sizeof(BlockCount) == 0);
         static_assert(sizeof(Elem) % sizeof(SuperBlockCount) == 0);
         return numElements + roundUpDiv(numBlocks(numElements) * sizeof(BlockCount), sizeof(Elem))
-               + roundUpDiv(numSuperBlocks(numElements) * sizeof(SuperBlockCount), sizeof(Elem));
+               + roundUpDiv((1 + numSuperBlocks(numElements)) * sizeof(SuperBlockCount), sizeof(Elem));
     }
 
     [[nodiscard]] bool getBit(Index i) const noexcept { return bool(BitwiseAccess<1>::getBits(vec.ptr.get(), i)); }
