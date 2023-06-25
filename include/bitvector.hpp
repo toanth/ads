@@ -1,6 +1,7 @@
 #ifndef ADS_BITVECTOR_HPP
 #define ADS_BITVECTOR_HPP
 
+#include "bit.hpp"
 #include "bitvec_layouts.hpp"
 #include "common.hpp"
 #include "rand_access_iter.hpp"
@@ -275,6 +276,21 @@ private:
     // represented with 32 bit values. Using numSuperBlocks() indices per bit value to select superblocks may be a good
     // idea. All this can be implemented in a layout that derives from the simple layout, in which case selectBlockIdx()
     // etc should be CRTP "virtual" methods of the layout.
+    // Even better (?) implementation: For each 2^16 bit superblock, store a 256 bit vector, called a selectBlock, where
+    // selectOne(i) gives the block idx of the (i * 256)th one, ie each 256 bit block is represented with one bit.
+    // Additionally, for each block where a one is set in the selectBlock, use 8 bit to store the offset between the
+    // rank at block start to (i * 256), which allows figuring out which bit in the block was the (i * 256)th bit in the
+    // superblock. Do the same for selectZero but reuse the same 256 Byte array to store block offsets for select1 and
+    // select0, which works because the sum of set bits in the select1 and select0 selectBlocks is at most 256.
+    // Then, it's not even necessary to store block counts, although that would make select be linear within a
+    // superblock in the worst case (for uniformly iid ones with probability p, the expected number of blocks to search
+    // is min(1 / p, 2^8). It's also possible to explicitly store the index of all set bits using 16 bit per entry in
+    // the same array if the number of set bits is at most 128 (or, equivalently, the number of unset bits).
+    // However, this doesn't help if the superblock consists of 128 ones, then only zeros until the last bit, which is
+    // a 1. Even better idea: If the selectBlock bit is a 0, store the rank % 256 instead, which allows binary search in
+    // such cases. This effectively doubles the required memory, totalling to 1/32th + 1/128th of the size in bits.
+    // Also, this can be applied to the entire bitvector, not just individual superblocks. The recursive bit vector can
+    // be stored in a more space consuming manner.
     // TODO: Also, it may be worth investigating if binary search works better if the range isn't split in two equal
     // sized halves but instead the requested bitRank as a fraction of the total rank in the (bv|superblock|block) is
     // used to generate the pivot element. The problem of this approach is that it can be very inefficient for
@@ -292,7 +308,7 @@ private:
                 return numBitsBefore - rankOne;
             }
         };
-        constexpr Index linearFallbackSize = 8 * sizeof(Elem) / sizeof(BlockCount);
+        constexpr Index linearFallbackSize = 2 * sizeof(Elem) / sizeof(BlockCount);
         ADS_ASSUME(superBlockIdx >= 0);
         ADS_ASSUME(superBlockIdx < numSuperBlocks());
         ADS_ASSUME(bitRank >= 0);
@@ -325,7 +341,7 @@ private:
     }
 
     template<bool IsOne>
-    [[nodiscard]] Index selectElem(Index& bitRank, Index blockIdx) const noexcept {
+    [[nodiscard]] Index selectElemIdx(Index& bitRank, Index blockIdx) const noexcept {
         Index first = blockIdx * numElemsInBlock();
         auto rankFunc = [this](Index i) noexcept {
             Elem e = getElem(i);
@@ -337,6 +353,7 @@ private:
         };
         for (Index i = first; i < numElems(); ++i) {
             Index rank = rankFunc(i);
+            ADS_ASSUME(i - first < numElemsInBlock());
             ADS_ASSUME(rank >= 0);
             if (rank > bitRank) {
                 return i;
@@ -347,31 +364,42 @@ private:
         return numElems() - 1;
     }
 
+    template<bool IsOne>
+    [[nodiscard]] Index selectBitIdx(Elem elem, Index bitIndex) const noexcept {
+        if constexpr (IsOne) {
+            return elemSelect(elem, bitIndex);
+        } else {
+            return elemSelect(~elem, bitIndex);
+        }
+    }
+
 public:
     template<bool IsOne>
     [[nodiscard]] Index select(Index bitRank) const {
         if (bitRank < 0 || bitRank >= sizeInBits()) [[unlikely]] {
             throw std::invalid_argument("invalid rank for select query: " + std::to_string(bitRank));
         }
-        Index removeThis = bitRank;
+        //        Index removeThis = bitRank;
         Index superBlockIdx = selectSuperBlockIdx<IsOne>(bitRank);
         Index blockIdx = selectBlockIdx<IsOne>(bitRank, superBlockIdx);
-        Index elemIdx = selectElem<IsOne>(bitRank, blockIdx);
-        bitRank = removeThis;
-        Index lower = elemIdx * 64;
-        Index upper = std::min(lower + 64, sizeInBits());
-        ADS_ASSUME(lower < upper);
-        //        Index lower = 0, upper = sizeInBits(), mid = -1;
-        while (upper - lower > 1) { // TODO: linear fallback
-            Index mid = (lower + upper) / 2;
-            Index r = rank<IsOne>(mid);
-            if (r <= bitRank) {
-                lower = mid;
-            } else {
-                upper = mid;
-            }
-        }
-        return rank<IsOne>(lower) == bitRank && getBit(lower) == IsOne ? lower : -1;
+        Index elemIdx = selectElemIdx<IsOne>(bitRank, blockIdx);
+        Index bitIdx = selectBitIdx<IsOne>(getElem(elemIdx), bitRank);
+        return elemIdx * 64 + bitIdx;
+        //        bitRank = removeThis;
+        //        Index lower = elemIdx * 64;
+        //        Index upper = std::min(lower + 64, sizeInBits());
+        //        ADS_ASSUME(lower < upper);
+        //        //        Index lower = 0, upper = sizeInBits(), mid = -1;
+        //        while (upper - lower > 1) { // TODO: linear fallback
+        //            Index mid = (lower + upper) / 2;
+        //            Index r = rank<IsOne>(mid);
+        //            if (r <= bitRank) {
+        //                lower = mid;
+        //            } else {
+        //                upper = mid;
+        //            }
+        //        }
+        //        return rank<IsOne>(lower) == bitRank && getBit(lower) == IsOne ? lower : -1;
     }
 
     /// Return the position `i` such that `getBit(i)` returns the `rank`th one, counting from 0.
