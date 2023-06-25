@@ -58,7 +58,7 @@ def get_runs(all_benchmarks, family_index, quick_run):
         res = [bm for bm in all_benchmarks[family_index] if bm['run_type'] == 'iteration']
         return res, np.array([[bm['cpu_time'] for bm in res], [0] * len(res)])
     else:
-        if not family_index in all_benchmarks:
+        if family_index not in all_benchmarks:
             return None, None
     info = all_benchmarks[family_index]
     runs = [bm for bm in info if bm['aggregate_name'] == 'median']
@@ -206,7 +206,7 @@ def generate_plots(data, baseline_data):
 def parse_args():
     parser = ArgumentParser(description="create plots from one or two benchmarking runs")
     parser.add_argument('-i', '--input-file', dest='input_file', default='benchmark_results.json',
-                        type=argparse.FileType('r'), nargs=1,
+                        type=argparse.FileType('r'),
                         help="The input file from which the benchmarking results are read. Must be a JSON file,"
                              " defaults to 'benchmark_results.json'.")
     parser.add_argument('-c', '--compare', dest='compare_file', type=argparse.FileType('r'), nargs=1,
