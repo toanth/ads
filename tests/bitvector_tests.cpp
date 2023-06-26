@@ -50,6 +50,8 @@ TEST(BitvectorConstruction, Elements) {
     ASSERT_EQ(bv.toString(), "1");
     ASSERT_EQ(bv, Bitvector<>("1"));
     ASSERT_GT(bv, Bitvector<>("0"));
+    ASSERT_EQ(bv.numZeros(), 0);
+    ASSERT_EQ(bv.numOnes(), 1);
     bv = Bitvector(64);
     bv.setElem(0, Elem(1) << 63);
     bv.buildRankMetadata(0);
@@ -58,6 +60,8 @@ TEST(BitvectorConstruction, Elements) {
     ASSERT_EQ(bv.getBit(63), 1);
     ASSERT_FALSE(*bv.bitView().begin());
     ASSERT_GT(bv, Bitvector<>("0"));
+    ASSERT_EQ(bv.numZeros(), 63);
+    ASSERT_EQ(bv.numOnes(), 1);
 }
 
 TEST(BitvectorConstruction, FromStringview) {
@@ -69,12 +73,14 @@ TEST(BitvectorConstruction, FromStringview) {
         ASSERT_EQ(bv.getBit(i), 0);
     }
     ASSERT_EQ(bv.toString(), "01");
+    ASSERT_EQ(bv.numZeros(), bv.numOnes());
     std::string s("101110011101");
     bv = Bitvector<TestLayout>(s);
     ASSERT_EQ(bv.sizeInElems(), 1);
     for (Index i = 0; i < s.size(); ++i) {
         ASSERT_EQ(bv.getBit(i), s[i] == '1');
     }
+    ASSERT_EQ(bv.numZeros(), 4);
     s = std::string(200, '1');
     s[63] = s[64 + 63] = s[64 * 2 + 63] = '0';
     bv = Bitvector<TestLayout>(s);
@@ -98,6 +104,7 @@ TEST(BitvecRank, Only1s) {
         ASSERT_EQ(bv.rankOne(i), i) << i;
         ASSERT_EQ(bv.rankZero(i), 0) << i;
     }
+    ASSERT_EQ(bv.numZeros(), 0);
 }
 
 TEST(BitvecRank, Small) {
@@ -126,6 +133,7 @@ TEST(BitvecRank, OneSuperblock) {
         ASSERT_EQ(bv.rankZero(i), (i + 1) / 2);
         ASSERT_EQ(bv.rankOne(i), i / 2);
     }
+    ASSERT_EQ(bv.numZeros(), bv.sizeInBits() / 2);
 }
 
 TEST(BitvecRank, ManySuperblocks) {
@@ -219,6 +227,7 @@ TEST(Bitvector, PowerOfTwo) {
             ASSERT_EQ(bv.rankZero(j), (j + 1) / 2) << j << " " << i;
             ASSERT_EQ(bv.selectOne(j / 2), j / 2 * 2 + 1) << j << " " << i;
         }
+        ASSERT_EQ(bv.numOnes(), bv.sizeInBits() / 2);
     }
 }
 
@@ -241,6 +250,8 @@ TEST(Bitvector, Random) {
     if (bv.getBit(bv.sizeInBits() - 1)) {
         ++numOnes;
     }
+    ASSERT_EQ(numOnes, bv.numOnes());
+    ASSERT_EQ(bv.numZeros(), results.back() + (bv.getBit(bv.sizeInBits() - 1) ? 0 : 1));
     for (Index i = 0; i < bv.sizeInBits(); ++i) {
         ASSERT_EQ(bv.rankZero(i), results[i]) << i << " " << bv.sizeInBits();
         Index rank = bv.rankOne(i);
@@ -248,10 +259,46 @@ TEST(Bitvector, Random) {
             ASSERT_GE(bv.selectOne(rank), i) << bv.sizeInBits();
         } else {
             ASSERT_EQ(rank, numOnes);
-            //            ASSERT_EQ(bv.selectOne(rank), -1);
         }
         if (i < numOnes) {
             ASSERT_EQ(bv.rankOne(bv.selectOne(i)), i) << bv.sizeInBits();
+        }
+    }
+}
+
+TEST(Bitvector, RandomLongRuns) {
+    auto engine = createRandomEngine();
+    auto dist = std::uniform_real_distribution<double>(-16.0, 16.0);
+    std::string str;
+    while (str.size() < 300'000) {
+        double randomVal = dist(engine);
+        Index len = Index(std::log2(std::abs(randomVal)));
+        char c = randomVal > 0.0 ? '1' : '0';
+        for (Index i = 0; i < len; ++i) {
+            str += c;
+        }
+    }
+    std::vector<std::uint32_t> results(str.size());
+    results[0] = 0;
+    for (Index i = 1; i < str.size(); ++i) {
+        results[i] = results[i - 1] + (str[i - 1] == '1');
+    }
+    Bitvector<TestLayout> bv(str);
+    Index numZeros = bv.rankZero(bv.sizeInBits() - 1);
+    if (!bv.getBit(bv.sizeInBits() - 1)) {
+        ++numZeros;
+    }
+    ASSERT_EQ(numZeros, bv.numZeros());
+    for (Index i = 0; i < bv.sizeInBits(); ++i) {
+        ASSERT_EQ(bv.rankOne(i), results[i]) << i << " " << bv.sizeInBits();
+        Index rank = bv.rankZero(i);
+        if (rank < numZeros) {
+            ASSERT_GE(bv.selectZero(rank), i) << bv.sizeInBits();
+        } else {
+            ASSERT_EQ(rank, numZeros);
+        }
+        if (i < numZeros) {
+            ASSERT_EQ(bv.rankZero(bv.selectZero(i)), i) << bv.sizeInBits();
         }
     }
 }

@@ -1,28 +1,11 @@
-#include "benchmark/benchmark.h"
+#include "benchmarks_common.hpp"
 #include "include/bitvector.hpp"
 
-namespace bm = benchmark;
 using namespace ads;
 
 constexpr Index maxNumBits = Index(1) << 34;
 
-template<typename T = Elem>
-static std::vector<T> randomArray(Index size, T maxVal = std::numeric_limits<T>::max()) {
-    std::vector<T> vec(size);
-    std::uniform_int_distribution<T> dist(0, maxVal);
-    std::random_device rd;
-    std::mt19937_64 engine(rd());
-    for (auto& v : vec) {
-        v = dist(engine);
-    }
-    return vec;
-}
-
 static std::vector<Elem> randomBitvecValues = randomArray(roundUpDiv(maxNumBits, 64));
-
-static void divideByNInPlot(bm::State& state) {
-    state.counters["perN"] = 1;
-}
 
 static void BM_BitvecAllocation(bm::State& state) {
     for (auto _ : state) {
@@ -30,7 +13,7 @@ static void BM_BitvecAllocation(bm::State& state) {
         bm::DoNotOptimize(bv);
         bm::ClobberMemory();
     }
-    state.counters["bits"] = double(Bitvector<>(state.range()).numAllocatedBits());
+    setNumBits(state, Bitvector<>(state.range()).numAllocatedBits());
     state.SetComplexityN(state.range());
     divideByNInPlot(state);
 }
@@ -41,7 +24,7 @@ static void BM_BitvecFillZero(bm::State& state) {
         bm::DoNotOptimize(bv);
         bm::ClobberMemory();
     }
-    state.counters["bits"] = double(Bitvector<>(state.range()).numAllocatedBits());
+    setNumBits(state, Bitvector<>(state.range()).numAllocatedBits());
     state.SetComplexityN(state.range());
     divideByNInPlot(state);
 }
@@ -52,7 +35,7 @@ static void BM_BitvecFillOnes(bm::State& state) {
         bm::DoNotOptimize(bv);
         bm::ClobberMemory();
     }
-    state.counters["bits"] = double(Bitvector<>(state.range()).numAllocatedBits());
+    setNumBits(state, Bitvector<>(state.range()).numAllocatedBits());
     state.SetComplexityN(state.range());
     divideByNInPlot(state);
 }
@@ -65,7 +48,7 @@ static void BM_BitvecAlternatingOnesZerosRankLast(bm::State& state) {
         Index i = bv.rankZeroUnchecked(state.range() - 1);
         bm::DoNotOptimize(i);
     }
-    state.counters["bits"] = double(bv.numAllocatedBits());
+    setNumBits(state, bv.numAllocatedBits());
     state.SetComplexityN(state.range());
 }
 
@@ -75,7 +58,7 @@ static void BM_BitvecAlternatingOnesZerosRankTwoThird(bm::State& state) {
         Index i = bv.rankZeroUnchecked(state.range() * 2 / 3);
         bm::DoNotOptimize(i);
     }
-    state.counters["bits"] = double(bv.numAllocatedBits());
+    setNumBits(state, bv.numAllocatedBits());
     state.SetComplexityN(state.range());
 }
 
@@ -88,7 +71,7 @@ static void BM_BitvecRandomRank(bm::State& state) {
         Index val = bv.rankOneUnchecked(randomValues[i++]);
         bm::DoNotOptimize(val);
     }
-    state.counters["bits"] = double(bv.numAllocatedBits());
+    setNumBits(state, bv.numAllocatedBits());
     state.SetComplexityN(state.range());
 }
 
@@ -98,7 +81,7 @@ static void BM_BitvecAlternatingOnesZerosSelectLast(bm::State& state) {
         Index i = bv.selectZero(state.range() / 2);
         bm::DoNotOptimize(i);
     }
-    state.counters["bits"] = double(bv.numAllocatedBits());
+    setNumBits(state, bv.numAllocatedBits());
     state.SetComplexityN(state.range());
 }
 
@@ -108,7 +91,7 @@ static void BM_BitvecAlternatingOnesZerosSelectOneThird(bm::State& state) {
         Index i = bv.selectOne(state.range() / 3);
         bm::DoNotOptimize(i);
     }
-    state.counters["bits"] = double(bv.numAllocatedBits());
+    setNumBits(state, bv.numAllocatedBits());
     state.SetComplexityN(state.range());
 }
 
@@ -125,7 +108,7 @@ static void BM_BitvecOnesThenZerosSelectFirstZero(bm::State& state) {
         Index i = bv.selectZero(0);
         bm::DoNotOptimize(i);
     }
-    state.counters["bits"] = double(bv.numAllocatedBits());
+    setNumBits(state, bv.numAllocatedBits());
     state.SetComplexityN(state.range());
 }
 
@@ -144,7 +127,7 @@ static void BM_Bitvec4OnesThenZerosThenOnesSelectFifthOne(bm::State& state) {
         Index i = bv.selectOne(5);
         bm::DoNotOptimize(i);
     }
-    state.counters["bits"] = double(bv.numAllocatedBits());
+    setNumBits(state, bv.numAllocatedBits());
     state.SetComplexityN(state.range());
 }
 
@@ -168,7 +151,7 @@ static void BM_BitvecSelectRandom(bm::State& state) {
         Index val = bv.selectOne(selectQueries[i++]);
         bm::DoNotOptimize(val);
     }
-    state.counters["bits"] = double(bv.numAllocatedBits());
+    setNumBits(state, bv.numAllocatedBits());
     state.SetComplexityN(state.range());
 }
 
@@ -180,8 +163,8 @@ static void BM_BitvecSelectRandom(bm::State& state) {
 // BENCHMARK(BM_BitvecAlternatingOnesZerosRankTwoThird)->RangeMultiplier(5)->Range(1, maxNumBits)->Complexity(bm::o1);
 // BENCHMARK(BM_BitvecRandomRank)->RangeMultiplier(5)->Range(1, maxNumBits)->Complexity(bm::o1);
 
-BENCHMARK(BM_BitvecAlternatingOnesZerosSelectLast)->RangeMultiplier(5)->Range(1, maxNumBits)->Complexity(bm::oLogN);
-BENCHMARK(BM_BitvecAlternatingOnesZerosSelectOneThird)->RangeMultiplier(5)->Range(1, maxNumBits)->Complexity(bm::oLogN);
-BENCHMARK(BM_BitvecOnesThenZerosSelectFirstZero)->RangeMultiplier(5)->Range(1, maxNumBits)->Complexity(bm::oLogN);
-BENCHMARK(BM_Bitvec4OnesThenZerosThenOnesSelectFifthOne)->RangeMultiplier(5)->Range(1, maxNumBits)->Complexity(bm::oLogN);
-BENCHMARK(BM_BitvecSelectRandom)->RangeMultiplier(5)->Range(1, maxNumBits)->Complexity(bm::oLogN);
+// BENCHMARK(BM_BitvecAlternatingOnesZerosSelectLast)->RangeMultiplier(5)->Range(1, maxNumBits)->Complexity(bm::oLogN);
+// BENCHMARK(BM_BitvecAlternatingOnesZerosSelectOneThird)->RangeMultiplier(5)->Range(1, maxNumBits)->Complexity(bm::oLogN);
+// BENCHMARK(BM_BitvecOnesThenZerosSelectFirstZero)->RangeMultiplier(5)->Range(1, maxNumBits)->Complexity(bm::oLogN);
+// BENCHMARK(BM_Bitvec4OnesThenZerosThenOnesSelectFifthOne)->RangeMultiplier(5)->Range(1, maxNumBits)->Complexity(bm::oLogN);
+// BENCHMARK(BM_BitvecSelectRandom)->RangeMultiplier(5)->Range(1, maxNumBits)->Complexity(bm::oLogN);

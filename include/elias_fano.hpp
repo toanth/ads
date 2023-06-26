@@ -19,7 +19,8 @@ private:
     static constexpr Index numBitsInNumber = 8 * sizeof(Number);
 
     EliasFano(Index numInts, CreateWithSizeTag) : numInts(numInts) {
-        Index lowerBitsPerNumber = numBitsInNumber - Index(std::ceil(std::log2(numInts)));
+        // + 2 to prevent UB for 0 or 1 values
+        Index lowerBitsPerNumber = numBitsInNumber - Index(std::ceil(std::log2(numInts + 2)));
         Index lowerSizeInElems = roundUpDiv(lowerBitsPerNumber * numInts, 8 * sizeof(Elem));
         lower = BitStorage<dynSize>{makeUniqueForOverwrite<Elem>(lowerSizeInElems), {lowerBitsPerNumber}};
         lowerBitMask = (Number(1) << lowerBitsPerNumber) - 1;
@@ -37,7 +38,7 @@ public:
 
     EliasFano(std::initializer_list<Number> list) : EliasFano(maybe_ranges::begin(list), maybe_ranges::end(list)) {}
 
-    // TODO: Instead of the worst case assumpption that max(first, last) == (1 << numBits) - 1, actually check the last element
+    // TODO: Instead of the worst case assumption that max(first, last) == (1 << numBits) - 1, actually check the last element
     template<typename ForwardIter, typename Sentinel>
     EliasFano(ForwardIter first, Sentinel last) noexcept
         : EliasFano(maybe_ranges::distance(first, last), CreateWithSizeTag{}) {

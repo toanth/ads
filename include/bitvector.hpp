@@ -148,16 +148,7 @@ public:
     void buildMetadata() noexcept { buildRankMetadata(); }
 
     void buildSelectMetadata(Index) noexcept {
-        // idea: store array of superblock start indices
-        // superblock size 1024 zeros, minimum size 1024 bit = 2^10 bit = 128 Byte = 16 Elem,
-        // maximum size 65536 bit = 2^16 bit = 8192 Byte = 1024 Elems; memory usage <= 8 Byte = 64 bit per 2^10 bits =
-        // 1/16th of bv block size 2^7 = 128 zeros; 2^3 = 8 blocks in a superblock; memory usage 32 bit per block => 256
-        // bits = 32 Byte = 4 Elem per superblock maximum block size = roughly 2^16 bits
-        // -- idea: only store elem idx, which saves log2(64) = 6 bits, use those to store number of zeros in Elem
-        // before the original position for blocks <= 128 * 16 * 8 bits = 16384 bits = 2048 Bytes = 256 Elem, don't
-        // store anything and compute answer by looking at the bv, possibly use rank queries else, store all answers
-        // naively
-        // -- what about select 0? reuse select 1? how?
+        // nothing to do; TODO: Move into Layout class, use CRTP
     }
 
     [[nodiscard]] Index rankOne(Index pos) const {
@@ -166,6 +157,11 @@ public:
         }
         return rankOneUnchecked(pos);
     }
+
+    [[nodiscard]] Index numOnes() const noexcept { return getSuperBlockCount(numSuperBlocks()); }
+
+    [[nodiscard]] Index numZeros() const noexcept { return sizeInBits() - numOnes(); }
+
 
     /// Unlike rankOne(), this dDoesn't check that `pos` is valid, although that gives close to no measurable performance benefits.
     /// However, the combined ASSUME macros do improve performance by quite a bit (if the compiler couldn't assume that pos >= 0,
