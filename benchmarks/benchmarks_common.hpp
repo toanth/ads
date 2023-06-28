@@ -9,9 +9,9 @@ namespace bm = benchmark;
 namespace ads {
 
 template<typename T = Elem>
-static std::vector<T> randomArray(Index size, T maxVal = std::numeric_limits<T>::max()) {
+static std::vector<T> randomArray(Index size, T maxVal = std::numeric_limits<T>::max(), T minVal = 0) {
     std::vector<T> vec(size);
-    std::uniform_int_distribution<T> dist(0, maxVal);
+    std::uniform_int_distribution<T> dist(minVal, maxVal);
     std::random_device rd;
     std::mt19937_64 engine(rd());
     for (auto& v : vec) {

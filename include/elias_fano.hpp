@@ -7,48 +7,30 @@ namespace ads {
 
 template<typename Number = std::uint64_t, ADS_LAYOUT_CONCEPT BitvecLayout = SimpleLayout<>>
 class EliasFano {
+    // TODO: It might make sense to also allow user defined structs like custom n bit integers?
+    static_assert(std::is_integral_v<Number>, "Elias fano only works for integers");
 
     Index numInts = 0;
     //    Index numLowerBitsPerNumber = 0;
-    Index lowerBitMask;
-    Index allocatedSizeInBits;
-    Bitvector<BitvecLayout> upper;
-    BitStorage<dynSize> lower; // TODO: Change to BitView?
+    Index lowerBitMask = 0;
+    Index allocatedSizeInBits = 0;
+    Elem smallestNumber = 0;
+    Index bitsPerNumber = sizeof(Number) * 8;          // usually overwritten in the ctor
+    Bitvector<BitvecLayout> upper = Bitvector<BitvecLayout>();
+    BitStorage<dynSize> lower = BitStorage<dynSize>(); // TODO: Change to BitView?
 
 private:
-    static constexpr Index numBitsInNumber = 8 * sizeof(Number);
-
-    EliasFano(Index numInts, CreateWithSizeTag) : numInts(numInts) {
-        // + 2 to prevent UB for 0 or 1 values
-        Index lowerBitsPerNumber = numBitsInNumber - Index(std::ceil(std::log2(numInts + 2)));
-        Index lowerSizeInElems = roundUpDiv(lowerBitsPerNumber * numInts, 8 * sizeof(Elem));
-        lower = BitStorage<dynSize>{makeUniqueForOverwrite<Elem>(lowerSizeInElems), {lowerBitsPerNumber}};
-        lowerBitMask = (Number(1) << lowerBitsPerNumber) - 1;
-        upper = Bitvector<BitvecLayout>(numInts + (1 << numUpperBitsPerNumber()) + 1);
-        allocatedSizeInBits = (lowerSizeInElems + upper.allocatedSizeInElems()) * sizeof(Elem) * 8;
-    }
-
-
-public:
-    template<typename Integer, typename = std::enable_if_t<std::is_convertible_v<Integer, Index>>>
-    explicit EliasFano(Integer numInts) : EliasFano(numInts, CreateWithSizeTag{}) {}
-
-    template<typename Range, typename = std::void_t<decltype(maybe_ranges::begin(std::declval<Range&>()))>> // no concepts in C++17
-    explicit EliasFano(const Range& numbers) : EliasFano(maybe_ranges::begin(numbers), maybe_ranges::end(numbers)) {}
-
-    EliasFano(std::initializer_list<Number> list) : EliasFano(maybe_ranges::begin(list), maybe_ranges::end(list)) {}
-
-    // TODO: Instead of the worst case assumption that max(first, last) == (1 << numBits) - 1, actually check the last element
-    template<typename ForwardIter, typename Sentinel>
-    EliasFano(ForwardIter first, Sentinel last) noexcept
-        : EliasFano(maybe_ranges::distance(first, last), CreateWithSizeTag{}) {
+    template<typename Range>
+    ADS_CPP20_CONSTEXPR void build(const Range& range) noexcept {
         Elem currentUpperEntry = 0;
         Index lastUpperElemIdx = 0;
-        Index elemIdx = 0;
-        while (first != last) {
-            Elem upperPart = Elem(*first) >> numLowerBitsPerNumber();
-            Elem newBitIdx = upperPart + elemIdx + 1;
-            Index currentUpperElemIdx = Index(newBitIdx / 64);
+        Index i = 0;
+        for (Number valUnmodified : range) {
+            Elem val = Elem(valUnmodified) - smallestNumber;
+            //            ADS_ASSUME(valUnmodified >= smallestNumber);
+            Index upperPart = Index(val >> numLowerBitsPerNumber());
+            Index newBitIdx = upperPart + i + 1;
+            Index currentUpperElemIdx = newBitIdx / 64;
             if (currentUpperElemIdx > lastUpperElemIdx) {
                 upper.setElem(lastUpperElemIdx, currentUpperEntry);
                 for (Index k = lastUpperElemIdx + 1; k < currentUpperElemIdx; ++k) {
@@ -58,9 +40,10 @@ public:
                 currentUpperEntry = 0;
             }
             currentUpperEntry |= Elem(1) << (newBitIdx % 64); // the order of bits in an element is reversed
-            lower.setBits(elemIdx, Elem(*first));
-            ++elemIdx;
-            ++first;
+            if (numLowerBitsPerNumber() > 0) {
+                lower.setBits(i, Elem(val));
+            }
+            ++i;
         }
         upper.setElem(lastUpperElemIdx, currentUpperEntry);
         for (++lastUpperElemIdx; lastUpperElemIdx < upper.sizeInElems(); ++lastUpperElemIdx) {
@@ -69,23 +52,115 @@ public:
         upper.buildMetadata();
     }
 
-    [[nodiscard]] const Bitvector<BitvecLayout>& getUpper() const noexcept { return upper; }
 
-    [[nodiscard]] const BitStorage<dynSize>& getLower() const noexcept { return lower; }
-    [[nodiscard]] Index numLowerBitsPerNumber() const noexcept { return lower.bitAccess.numBits; }
+    [[nodiscard]] Elem predecessorImpl(Elem n) const {
+        Number upperSearchBits = n >> numLowerBitsPerNumber();
+        Number lowerSearchBits = n & lowerBitMask;
+        if (upper.numZeros() <= upperSearchBits) {
+            return getImpl(numInts - 1);
+        }
+        Index first = upper.selectZero(upperSearchBits) - upperSearchBits;
+        Index last = upper.selectZero(upperSearchBits + 1) - upperSearchBits - 1;
+        if (numLowerBitsPerNumber() == 0) {
+            return first == last ? getImpl(first - 1) : getImpl(first);
+        }
+        for (Index i = last - 1; i >= first; --i) {
+            Number lowerBits = lower.getBits(i);
+            if (lowerBits <= lowerSearchBits) {
+                return lowerBits + (upperSearchBits << numLowerBitsPerNumber());
+            }
+        }
+        // there was no element with the same upper part, so return the greatest element with a smaller upper part
+        if (first == 0) [[unlikely]] {
+            throw std::invalid_argument("no predecessor found for " + std::to_string(n));
+        }
+        return getImpl(first - 1);
+    }
 
-    [[nodiscard]] Elem getUpperPart(Index i) const { return upper.selectOne(i) - i - 1; }
+    [[nodiscard]] Elem successorImpl(Elem n) const {
+        Number upperSearchBits = n >> numLowerBitsPerNumber();
+        Number lowerSearchBits = n & lowerBitMask;
+        Index first = upper.selectZero(upperSearchBits) - upperSearchBits;
+        if (numLowerBitsPerNumber() == 0) {
+            return getImpl(first);
+        }
+        Index last = upper.selectZero(upperSearchBits + 1) - upperSearchBits - 1;
+        for (Index i = first; i != last; ++i) {
+            Number lowerBits = lower.getBits(i);
+            if (lowerBits >= lowerSearchBits) {
+                return lowerBits + (upperSearchBits << numLowerBitsPerNumber());
+            }
+        }
+        // there was no element with the same upper part, so return the greatest element with a smaller upper part
+        if (last == numInts) [[unlikely]] {
+            throw std::invalid_argument("no successor found for " + std::to_string(n));
+        }
+        return getImpl(last);
+    }
 
-    [[nodiscard]] Elem getLowerPart(Index i) const { return lower.getBits(i); }
-
-    [[nodiscard]] Number get(Index i) const {
+    [[nodiscard]] Elem getImpl(Index i) const {
         if (i < 0 || i >= size()) {
             throw std::invalid_argument("EliasFano::get() Index out of range");
         }
         Elem upperPart = getUpperPart(i);
+        if (numLowerBitsPerNumber() == 0) {
+            return upperPart; // TODO handle overflows with negative smallestNumber
+        }
         Elem lowerPart = getLowerPart(i);
-        return Number(lowerPart + (upperPart << numLowerBitsPerNumber()));
+        return lowerPart + (upperPart << numLowerBitsPerNumber());
     }
+
+    /// \brief Use the bitvector to find the upper parts of the ith stored number.
+    [[nodiscard]] Elem getUpperPart(Index i) const { return upper.selectOne(i) - i - 1; }
+
+    /// \brief The ith entry in the lower array, which holds the lower bits of the ith stored number.
+    [[nodiscard]] Elem getLowerPart(Index i) const { return lower.getBits(i); }
+
+public:
+    template<typename Range, typename = std::void_t<decltype(maybe_ranges::begin(std::declval<Range&>()))>> // no concepts in C++17
+    explicit EliasFano(const Range& numbers) {
+        numInts = maybe_ranges::size(numbers);
+        Number rangeOfValues = 0;
+        if (numInts > 0) [[likely]] {
+            auto iter = maybe_ranges::begin(numbers);
+            smallestNumber = Elem(*iter);
+            maybe_ranges::advance(iter, numInts - 1);
+            rangeOfValues = *iter - *maybe_ranges::begin(numbers);
+        }
+        // + 1 to prevent UB for 0 or 1 value
+        bitsPerNumber = 1 + log2(Elem(std::min(rangeOfValues, Number(std::numeric_limits<Number>::max() - 1)) + 1));
+        Index upperBitsPerNumber = Index(std::ceil(std::log2(numInts + 2)));
+        bitsPerNumber = std::max(bitsPerNumber, upperBitsPerNumber);
+        Index lowerBitsPerNumber = bitsPerNumber - upperBitsPerNumber;
+        Index lowerSizeInElems = roundUpDiv(lowerBitsPerNumber * numInts, 8 * sizeof(Elem));
+        if (lowerSizeInElems > 0) {
+            lower = BitStorage<dynSize>{makeUniqueForOverwrite<Elem>(lowerSizeInElems), {lowerBitsPerNumber}};
+            lowerBitMask = (Number(1) << lowerBitsPerNumber) - 1;
+        } else {
+            ADS_ASSUME(lowerSizeInElems == 0);
+            lower.bitAccess.numBits = 0;
+        }
+        Index numBitsInUpper = 1 + numInts + (Number(1) << (numBitsPerNumber() - numLowerBitsPerNumber()));
+        upper = Bitvector<BitvecLayout>(numBitsInUpper); // +1 because the first bit is always a zero
+        allocatedSizeInBits = (lowerSizeInElems + upper.allocatedSizeInElems()) * sizeof(Elem) * 8;
+
+        build(numbers);
+    }
+
+    EliasFano(std::initializer_list<Number> list) : EliasFano(maybe_ranges::begin(list), maybe_ranges::end(list)) {}
+
+    template<typename ForwardIter, typename Sentinel>
+    EliasFano(ForwardIter first, Sentinel last) noexcept : EliasFano(Subrange(first, last)) {}
+
+    [[nodiscard]] const Bitvector<BitvecLayout>& getUpper() const noexcept { return upper; }
+
+    [[nodiscard]] const BitStorage<dynSize>& getLower() const noexcept { return lower; }
+
+    [[nodiscard]] Index numLowerBitsPerNumber() const noexcept { return lower.bitAccess.numBits; }
+
+    [[nodiscard]] Index numBitsPerNumber() const noexcept { return bitsPerNumber; }
+
+    [[nodiscard]] Number get(Index i) const { return Number(getImpl(i) + smallestNumber); }
 
     [[nodiscard]] Number operator[](Index i) const { return get(i); }
 
@@ -98,46 +173,23 @@ public:
     Subrange<NumberIter> numbers() const noexcept { return {numberIter(0), numberIter(size())}; }
 
     [[nodiscard]] Number predecessor(Number n) const {
-        Number upperSearchBits = n >> numLowerBitsPerNumber();
-        Number lowerSearchBits = n & lowerBitMask;
-        Index first = upper.selectZero(upperSearchBits) - upperSearchBits;
-        Index last = upper.selectZero(upperSearchBits + 1) - upperSearchBits - 1;
-        for (Index i = last - 1; i >= first; --i) {
-            Number lowerBits = lower.getBits(i);
-            if (lowerBits <= lowerSearchBits) {
-                return lowerBits + (upperSearchBits << numLowerBitsPerNumber());
-            }
-        }
-        // there was no element with the same upper part, so return the greatest element with a smaller upper part
-        if (first == 0) [[unlikely]] {
-            throw std::invalid_argument("no predecessor found for " + std::to_string(n));
-        }
-        return get(first - 1);
+        return Number(predecessorImpl(Elem(n) - smallestNumber) + smallestNumber);
     }
 
+    // TODO: constexpr tests to detect UB
     [[nodiscard]] Number successor(Number n) const {
-        Number upperSearchBits = n >> numLowerBitsPerNumber();
-        Number lowerSearchBits = n & lowerBitMask;
-        Index first = upper.selectZero(upperSearchBits) - upperSearchBits;
-        Index last = upper.selectZero(upperSearchBits + 1) - upperSearchBits - 1;
-        for (Index i = first; i != last; ++i) {
-            Number lowerBits = lower.getBits(i);
-            if (lowerBits >= lowerSearchBits) {
-                return lowerBits + (upperSearchBits << numLowerBitsPerNumber());
-            }
+        // the cast is implementation defined before C++20 (but still does the right thing)
+        if (n <= I64(smallestNumber)) {
+            return Number(smallestNumber);
         }
-        // there was no element with the same upper part, so return the greatest element with a smaller upper part
-        if (last == numInts) [[unlikely]] {
-            throw std::invalid_argument("no successor found for " + std::to_string(n));
-        }
-        return get(last);
+        return Number(successorImpl(Elem(n) - smallestNumber) + smallestNumber);
     }
+
+    [[nodiscard]] Number getSmallest() const noexcept { return Number(smallestNumber); }
 
     [[nodiscard]] Index size() const noexcept { return numInts; }
 
     [[nodiscard]] Index numAllocatedBits() const noexcept { return allocatedSizeInBits; }
-
-    [[nodiscard]] Index numUpperBitsPerNumber() const noexcept { return numBitsInNumber - numLowerBitsPerNumber(); }
 };
 
 } // namespace ads

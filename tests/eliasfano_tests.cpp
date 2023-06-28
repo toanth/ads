@@ -4,34 +4,57 @@
 
 using namespace ads;
 
-TEST(EliasFano, ConstructionSmall) {
+TEST(EliasFano, ConstructionSmallAscending) {
     Elem arr[] = {1, 2, 3};
     EliasFano<> ef(arr);
     ASSERT_EQ(ef.size(), 3);
-    ASSERT_EQ(ef.numLowerBitsPerNumber(), 61);
+    ASSERT_EQ(ef.numLowerBitsPerNumber(), 0);
+    ASSERT_EQ(ef.numBitsPerNumber(), 3);
     const auto& upper = ef.getUpper();
     ASSERT_LE(upper.sizeInBits(), 12);
     ASSERT_EQ(upper.getBit(0), false);
     for (Index i = 0; i < 3; ++i) {
-        ASSERT_EQ(upper.getBit(i + 1), true) << i;
+        ASSERT_EQ(upper.getBit(2 * i + 1), true) << i;
     }
-    ASSERT_EQ(upper.getBit(30), false);
     ASSERT_EQ(upper.selectZero(0), 0);
-    ASSERT_EQ(upper.selectZero(1), 4);
+    ASSERT_EQ(upper.selectZero(1), 2);
     ASSERT_EQ(upper.selectOne(0), 1);
-    ASSERT_EQ(upper.selectOne(2), 3);
-    for (Index i = 0; i < 3; ++i) {
-        ASSERT_EQ(ef.getUpperPart(i), 0) << i;
-    }
-    ASSERT_EQ(upper, Bitvector<>("011100000000"));
+    ASSERT_EQ(upper.selectOne(2), 5);
+    ASSERT_EQ(ef.getSmallest(), 1);
+    ASSERT_EQ(upper, Bitvector<>("010101000000"));
     const auto& lower = ef.getLower();
-    for (Index i = 0; i < 3; ++i) {
-        ASSERT_EQ(lower.getBits(i), i + 1);
-        ASSERT_EQ(ef.getLowerPart(i), i + 1);
-    }
+    ASSERT_EQ(lower.bitAccess.numBits, 0);
     for (Index i = 0; i < std::size(arr); ++i) {
         ASSERT_EQ(ef.get(i), i + 1) << i;
     }
+}
+
+TEST(EliasFano, ConstructionSmall) {
+    EliasFano<> ef{12, 14, 990, 991, 100'000};
+    ASSERT_EQ(ef.size(), 5);
+    ASSERT_GT(ef.numLowerBitsPerNumber(), 0);
+    ASSERT_LT(ef.numLowerBitsPerNumber(), std::ceil(log2(100'000u)));
+    ASSERT_EQ(ef.getLower()[0] % 2, 0);
+    ASSERT_EQ(ef.getLower()[3] % 2, 1);
+    ASSERT_EQ(ef.getLower()[0], 0);
+    ASSERT_EQ(ef.getLower()[1], 2 & ((1 << ef.numLowerBitsPerNumber()) - 1));
+    ASSERT_EQ(ef.getLower()[2], 978 & ((1 << ef.numLowerBitsPerNumber()) - 1));
+    ASSERT_EQ(ef.get(0), 12);
+    ASSERT_EQ(ef.get(1), 14);
+    ASSERT_EQ(ef.get(2), 990);
+    ASSERT_EQ(ef.get(3), 991);
+    ASSERT_EQ(ef.get(4), 100'000);
+    ASSERT_EQ(ef.getLower().bitAccess.numBits, ef.numLowerBitsPerNumber());
+}
+
+TEST(EliasFano, ConstructionSmallNegative) {
+    EliasFano<Index> ef{-100, -5, 4, 12};
+    ASSERT_EQ(ef.size(), 4);
+    ASSERT_EQ(ef.get(0), -100);
+    ASSERT_EQ(ef.get(1), -5);
+    ASSERT_EQ(ef.get(2), 4);
+    ASSERT_EQ(ef.get(3), 12);
+    ASSERT_LE(ef.numLowerBitsPerNumber(), 7);
 }
 
 TEST(EliasFano, Empty) {
@@ -43,10 +66,14 @@ void testElems(const std::vector<Elem>& arr, const EliasFano<>& ef, std::string_
     assert(std::is_sorted(arr.begin(), arr.end()));
     ASSERT_EQ(ef.size(), arr.size());
     Index numLowerBits = ef.numLowerBitsPerNumber();
-    ASSERT_EQ(numLowerBits, 64 - std::ceil(std::log2(ef.size() + 2)));
+    ASSERT_LE(numLowerBits, 64 - std::ceil(std::log2(ef.size() + 2)));
+    ASSERT_GE(numLowerBits, 0);
+    ASSERT_EQ(ef.getSmallest(), arr[0]);
     for (Index i = 0; i < arr.size(); ++i) {
-        ASSERT_EQ(ef.getUpperPart(i), arr[i] >> numLowerBits) << i << " of " << arr.size() << ", name " << name;
-        ASSERT_EQ(ef.getLowerPart(i), arr[i] % (Elem(1) << numLowerBits)) << i << " of " << arr.size() << ", name " << name;
+        if (ef.numLowerBitsPerNumber() > 0) {
+            ASSERT_EQ(ef.getLower()[i], (arr[i] - arr[0]) % (Elem(1) << numLowerBits))
+                    << i << " of " << arr.size() << ", name " << name;
+        }
         ASSERT_EQ(ef[i], arr[i]) << i << " of " << arr.size() << ", name " << name;
     }
     ASSERT_TRUE(std::equal(arr.begin(), arr.end(), ef.numbers().begin()));
@@ -66,8 +93,7 @@ TEST(EliasFano, ConstructionLarge) {
     arr.push_back(Elem(-1));
     std::sort(arr.begin(), arr.end());
     ef = EliasFano<>(arr);
-    ASSERT_EQ(ef.getUpperPart(arr.size() - 1), Elem(-1) >> ef.numLowerBitsPerNumber());
-    ASSERT_EQ(ef.getLowerPart(arr.size() - 1), (Elem(1) << ef.numLowerBitsPerNumber()) - 1);
+    ASSERT_EQ(ef.getLower()[arr.size() - 1], (Elem(1) << ef.numLowerBitsPerNumber()) - 1);
     testElems(arr, ef, "large-ish");
 }
 
@@ -82,11 +108,11 @@ TEST(EliasFano, ConstructionRandom) {
     EliasFano ef(elems);
     testElems(elems, ef, "random");
 }
-// TODO: Test with very few very large elements
 
 TEST(EliasFano, Select) {
     EliasFano<> ef{0, 3, 3, Elem(-1)};
-    ASSERT_EQ(ef.numUpperBitsPerNumber(), 3);
+    ASSERT_EQ(ef.numBitsPerNumber(), 64);
+    ASSERT_EQ(ef.numBitsPerNumber() - ef.numLowerBitsPerNumber(), 3);
     ASSERT_EQ(ef.getUpper(), Bitvector<>("0111000000010"));
     ASSERT_EQ(ef.get(0), 0);
     ASSERT_EQ(ef.get(1), 3);
@@ -96,7 +122,8 @@ TEST(EliasFano, Select) {
 
 TEST(EliasFano, PredecessorSmall) {
     EliasFano<> ef{1, 4, 5, 6, 10, Elem(-3)};
-    ASSERT_EQ(ef.numUpperBitsPerNumber(), 3);
+    ASSERT_EQ(ef.numBitsPerNumber(), 64);
+    ASSERT_EQ(ef.numBitsPerNumber() - ef.numLowerBitsPerNumber(), 3);
     ASSERT_EQ(ef.predecessor(1), 1);
     ASSERT_EQ(ef.predecessor(2), 1);
     ASSERT_EQ(ef.predecessor(3), 1);
@@ -148,6 +175,48 @@ TEST(EliasFano, Small) {
     ASSERT_EQ(ef.predecessor(Elem(-1) / 2), Elem(-1) / 2);
     ASSERT_EQ(ef.predecessor(Elem(-1) / 2 + 1), Elem(-1) / 2);
     ASSERT_EQ(ef.predecessor(Elem(-1) - 1), Elem(-1) / 2);
+    ef = EliasFano<>{Elem(-4), Elem(-2)};
+    ASSERT_EQ(ef.get(0), Elem(-4));
+    ASSERT_EQ(ef.get(1), Elem(-2));
+    ASSERT_EQ(ef.predecessor(Elem(-1)), Elem(-2));
+    ASSERT_EQ(ef.successor(1), Elem(-4));
+    EliasFano<signed char> charEF{-12, -3, 8, 13, 99};
+    ASSERT_EQ(charEF.size(), 5);
+    ASSERT_EQ(charEF.get(0), -12);
+    ASSERT_EQ(charEF.get(3), 13);
+    ASSERT_EQ(charEF.get(2), 8);
+    ASSERT_EQ(charEF.predecessor(127), 99);
+    ASSERT_EQ(charEF.successor(-2), 8);
+    ASSERT_EQ(charEF.successor(12), 13);
+    ASSERT_EQ(charEF.predecessor(-4), -12);
+}
+
+TEST(EliasFano, ManyIdentical) {
+    std::vector<Elem> values(10'000, 1234567890);
+    EliasFano<> ef(values);
+    ASSERT_EQ(ef.size(), 10'000);
+    ASSERT_EQ(ef.get(0), 1234567890);
+    ASSERT_EQ(ef.predecessor(1234567891), 1234567890);
+    ASSERT_EQ(ef.successor(0), 1234567890);
+    values.insert(values.begin(), 0);
+    ef = EliasFano<>(values);
+    ASSERT_EQ(ef.size(), 10'001);
+    ASSERT_EQ(ef.get(0), 0);
+    ASSERT_EQ(ef.get(1), 1234567890);
+    ASSERT_EQ(ef.successor(0), 0);
+    ASSERT_EQ(ef.successor(1), 1234567890);
+    values = std::vector<Elem>(12'345, 0);
+    ef = EliasFano<>(values);
+    ASSERT_EQ(ef.size(), 12345);
+    ASSERT_EQ(ef.get(0), 0);
+    ASSERT_EQ(ef.predecessor(Elem(-1)), 0);
+    values.push_back(10);
+    ef = EliasFano<>(values);
+    ASSERT_EQ(ef.get(0), 0);
+    ASSERT_EQ(ef.get(1), 0);
+    ASSERT_EQ(ef.get(values.size() - 1), 10);
+    ASSERT_EQ(ef.predecessor(1), 0);
+    ASSERT_EQ(ef.predecessor(11), 10);
 }
 
 TEST(EliasFano, PredecessorRandom) {

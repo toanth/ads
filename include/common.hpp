@@ -60,8 +60,10 @@ namespace maybe_ranges = std;
 
 // TODO: Make unsigned? Makes division, modulo by powers of two more efficient
 using Index = std::ptrdiff_t;
+using U64 = std::uint64_t;
+using I64 = std::int64_t;
 // TODO: Instead of a global Elem alias, define per template to allow smaller sizes
-using Elem = std::uint64_t;
+using Elem = U64;
 
 
 
