@@ -1,6 +1,7 @@
 #ifndef BITVECTOR_NLOGN_RMQ_HPP
 #define BITVECTOR_NLOGN_RMQ_HPP
 
+#include "bit.hpp"
 #include "bit_access.hpp"
 #include "common.hpp"
 namespace ads {

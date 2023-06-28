@@ -200,16 +200,16 @@ public:
 template<typename Container>
 Span(const Container&) -> Span<const typename Container::value_type>;
 
-// Simpler version of std::ranges::subrange
-template<typename Iter>
+// Simpler version of std::ranges::subrange, C++17 compatible
+template<typename Iter, typename Sentinel = Iter>
 struct Subrange {
     Iter first;
-    Iter last;
+    Sentinel last;
 
     using value_type = typename std::iterator_traits<Iter>::value_type;
 
     [[nodiscard]] Iter begin() const noexcept { return first; }
-    [[nodiscard]] Iter end() const noexcept { return last; }
+    [[nodiscard]] Sentinel end() const noexcept { return last; }
 
     [[nodiscard]] Index size() const noexcept { return last - first; }
 };

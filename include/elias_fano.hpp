@@ -15,6 +15,7 @@ class EliasFano {
     Index lowerBitMask = 0;
     Index allocatedSizeInBits = 0;
     Elem smallestNumber = 0;
+    Elem largestNumber = 0;
     Index bitsPerNumber = sizeof(Number) * 8;          // usually overwritten in the ctor
     Bitvector<BitvecLayout> upper = Bitvector<BitvecLayout>();
     BitStorage<dynSize> lower = BitStorage<dynSize>(); // TODO: Change to BitView?
@@ -56,9 +57,7 @@ private:
     [[nodiscard]] Elem predecessorImpl(Elem n) const {
         Number upperSearchBits = n >> numLowerBitsPerNumber();
         Number lowerSearchBits = n & lowerBitMask;
-        if (upper.numZeros() <= upperSearchBits) {
-            return getImpl(numInts - 1);
-        }
+        ADS_ASSUME(upper.numZeros() > upperSearchBits);
         Index first = upper.selectZero(upperSearchBits) - upperSearchBits;
         Index last = upper.selectZero(upperSearchBits + 1) - upperSearchBits - 1;
         if (numLowerBitsPerNumber() == 0) {
@@ -125,14 +124,17 @@ public:
             auto iter = maybe_ranges::begin(numbers);
             smallestNumber = Elem(*iter);
             maybe_ranges::advance(iter, numInts - 1);
-            rangeOfValues = *iter - *maybe_ranges::begin(numbers);
+            largestNumber = *iter;
+            rangeOfValues = largestNumber - smallestNumber;
         }
-        // + 1 to prevent UB for 0 or 1 value
+        // + 1 to prevent UB for 0 or 1
         bitsPerNumber = 1 + log2(Elem(std::min(rangeOfValues, Number(std::numeric_limits<Number>::max() - 1)) + 1));
-        Index upperBitsPerNumber = Index(std::ceil(std::log2(numInts + 2)));
+        Index upperBitsPerNumber = roundUpLog2(Elem(numInts + 2)); // + 2 to prevent UB for numInts <= 1
         bitsPerNumber = std::max(bitsPerNumber, upperBitsPerNumber);
         Index lowerBitsPerNumber = bitsPerNumber - upperBitsPerNumber;
         Index lowerSizeInElems = roundUpDiv(lowerBitsPerNumber * numInts, 8 * sizeof(Elem));
+        Index maxUpperVal = rangeOfValues >> lowerBitsPerNumber;
+        ADS_ASSUME(maxUpperVal < Index(1) << upperBitsPerNumber);
         if (lowerSizeInElems > 0) {
             lower = BitStorage<dynSize>{makeUniqueForOverwrite<Elem>(lowerSizeInElems), {lowerBitsPerNumber}};
             lowerBitMask = (Number(1) << lowerBitsPerNumber) - 1;
@@ -140,17 +142,18 @@ public:
             ADS_ASSUME(lowerSizeInElems == 0);
             lower.bitAccess.numBits = 0;
         }
-        Index numBitsInUpper = 1 + numInts + (Number(1) << (numBitsPerNumber() - numLowerBitsPerNumber()));
-        upper = Bitvector<BitvecLayout>(numBitsInUpper); // +1 because the first bit is always a zero
+        Index numBitsInUpper = 1 + numInts + maxUpperVal; // +1 because the first bit is always a zero
+        upper = Bitvector<BitvecLayout>(numBitsInUpper);
         allocatedSizeInBits = (lowerSizeInElems + upper.allocatedSizeInElems()) * sizeof(Elem) * 8;
 
         build(numbers);
     }
 
-    EliasFano(std::initializer_list<Number> list) : EliasFano(maybe_ranges::begin(list), maybe_ranges::end(list)) {}
+    EliasFano(std::initializer_list<Number> list) noexcept
+        : EliasFano(maybe_ranges::begin(list), maybe_ranges::end(list)) {}
 
     template<typename ForwardIter, typename Sentinel>
-    EliasFano(ForwardIter first, Sentinel last) noexcept : EliasFano(Subrange(first, last)) {}
+    EliasFano(ForwardIter first, Sentinel last) noexcept : EliasFano(Subrange<ForwardIter, Sentinel>{first, last}) {}
 
     [[nodiscard]] const Bitvector<BitvecLayout>& getUpper() const noexcept { return upper; }
 
@@ -173,6 +176,10 @@ public:
     Subrange<NumberIter> numbers() const noexcept { return {numberIter(0), numberIter(size())}; }
 
     [[nodiscard]] Number predecessor(Number n) const {
+        // the cast is implementation defined before C++20 (but still does the right thing)
+        if (n >= I64(largestNumber)) {
+            return Number(largestNumber);
+        }
         return Number(predecessorImpl(Elem(n) - smallestNumber) + smallestNumber);
     }
 
@@ -186,11 +193,13 @@ public:
     }
 
     [[nodiscard]] Number getSmallest() const noexcept { return Number(smallestNumber); }
+    [[nodiscard]] Number getLargest() const noexcept { return Number(largestNumber); }
 
     [[nodiscard]] Index size() const noexcept { return numInts; }
 
     [[nodiscard]] Index numAllocatedBits() const noexcept { return allocatedSizeInBits; }
 };
+
 
 } // namespace ads
 
