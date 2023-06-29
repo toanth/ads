@@ -11,9 +11,29 @@
 #include <memory>
 #include <random>
 
+static_assert(__cplusplus >= 201703L, "This library requires at least C++17 (some features require C++20)");
+static_assert(sizeof(void*) >= 8, "This library requires a 64 bit system");
+
 #ifdef _MSC_VER
+
+#define ADS_HAS_MSVC_INTRINSICS
 #include <intrin.h>
+
+#elif defined __clang__ || defined __GNUC__
+
+#define ADS_HAS_DEFAULT_GCC_INTRINSICS
+
+#if defined __x86_64__
+#define ADS_HAS_GCC_X86_INTRINSICS
+#include "x86intrin.h"
+#ifdef __BMI2__
+#define ADS_HAS_GCC_BMI2
 #endif
+#endif
+
+#endif // _MSC_VER
+
+
 #if __cplusplus >= 202002L
 #include <bit>
 #include <ranges>
@@ -51,8 +71,10 @@ namespace maybe_ranges = std;
 
 // TODO: Make unsigned? Makes division, modulo by powers of two more efficient
 using Index = std::ptrdiff_t;
+using U64 = std::uint64_t;
+using I64 = std::int64_t;
 // TODO: Instead of a global Elem alias, define per template to allow smaller sizes
-using Elem = std::uint64_t;
+using Elem = U64;
 
 
 
@@ -177,78 +199,6 @@ ADS_CPP20_CONSTEXPR Integer abs(Integer val) noexcept {
     }
 }
 
-template<typename UnsignedInteger> // no concepts in C++17 :(
-ADS_CPP20_CONSTEXPR Index log2(UnsignedInteger n) noexcept {
-    static_assert(std::is_unsigned_v<UnsignedInteger>);
-#ifdef ADS_HAS_CPP20
-    return 8 * sizeof(UnsignedInteger) - std::countl_zero(n) - 1;
-#elif defined __clang__ || defined __GNUC__
-    return 8 * sizeof(unsigned long long) - __builtin_clzll(n) - 1;
-#elif defined _MSC_VER
-    std::uint64 pos;
-    _BitScanReverse(&pos, std::uint64_t(n));
-    return 8 * 64 - pos - 1;
-#else
-    return Index(std::log2(n));
-#endif
-}
-
-template<typename UnsignedInteger>
-ADS_CPP20_CONSTEXPR Index roundUpLog2(UnsignedInteger n) noexcept {
-    static_assert(std::is_unsigned_v<UnsignedInteger>);
-    assert(n > 0);
-#ifdef ADS_HAS_CPP20
-    if (std::has_single_bit(n)) {
-        return log2(n);
-    }
-    return log2(n) + 1; // TODO: Test if this is actually faster than the fallback, use for non-c++20 mode as well if faster
-#else
-    if (n <= 1) {
-        return 0;
-    }
-    return log2(UnsignedInteger(n - 1)) + 1;
-#endif
-}
-
-template<typename UnsignedInteger>
-ADS_CPP20_CONSTEXPR Index popcount(UnsignedInteger n) noexcept {
-    static_assert(std::is_unsigned_v<UnsignedInteger>);
-#ifdef ADS_HAS_CPP20
-    return std::popcount(n);
-#elif defined __clang__ || defined __GNUC__
-    return __builtin_popcountll(std::uint64_t(n));
-#elif defined _MSC_VER
-    return __popcnt64(std::uint64_t(n));
-#else
-    using T = UnsignedInteger;
-    // see https://stackoverflow.com/questions/3849337/msvc-equivalent-to-builtin-popcount/42913358#42913358
-    n = n - ((n >> 1) & (T) ~(T)0 / 3);                              // temp
-    n = (n & (T) ~(T)0 / 15 * 3) + ((n >> 2) & (T) ~(T)0 / 15 * 3);  // temp
-    n = (n + (n >> 4)) & (T) ~(T)0 / 255 * 15;                       // temp
-    return (T)(n * ((T) ~(T)0 / 255)) >> (sizeof(T) - 1) * CHAR_BIT; // count
-#endif
-}
-
-
-template<typename UnsignedInteger>
-constexpr UnsignedInteger reverseBits(UnsignedInteger n) noexcept {
-    // see https://stackoverflow.com/questions/746171/efficient-algorithm-for-bit-reversal-from-msb-lsb-to-lsb-msb-in-c
-    n = ((n & 0xaaaa'aaaa'aaaa'aaaaull) >> 1) | ((n & 0x5555'5555'5555'5555ull) << 1);
-    n = ((n & 0xcccc'cccc'cccc'ccccull) >> 2) | ((n & 0x3333'3333'3333'3333ull) << 2);
-    if constexpr (sizeof(UnsignedInteger) > 1) {
-        n = ((n & 0xf0f0'f0f0'f0f0'f0f0ull) >> 4) | ((n & 0x0f0f'0f0f'0f0f'0f0full) << 4);
-    }
-    if constexpr (sizeof(UnsignedInteger) > 2) {
-        n = ((n & 0xff00'ff00'ff00'ff00ull) >> 8) | ((n & 0x00ff'00ff'00ff'00ffull) << 8);
-    }
-    if constexpr (sizeof(UnsignedInteger) > 4) {
-        n = ((n & 0xffff'0000'ffff'0000ull) >> 16) | ((n & 0x0000'ffff'0000'ffffull) << 16);
-    }
-    constexpr Index bits = sizeof(UnsignedInteger) * 4;
-    return (n >> bits) | (n << bits);
-}
-
-
 static constexpr Index CACHELINE_SIZE_BYTES = 64;
 static constexpr Index ELEMS_PER_CACHELINE = CACHELINE_SIZE_BYTES / 8;
 
@@ -317,16 +267,16 @@ public:
 template<typename Container>
 Span(const Container&) -> Span<const typename Container::value_type>;
 
-// Simpler version of std::ranges::subrange
-template<typename Iter>
+// Simpler version of std::ranges::subrange, C++17 compatible
+template<typename Iter, typename Sentinel = Iter>
 struct Subrange {
     Iter first;
-    Iter last;
+    Sentinel last;
 
     using value_type = typename std::iterator_traits<Iter>::value_type;
 
     [[nodiscard]] Iter begin() const noexcept { return first; }
-    [[nodiscard]] Iter end() const noexcept { return last; }
+    [[nodiscard]] Sentinel end() const noexcept { return last; }
 
     [[nodiscard]] Index size() const noexcept { return last - first; }
 };

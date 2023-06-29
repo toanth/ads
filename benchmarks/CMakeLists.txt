@@ -34,7 +34,7 @@ else ()
     add_compile_options(-march=native)
 endif ()
 
-add_executable(benchmarks bitvector_benchmarks.cpp)
+add_executable(benchmarks bitvector_benchmarks.cpp ../include/bit.hpp eliasfano_benchmarks.cpp eliasfano_benchmarks.cpp benchmarks_common.hpp)
 
 target_link_libraries(benchmarks benchmark::benchmark benchmark::benchmark_main)
 
