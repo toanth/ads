@@ -19,8 +19,8 @@ class EliasFano {
     Index bitsPerNumber = sizeof(Number) * 8;          // usually overwritten in the ctor
     Bitvector<BitvecLayout> upper = Bitvector<BitvecLayout>();
     BitStorage<dynSize> lower = BitStorage<dynSize>(); // TODO: Change to BitView?
+    constexpr static Index linearFallbackSize = 8;
 
-private:
     template<typename Range>
     ADS_CPP20_CONSTEXPR void build(const Range& range) noexcept {
         Elem currentUpperEntry = 0;
@@ -63,8 +63,7 @@ private:
         if (numLowerBitsPerNumber() == 0) {
             return first == last ? getImpl(first - 1) : getImpl(first);
         }
-        constexpr Index linearFallbackSize = 8;
-        while (last - first > linearFallbackSize) {
+        while (last - first > linearFallbackSize) [[unlikely]] {
             Index mid = (first + last) / 2;
             Number lowerBits = lower.getBits(mid);
             if (lowerBits > lowerSearchBits) {
@@ -93,18 +92,27 @@ private:
         if (numLowerBitsPerNumber() == 0) {
             return getImpl(first);
         }
-        Index last = upper.selectZero(upperSearchBits + 1) - upperSearchBits - 1;
-        for (Index i = first; i != last; ++i) {
+        Index last = upper.selectZero(upperSearchBits + 1) - upperSearchBits - 2;
+        while (last - first > linearFallbackSize) {
+            Index mid = (last + first) / 2;
+            Number lowerBits = lower.getBits(mid);
+            if (lowerBits <= lowerSearchBits) {
+                first = mid;
+            } else {
+                last = mid;
+            }
+        }
+        for (Index i = first; i <= last; ++i) {
             Number lowerBits = lower.getBits(i);
             if (lowerBits >= lowerSearchBits) {
                 return lowerBits + (upperSearchBits << numLowerBitsPerNumber());
             }
         }
         // there was no element with the same upper part, so return the greatest element with a smaller upper part
-        if (last == numInts) [[unlikely]] {
+        if (last == numInts - 1) [[unlikely]] {
             throw std::invalid_argument("no successor found for " + std::to_string(n));
         }
-        return getImpl(last);
+        return getImpl(last + 1);
     }
 
     [[nodiscard]] Elem getImpl(Index i) const {

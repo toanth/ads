@@ -132,12 +132,14 @@ def get_performance_measurements(family_info: FamilyInfo) -> FamilyResults:
 
 
 def generate_single_plot(family_infos: [FamilyInfo]):
+    family_infos = [f for f in family_infos if f is not None]
     assert len(family_infos) > 0
     results: [FamilyResults] = [get_performance_measurements(family) for family in family_infos]
     styles = ['b-s', 'g-o', 'r-*', 'y-3', 'k-0', 'm-x']
     per_n = all([r.per_n for r in results])
     times = [r.times for r in results]
     errors = [np.array(r.errors) for r in results]
+    bits = [r.bits for r in results]
     if per_n:
         for res, t, e, in zip(results, times, errors):
             t /= res.input_sizes
@@ -165,7 +167,8 @@ def generate_single_plot(family_infos: [FamilyInfo]):
         ax[1].set_yscale('log')
         ax[1].grid()
         ax[1].set_title("space (divided by n)")
-        ax[1].set_ylim([None, 1000])
+        if max([max(res.bits) for res in results]) > 1000:
+            ax[1].set_ylim([None, 1000])
         if per_n:
             ax[0].set_ylabel('time in ' + time_unit + ' divided by n')
         else:
@@ -178,18 +181,30 @@ def generate_single_plot(family_infos: [FamilyInfo]):
         ax[0].set_title(title)
         if len(family_infos) == 2:
             rel_time = ax[0].twinx()
-            time_percent = [100 * results[0].times[i] / results[1].times[i] for i in range(len(results[0].times))]
-            color_y_axis(rel_time, 'c')
-            rel_time.set_ylabel('relative time in percent')
-            rel_time.plot(results[0].input_sizes, time_percent, 'c-p', label='percent of baseline')
-            rel_time.axhline(y=100, color='c', linestyle='--')
+            n0 = results[0].input_sizes
+            n1 = results[1].input_sizes
+            while n0[0] < n1[0]:
+                times[0] = times[0][1:]
+                n0 = n0[1:]
+                bits[0] = bits[0][1:]
+            while n0[0] > n1[0]:
+                times[1] = times[1][1:]
+                n1 = n1[1:]
+                bits[1] = bits[1][1:]
+            times[0] = times[0][:min(len(times[0]), len(times[1]))]
+            if len(n0) > 1 and n0[1] == n1[1]:
+                time_percent = [100 * times[0][i] / times[1][i] for i in range(len(times[0]))]
+                color_y_axis(rel_time, 'c')
+                rel_time.set_ylabel('relative time in percent')
+                rel_time.plot(n0, time_percent, 'c-p', label='percent of baseline')
+                rel_time.axhline(y=100, color='c', linestyle='--')
 
-            rel_space = ax[1].twinx()
-            time_percent = [100 * bits / baseline_bits for bits, baseline_bits in zip(results[0].bits, results[1].bits)]
-            rel_space.plot(results[0].input_sizes, time_percent, 'c-p')
-            rel_space.axhline(y=100, color='c', linestyle='--')
-            color_y_axis(rel_space, 'c')
-            rel_space.set_ylabel('relative space in percent')
+                rel_space = ax[1].twinx()
+                time_percent = [100 * bits[0][i] / bits[1][i] for i in range(len(bits[0]))]
+                rel_space.plot(n0, time_percent, 'c-p')
+                rel_space.axhline(y=100, color='c', linestyle='--')
+                color_y_axis(rel_space, 'c')
+                rel_space.set_ylabel('relative space in percent')
         names = list(set(r.name for r in results))
         name = names[0]
         for n in names[1:]:
@@ -208,7 +223,7 @@ def generate_single_plot(family_infos: [FamilyInfo]):
             time_name += " / n"
         ax.plot(res.input_sizes, res.times, 'b-s', label=time_name)
         if res.repetitions > 1:
-            ax.errorbar(res.input_sizes, errors[0], errors[1], fmt=styles[0], label='time µ ± σ')
+            ax.errorbar(res.input_sizes, errors[0][0], errors[0][1], fmt=styles[0], label='time µ ± σ')
         ax2.plot(res.input_sizes, res.bits, styles[1], label='space / n')
         color_y_axis(ax, styles[0][0])
         ax.set_xlabel('n')
@@ -222,7 +237,8 @@ def generate_single_plot(family_infos: [FamilyInfo]):
         color_y_axis(ax2, styles[1][0])
         ax2.set_ylabel('number of bits divided by n')
         ax2.set_yscale('log')
-        ax2.set_ylim([None, 1000])
+        if max(res.bits) > 1000:
+            ax2.set_ylim([None, 1000])
         fig.legend(loc='outside upper right')
         plt.title(res.name + f"\n#repetitions: {res.repetitions}")
     return fig
@@ -251,7 +267,8 @@ def generate_plots(data, baseline_data):
             if -int(current_family.group) not in group_results:
                 group_results[-int(current_family.group)] = []
             group_results[current_family.group].append(current_family)
-            group_results[-int(current_family.group)].append(current_family)
+            if current_family.group != int(current_family.group):
+                group_results[-int(current_family.group)].append(current_family)
         if baseline_data is not None:
             baseline_family = get_family(baseline_benchmarks, i - num_skipped, 'baseline')
             if baseline_family.name != name:

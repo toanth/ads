@@ -102,8 +102,33 @@ static void BM_EliasFanoPredecessorAcending(bm::State& state) {
 }
 
 
+static void BM_EliasFanoPredecessorAcendingThenLarge(bm::State& state) {
+    Index size = state.max_iterations;
+    std::vector<Elem> arr(state.range() - 1);
+    std::iota(arr.begin(), arr.end(), 0);
+    arr.push_back(Elem(-1));
+    std::vector<Elem> predecessorQueries = randomArray<Elem>(size, state.range() + state.range() / 10);
+    for (Elem& val : predecessorQueries) {
+        if (val > state.range()) {
+            val -= state.range();
+            val = Elem(-1) * (val / (state.range() / 10));
+        }
+    }
+    EliasFano ef(arr);
 
-BENCHMARK(BM_EliasFanoCreation)->RangeMultiplier(5)->Range(1, maxNumValues)->Complexity(bm::oN);
-BENCHMARK(BM_EliasFanoPredecessorInArray)->RangeMultiplier(5)->Range(1, maxNumValues)->Complexity(bm::oN);
-BENCHMARK(BM_EliasFanoPredecessorRandom)->RangeMultiplier(5)->Range(1, maxNumValues)->Complexity(bm::oN);
-BENCHMARK(BM_EliasFanoPredecessorAcending)->RangeMultiplier(5)->Range(1, maxNumValues)->Complexity(bm::oN);
+    Index i = 0;
+    for (auto _ : state) {
+        auto res = ef.predecessor(predecessorQueries[i++]);
+        bm::DoNotOptimize(res);
+    }
+    setNumBits(state, ef.numAllocatedBits());
+    state.SetComplexityN(state.range());
+    setGroup(state, 11);
+}
+
+
+BENCHMARK(BM_EliasFanoCreation)->RangeMultiplier(5)->Range(5, maxNumValues)->Complexity(bm::oN);
+BENCHMARK(BM_EliasFanoPredecessorInArray)->RangeMultiplier(5)->Range(5, maxNumValues)->Complexity(bm::oN);
+BENCHMARK(BM_EliasFanoPredecessorRandom)->RangeMultiplier(5)->Range(5, maxNumValues)->Complexity(bm::oN);
+BENCHMARK(BM_EliasFanoPredecessorAcending)->RangeMultiplier(5)->Range(5, maxNumValues)->Complexity(bm::oN);
+BENCHMARK(BM_EliasFanoPredecessorAcendingThenLarge)->RangeMultiplier(5)->Range(5, maxNumValues)->Complexity(bm::oN);
