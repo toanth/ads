@@ -63,6 +63,16 @@ private:
         if (numLowerBitsPerNumber() == 0) {
             return first == last ? getImpl(first - 1) : getImpl(first);
         }
+        constexpr Index linearFallbackSize = 8;
+        while (last - first > linearFallbackSize) {
+            Index mid = (first + last) / 2;
+            Number lowerBits = lower.getBits(mid);
+            if (lowerBits > lowerSearchBits) {
+                last = mid;
+            } else {
+                first = mid;
+            }
+        }
         for (Index i = last - 1; i >= first; --i) {
             Number lowerBits = lower.getBits(i);
             if (lowerBits <= lowerSearchBits) {
@@ -192,11 +202,17 @@ public:
         return Number(successorImpl(Elem(n) - smallestNumber) + smallestNumber);
     }
 
+    /// \brief Returns the smallest value, which is the same as `*numbers().begin()` but more efficient
     [[nodiscard]] Number getSmallest() const noexcept { return Number(smallestNumber); }
+
+    /// \brief Returns the largest values, which is the same as *(numbers.end() - 1) but more efficient
     [[nodiscard]] Number getLargest() const noexcept { return Number(largestNumber); }
 
+    /// \brief The number of stored values.
     [[nodiscard]] Index size() const noexcept { return numInts; }
 
+    /// \brief The total amount of bits allocated on the heap by this class, including its data members.
+    /// Note that data members within this class itself, such as pointers to allocated memory, don't count.
     [[nodiscard]] Index numAllocatedBits() const noexcept { return allocatedSizeInBits; }
 };
 

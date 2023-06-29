@@ -25,8 +25,16 @@ static void divideByNInPlot(bm::State& state) {
     state.counters["perN"] = 1;
 }
 
+static void subtractNAndDivideByNInPlot(bm::State& state) {
+    state.counters["perN"] = 2;
+}
+
 static void setNumBits(bm::State& state, Index numBits) {
     state.counters["bits"] = double(numBits);
+}
+
+static void setGroup(bm::State& state, double groupIdx) {
+    state.counters["group"] = groupIdx;
 }
 
 

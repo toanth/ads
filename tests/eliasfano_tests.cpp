@@ -247,7 +247,27 @@ TEST(EliasFano, PredecessorRandom) {
     }
     std::sort(vec.begin(), vec.end());
     EliasFano<> ef(vec);
-    for (Index i = 0; i < 10'000; ++i) {
+    for (Index i = 0; i < 100'000; ++i) {
+        Elem searched = dist(engine);
+        auto iter = std::upper_bound(vec.begin(), vec.end(), searched);
+        if (iter == vec.begin()) {
+            continue;
+        }
+        Elem pred = *(iter - 1);
+        ASSERT_EQ(pred, ef.predecessor(searched));
+    }
+}
+
+TEST(EliasFano, PredecessorRandomSmallIntervall) {
+    auto engine = createRandomEngine();
+    std::uniform_int_distribution<Elem> dist(0, 1'200'000);
+    std::vector<Elem> vec;
+    for (Index i = 0; i < 1'000'000; ++i) {
+        vec.push_back(dist(engine));
+    }
+    std::sort(vec.begin(), vec.end());
+    EliasFano<> ef(vec);
+    for (Index i = 0; i < 100'000; ++i) {
         Elem searched = dist(engine);
         auto iter = std::upper_bound(vec.begin(), vec.end(), searched);
         if (iter == vec.begin()) {
