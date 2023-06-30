@@ -145,7 +145,7 @@ cd ../build/Release/ &&
 cmake -G Ninja -DCMAKE_BUILD_TYPE=Release ../../ &&
 cmake --build .) &&
 
-[ -f "$outputFile" ] && mv "$outputFile" "${outputFile}Old"
+[ -f "$outputFile" ] && mv "$outputFile" "${outputFile}Old" &&
 
 if [[ $quick == 1 ]]; then
     runBenchmark --benchmark_out="$outputFile" --benchmark_out_format=json --benchmark_counters_tabular=true "$@"

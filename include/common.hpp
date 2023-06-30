@@ -133,12 +133,21 @@ using IntType = typename detail::IntTypeImpl<NumBytes>::Type;
 #define ADS_RESTRICT __restrict
 
 
+template<typename T, typename... Args>
+ADS_CPP20_CONSTEXPR T* constructAt(T* location, Args&&... args) {
+#ifdef ADS_HAS_CPP20
+    return std::construct_at(location, std::forward<Args>(args)...);
+#else
+    return ::new (static_cast<void*>(location)) T(std::forward<Args>(args)...);
+#endif
+}
+
 template<typename T>
 ADS_CPP20_CONSTEXPR void uninitializedValueConstructN(T* ADS_RESTRICT dest, Index n) noexcept {
     assert(n >= 0);
     ADS_IF_CONSTEVAL {
         for (Index i = 0; i < n; ++i) {
-            std::construct_at(dest + i);
+            constructAt(dest + i);
         }
     }
     else {
@@ -150,7 +159,7 @@ ADS_CPP20_CONSTEXPR void uninitializedValueConstructN(T* ADS_RESTRICT dest, Inde
 /// instead throwing an exception which results in a compile time error.
 /// Also, this version only handles non-negative integers with base <= 16 and requires the entire input to be valid.
 template<ADS_INTEGRAL T>
-constexpr std::from_chars_result fromChars(const char* first, const char* last, T& value, int base = 10) noexcept {
+constexpr std::from_chars_result fromChars(const char* first, const char* last, T& value, int base = 10) {
     ADS_IF_CONSTEVAL {
         value = T(0);
         T digit;

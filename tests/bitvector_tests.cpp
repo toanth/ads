@@ -284,7 +284,7 @@ TYPED_TEST(ManyBitvecLayoutsTest, Random) {
     }
 }
 
-TEST(Bitvector, RandomLongRuns) {
+TYPED_TEST(ManyBitvecLayoutsTest, RandomLongRuns) {
     auto engine = createRandomEngine();
     auto dist = std::uniform_real_distribution<double>(-16.0, 16.0);
     std::string str;
@@ -301,7 +301,7 @@ TEST(Bitvector, RandomLongRuns) {
     for (Index i = 1; i < str.size(); ++i) {
         results[i] = results[i - 1] + (str[i - 1] == '1');
     }
-    Bitvector<TestLayout> bv(str);
+    Bitvector<TypeParam> bv(str);
     Index numZeros = bv.rankZero(bv.sizeInBits() - 1);
     if (!bv.getBit(bv.sizeInBits() - 1)) {
         ++numZeros;

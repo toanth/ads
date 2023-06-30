@@ -188,7 +188,7 @@ struct BitView {
 
     constexpr BitView() noexcept = default;
 
-    constexpr ~BitView() noexcept {
+    ADS_CPP20_CONSTEXPR ~BitView() noexcept {
         std::destroy_n(ptr, numT); // should compile to 0 instructions for integer types
         ADS_IF_CONSTEVAL {
             deallocate(ptr, numT);

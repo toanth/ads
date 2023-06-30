@@ -50,7 +50,7 @@ struct CacheEfficientLayout {
 
     constexpr CacheEfficientLayout() noexcept : numElements(0) {}
 
-    explicit constexpr CacheEfficientLayout(Index numElems, Elem* mem = nullptr) noexcept
+    explicit ADS_CPP20_CONSTEXPR CacheEfficientLayout(Index numElems, Elem* mem = nullptr) noexcept
         : alloc(allocatedSizeInElems(numElems), mem), vec(alloc.memory(), alloc.size()), numElements(numElems) {
         // TODO: ensure that allocated memory is cache aligned
     }

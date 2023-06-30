@@ -13,10 +13,10 @@ class EliasFano {
     Index numInts = 0;
     //    Index numLowerBitsPerNumber = 0;
     Index lowerBitMask = 0;
-    Index allocatedSizeInBits = 0;
+    Index allocatedSizeInElems = 0;
     Elem smallestNumber = 0;
     Elem largestNumber = 0;
-    Index bitsPerNumber = sizeof(Number) * 8;          // usually overwritten in the ctor
+    Index bitsPerNumber = sizeof(Number) * 8; // usually overwritten in the ctor
     Allocation<> allocation = Allocation<>();
     Bitvector<BitvecLayout> upper = Bitvector<BitvecLayout>();
     BitView<dynSize> lower = BitView<dynSize>(); // TODO: Change to BitView?
@@ -54,14 +54,6 @@ class EliasFano {
         upper.buildMetadata();
     }
 
-    [[nodiscard]] const Bitvector<BitvecLayout>& getUpper() const noexcept { return upper; }
-
-    [[nodiscard]] const BitView<dynSize>& getLower() const noexcept { return lower; }
-
-    [[nodiscard]] Index numUpperBitsPerNumber() const noexcept { return numBitsInNumber - numLowerBitsPerNumber(); }
-
-    [[nodiscard]] Index numLowerBitsPerNumber() const noexcept { return lower.bitAccess.numBits; }
-
     [[nodiscard]] Elem predecessorImpl(Elem n) const {
         Number upperSearchBits = n >> numLowerBitsPerNumber();
         Number lowerSearchBits = n & lowerBitMask;
@@ -71,7 +63,7 @@ class EliasFano {
         if (numLowerBitsPerNumber() == 0) {
             return first == last ? getImpl(first - 1) : getImpl(first);
         }
-        while (last - first > linearFallbackSize) [[unlikely]] {
+        while (last - first > linearFallbackSize) {
             Index mid = (first + last) / 2;
             Number lowerBits = lower.getBits(mid);
             if (lowerBits > lowerSearchBits) {
@@ -129,7 +121,7 @@ class EliasFano {
         }
         Elem upperPart = getUpperPart(i);
         if (numLowerBitsPerNumber() == 0) {
-            return upperPart; // TODO handle overflows with negative smallestNumber
+            return upperPart;
         }
         Elem lowerPart = getLowerPart(i);
         return lowerPart + (upperPart << numLowerBitsPerNumber());
@@ -145,7 +137,7 @@ public:
     template<typename Range, typename = std::void_t<decltype(maybe_ranges::begin(std::declval<Range&>()))>> // no concepts in C++17
     explicit EliasFano(const Range& numbers) {
         numInts = maybe_ranges::size(numbers);
-        Number rangeOfValues = 0;
+        Elem rangeOfValues = 0;
         if (numInts > 0) [[likely]] {
             auto iter = maybe_ranges::begin(numbers);
             smallestNumber = Elem(*iter);
@@ -153,24 +145,25 @@ public:
             largestNumber = *iter;
             rangeOfValues = largestNumber - smallestNumber;
         }
-        // + 1 to prevent UB for 0 or 1
-        bitsPerNumber = 1 + log2(Elem(std::min(rangeOfValues, Number(std::numeric_limits<Number>::max() - 1)) + 1));
+
+        bitsPerNumber = 1 + log2(std::max(rangeOfValues, Elem(1)));
         Index upperBitsPerNumber = roundUpLog2(Elem(numInts + 2)); // + 2 to prevent UB for numInts <= 1
         bitsPerNumber = std::max(bitsPerNumber, upperBitsPerNumber);
         Index lowerBitsPerNumber = bitsPerNumber - upperBitsPerNumber;
         Index lowerSizeInElems = roundUpDiv(lowerBitsPerNumber * numInts, 8 * sizeof(Elem));
-        Index maxUpperVal = rangeOfValues >> lowerBitsPerNumber;
-        ADS_ASSUME(maxUpperVal < Index(1) << upperBitsPerNumber);
-        if (lowerSizeInElems > 0) {
-            lower = BitStorage<dynSize>{makeUniqueForOverwrite<Elem>(lowerSizeInElems), {lowerBitsPerNumber}};
-            lowerBitMask = (Number(1) << lowerBitsPerNumber) - 1;
-        } else {
-            ADS_ASSUME(lowerSizeInElems == 0);
-            lower.bitAccess.numBits = 0;
-        }
+        Index maxUpperVal = Index(rangeOfValues >> lowerBitsPerNumber);
         Index numBitsInUpper = 1 + numInts + maxUpperVal; // +1 because the first bit is always a zero
-        upper = Bitvector<BitvecLayout>(numBitsInUpper);
-        allocatedSizeInBits = (lowerSizeInElems + upper.allocatedSizeInElems()) * sizeof(Elem) * 8;
+        Index allocatedUpperSizeInElems = Bitvector<BitvecLayout>::allocatedSizeInElems(roundUpDiv(numBitsInUpper, 64));
+        ADS_ASSUME(maxUpperVal < Index(1) << upperBitsPerNumber);
+
+        allocatedSizeInElems = lowerSizeInElems + allocatedUpperSizeInElems;
+        allocation = Allocation<>(allocatedSizeInElems);
+        lower = BitView<dynSize>(allocation.memory(), lowerSizeInElems);
+        lowerBitMask = (Number(1) << lowerBitsPerNumber) - 1;
+        lower.bitAccess.numBits = lowerBitsPerNumber;
+        assert(lowerSizeInElems == lower.numT);
+        upper = Bitvector<BitvecLayout>(numBitsInUpper, allocation.memory() + lowerSizeInElems);
+        assert(upper.allocatedSizeInElems() == allocatedUpperSizeInElems);
 
         build(numbers);
     }
@@ -223,7 +216,15 @@ public:
 
     /// \brief The total amount of bits allocated on the heap by this class, including its data members.
     /// Note that data members within this class itself, such as pointers to allocated memory, don't count.
-    [[nodiscard]] Index numAllocatedBits() const noexcept { return allocatedSizeInBits; }
+    [[nodiscard]] Index numAllocatedBits() const noexcept { return allocatedSizeInElems * 8 * sizeof(Elem); }
+
+    [[nodiscard]] const Bitvector<BitvecLayout>& getUpper() const noexcept { return upper; }
+
+    [[nodiscard]] const BitView<dynSize>& getLower() const noexcept { return lower; }
+
+    [[nodiscard]] Index numUpperBitsPerNumber() const noexcept { return numBitsPerNumber() - numLowerBitsPerNumber(); }
+
+    [[nodiscard]] Index numLowerBitsPerNumber() const noexcept { return lower.bitAccess.numBits; }
 };
 
 

@@ -20,7 +20,7 @@ static void BM_BitvecAllocation(bm::State& state) {
 
 static void BM_BitvecFillZero(bm::State& state) {
     for (auto _ : state) {
-        Bitvector<> bv(state.range(), 0);
+        Bitvector<> bv(state.range(), Elem(0));
         bm::DoNotOptimize(bv);
         bm::ClobberMemory();
     }

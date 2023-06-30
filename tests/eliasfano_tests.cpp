@@ -66,9 +66,9 @@ TEST(EliasFano, OneElement) {
     EliasFano<> ef{42};
     ASSERT_EQ(ef.size(), 1);
     ASSERT_EQ(ef.get(0), 42);
-    ASSERT_EQ(ef.numUpperBitsPerNumber(), 1);
-    ASSERT_EQ(ef.getUpperPart(0), 0);
-    ASSERT_EQ(ef.getLowerPart(0), 42);
+    ASSERT_EQ(ef.predecessor(44), 42);
+    ASSERT_LE(ef.numBitsPerNumber(), 2);
+    ASSERT_LE(ef.numUpperBitsPerNumber(), 2);
 }
 
 void testElems(const std::vector<Elem>& arr, const EliasFano<>& ef, std::string_view name) {
@@ -203,6 +203,9 @@ TEST(EliasFano, Small) {
     ASSERT_EQ(ef.get(1), Elem(-2));
     ASSERT_EQ(ef.predecessor(Elem(-1)), Elem(-2));
     ASSERT_EQ(ef.successor(1), Elem(-4));
+}
+
+TEST(EliasFano, SmallSignedChar) {
     EliasFano<signed char> charEF{-12, -3, 8, 13, 99};
     ASSERT_EQ(charEF.size(), 5);
     ASSERT_EQ(charEF.get(0), -12);
@@ -212,6 +215,15 @@ TEST(EliasFano, Small) {
     ASSERT_EQ(charEF.successor(-2), 8);
     ASSERT_EQ(charEF.successor(12), 13);
     ASSERT_EQ(charEF.predecessor(-4), -12);
+    charEF = EliasFano<signed char>{-128};
+    ASSERT_EQ(charEF.size(), 1);
+    ASSERT_EQ(charEF.get(0), -128);
+    ASSERT_EQ(charEF.predecessor(127), -128);
+    charEF = EliasFano<signed char>{-128, 127};
+    ASSERT_EQ(charEF.size(), 2);
+    ASSERT_EQ(charEF.get(1), 127);
+    ASSERT_EQ(charEF.predecessor(123), -128);
+    ASSERT_EQ(charEF.successor(-12), 127);
 }
 
 TEST(EliasFano, ManyIdentical) {
