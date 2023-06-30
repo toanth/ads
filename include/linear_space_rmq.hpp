@@ -74,12 +74,22 @@ class LinearSpaceRMQ {
 
 public:
     using value_type = T;
-    // TODO: Alternative idea: partition 256value blocks into 16value subblocks and store for each subblock the relative
-    // index of its minimum
-    //  in a 4 bit value, since there are 16 subblocks this requires 64 bits per block which may be stored directly
-    //  after the block to reduce cache misses. These subblocks can speed up inner-block queries significantly. Also,
-    //  subblock prefix and suffix arrays only need to store the subblock indices, which means each entry requires 4
-    //  instead of 8 bit (it would probably make the most sense to increase their block size to 16 values as well)
+
+    // TODO: Better idea: For each 256value block, use 128 or 64 bits to store a variant of the n log n RMQ: Partition
+    // the block into 16 16value subblocks and store for each subblock the relative index of the smallest subblock
+    // within the next 4 subblocks in a 2 bit value (14 * 2 = 28 bits), use 4 bit to store the index of the smallest
+    // subblock in the block (total of 28+4 = 32bits). Partition each subblock into 4 microblocks of 4 values each, use
+    // 2 bits to store index of smallest microblock per subblock, using 2 * 16 = 32 bits per block. Also, possibly use 4
+    // bits per subblock to store index of smallest value in subblock, for 4 * 16 = 64 bits (can also be done using
+    // linear search of the smallest microblock, which would read 4 values instead of 1). In total, this can answer all
+    // rqm queries within the block (including prefix and suffix queries) using 128 bits and reading at most 7 values or
+    // using 64 bits and reading at most 10 values. It should also be possible to navigate this metadata without
+    // branching, using only bitwise operations. The metadata could be stored after the block values to improve memory
+    // locality although a 256 value block already takes up exactly 1 page. A similar idea can be applied to superblocks
+    // of 256 blocks, except that it's probably better to use more space to avoid having to read and compare block
+    // minima: Using the n log n rmq with base 2, block indices take 8 bits, and there are 7 levels with approx. 256
+    // entries each, totalling less than (probably exactly, due to rounding up) 8 * 7 * 256 <= 2^14 bits, or 2^6 = 64
+    // bits per block.
     constexpr static Index blockSize = BlockSize;
     constexpr static Index subBlockSize = SubBlockSize;
     constexpr static const Index subBlocksPerBlock = roundUpDiv(BlockSize, SubBlockSize);

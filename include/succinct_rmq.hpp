@@ -28,17 +28,17 @@ struct RangeMinMaxTree {
     Index numLeaves = 0;
     Index size = 0;
 
-    RangeMinMaxTree() = default;
+    constexpr RangeMinMaxTree() = default;
 
-    [[nodiscard]] Index leafIdxInArr(Index leafNum) const noexcept { return size - numLeaves + leafNum; }
+    [[nodiscard]] constexpr Index leafIdxInArr(Index leafNum) const noexcept { return size - numLeaves + leafNum; }
 
     /// The reverse of leafIdxInArr
-    [[nodiscard]] Index leafNum(Index leafIdxInArr) const noexcept {
+    [[nodiscard]] constexpr Index leafNum(Index leafIdxInArr) const noexcept {
         assert(leafIdxInArr >= size - numLeaves && leafIdxInArr < size);
         return leafIdxInArr - (size - numLeaves);
     }
 
-    [[nodiscard]] bool isRightChild(Index node) const noexcept { return node % 2 == 1; }
+    [[nodiscard]] constexpr bool isRightChild(Index node) const noexcept { return node % 2 == 1; }
 
     // TODO: Different implementation: Store for each leaf the position of its minimum and the minimum excess in block
     // (>= -2^BlockLength, <= 2^BlockLength), which can be done with 16 bits per leaf if the block size is no greater
@@ -46,7 +46,7 @@ struct RangeMinMaxTree {
     // faster (for the same block size, this additionally uses 16 bits per leaf, which is roughly 8 bits per node but
     // may cause cache misses)
 
-    explicit RangeMinMaxTree(Bitvector<>&& bitvector) noexcept : bv(std::move(bitvector)) {
+    explicit ADS_CPP20_CONSTEXPR RangeMinMaxTree(Bitvector<>&& bitvector) noexcept : bv(std::move(bitvector)) {
         numLeaves = roundUpDiv(bv.sizeInBits(), BlockSize);
         assert(numLeaves > 0);
         size = numLeaves + (Elem(1) << roundUpLog2(Elem(numLeaves))); // the missing -1 makes this a 1-indexed heap
@@ -107,7 +107,7 @@ struct RangeMinMaxTree {
 
     static constexpr MinRes noRes = {std::numeric_limits<Index>::max(), std::numeric_limits<Index>::max()};
 
-    MinRes findMinInBlockImpl(Index lower, Index upper, Index& excessSoFar) const noexcept {
+    [[nodiscard]] ADS_CPP20_CONSTEXPR MinRes findMinInBlockImpl(Index lower, Index upper, Index& excessSoFar) const noexcept {
         if (lower == upper) {
             return noRes;
         }
@@ -128,7 +128,7 @@ struct RangeMinMaxTree {
 
     // Idea: find min extent within block and use that together with the heap's stored value of the global min extent in this block
     // to figure out the extent at the start of the block, which allows calculating the global min extent within the query range
-    [[nodiscard]] MinRes findMinInBlock(Index lower, Index upper) const noexcept {
+    [[nodiscard]] ADS_CPP20_CONSTEXPR MinRes findMinInBlock(Index lower, Index upper) const noexcept {
         Index blockBegin = lower / BlockSize * BlockSize;
         Index blockEnd = blockBegin + BlockSize;
         blockEnd = std::min(blockEnd, bv.sizeInBits());
@@ -152,7 +152,7 @@ struct RangeMinMaxTree {
     /// \param lowerBlockIdx
     /// \param upperBlockIdx
     /// \return
-    [[nodiscard]] MinRes findMinInTree(Index lowerBlockIdx, Index upperBlockIdx) const noexcept {
+    [[nodiscard]] ADS_CPP20_CONSTEXPR MinRes findMinInTree(Index lowerBlockIdx, Index upperBlockIdx) const noexcept {
         assert(lowerBlockIdx <= upperBlockIdx + 1);
         if (upperBlockIdx <= lowerBlockIdx) {
             return noRes;
@@ -209,7 +209,7 @@ struct RangeMinMaxTree {
         return findMinInBlock(i * BlockSize, (i + 1) * BlockSize);
     }
 
-    [[nodiscard]] MinRes rmqImpl(Index lower, Index upper) const noexcept {
+    [[nodiscard]] ADS_CPP20_CONSTEXPR MinRes rmqImpl(Index lower, Index upper) const noexcept {
         assert(lower < upper);
         Index nextLowerBlockIdx = roundUpDiv(lower, BlockSize);
         Index prevUpperBlockIdx = upper / BlockSize;
@@ -226,9 +226,11 @@ struct RangeMinMaxTree {
         return upperCandidate.minExcess < lowerOrTreeCandidate.minExcess ? upperCandidate : lowerOrTreeCandidate; // don't take upper when tied
     }
 
-    [[nodiscard]] Index bitvecRmq(Index lower, Index upper) const noexcept { return rmqImpl(lower, upper).pos; }
+    [[nodiscard]] ADS_CPP20_CONSTEXPR Index bitvecRmq(Index lower, Index upper) const noexcept {
+        return rmqImpl(lower, upper).pos;
+    }
 
-    [[nodiscard]] const Bitvector<>& getBitvector() const noexcept { return bv; }
+    [[nodiscard]] ADS_CPP20_CONSTEXPR const Bitvector<>& getBitvector() const noexcept { return bv; }
 };
 
 
@@ -242,10 +244,11 @@ class SuccinctRMQ {
 public:
     constexpr static const char name[] = "Succinct Rmq";
 
-    SuccinctRMQ() = default;
+    constexpr SuccinctRMQ() = default;
 
     template<typename Container, typename Comp = std::less<typename Container::value_type>>
-    explicit SuccinctRMQ(const Container& container, Comp comp = Comp()) : length(container.size()) {
+    ADS_CPP20_CONSTEXPR explicit SuccinctRMQ(const Container& container, Comp comp = Comp())
+        : length(container.size()) {
         Bitvector<> dfuds(container.size() * 2 + 2);
         Index bvIdx = dfuds.sizeInBits();
         std::stack<Index, std::vector<Index>> stack;
@@ -271,12 +274,16 @@ public:
         }
         rmmTree = RmmTree(std::move(dfuds));
     }
-    template<typename T>
-    SuccinctRMQ(std::unique_ptr<T> ptr, Index length) : SuccinctRMQ(Span<const T>(ptr.get(), length)) {}
-    template<typename T = Elem>
-    SuccinctRMQ(std::initializer_list<T> list) : SuccinctRMQ(Span<const T>(list.begin(), list.end())) {}
 
-    [[nodiscard]] Index rmq(Index lower, Index upper) const noexcept {
+    template<typename T>
+    ADS_CPP20_CONSTEXPR SuccinctRMQ(std::unique_ptr<T> ptr, Index length)
+        : SuccinctRMQ(Span<const T>(ptr.get(), length)) {}
+
+    template<typename T = Elem>
+    ADS_CPP20_CONSTEXPR SuccinctRMQ(std::initializer_list<T> list)
+        : SuccinctRMQ(Span<const T>(list.begin(), list.end())) {}
+
+    [[nodiscard]] ADS_CPP20_CONSTEXPR Index rmq(Index lower, Index upper) const noexcept {
         assert(lower < upper);
         if (lower + 1 == upper) {
             return lower;
@@ -295,15 +302,17 @@ public:
         return dfuds.rank<closeParen>(w);
     }
 
-    [[nodiscard]] Index operator()(Index lower, Index upper) const noexcept { return rmq(lower, upper); }
+    [[nodiscard]] ADS_CPP20_CONSTEXPR Index operator()(Index lower, Index upper) const noexcept {
+        return rmq(lower, upper);
+    }
 
-    [[nodiscard]] Index size() const noexcept { return length; }
+    [[nodiscard]] ADS_CPP20_CONSTEXPR Index size() const noexcept { return length; }
 
-    [[nodiscard]] Index sizeInBits() const noexcept {
+    [[nodiscard]] ADS_CPP20_CONSTEXPR Index sizeInBits() const noexcept {
         return Index(rmmTree.size * sizeof(typename RmmTree ::value_type) * 8 + rmmTree.getBitvector().sizeInBits());
     }
 
-    [[nodiscard]] const RmmTree& getTree() const noexcept { return rmmTree; }
+    [[nodiscard]] ADS_CPP20_CONSTEXPR const RmmTree& getTree() const noexcept { return rmmTree; }
 };
 
 } // namespace ads
