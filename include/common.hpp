@@ -284,14 +284,14 @@ struct Subrange {
 
     using value_type = typename std::iterator_traits<Iter>::value_type;
 
-    [[nodiscard]] Iter begin() const noexcept { return first; }
-    [[nodiscard]] Sentinel end() const noexcept { return last; }
+    [[nodiscard]] constexpr Iter begin() const noexcept { return first; }
+    [[nodiscard]] constexpr Sentinel end() const noexcept { return last; }
 
-    [[nodiscard]] Index size() const noexcept { return last - first; }
+    [[nodiscard]] constexpr Index size() const noexcept { return last - first; }
 };
 
 
-// Only available in C++20
+// Only available in C++20 // TODO: Remove
 template<typename T>
 std::unique_ptr<T[]> makeUniqueForOverwrite(Index size) noexcept {
     assert(size >= 0);
@@ -302,7 +302,7 @@ std::unique_ptr<T[]> makeUniqueForOverwrite(Index size) noexcept {
 }
 
 template<typename T>
-std::unique_ptr<T[]> toUniquePtr(Span<const T> values, Index size) noexcept {
+ADS_CPP20_CONSTEXPR std::unique_ptr<T[]> toUniquePtr(Span<const T> values, Index size) noexcept {
     std::unique_ptr<T[]> res = makeUniqueForOverwrite<T>(size);
     std::copy(values.begin(), values.end(), res.get());
     // reading uninitialized data would cause UB
@@ -311,7 +311,7 @@ std::unique_ptr<T[]> toUniquePtr(Span<const T> values, Index size) noexcept {
 }
 
 template<typename T>
-std::unique_ptr<T[]> toUniquePtr(Span<const T> values) noexcept {
+ADS_CPP20_CONSTEXPR std::unique_ptr<T[]> toUniquePtr(Span<const T> values) noexcept {
     return toUniquePtr(values, values.size());
 }
 

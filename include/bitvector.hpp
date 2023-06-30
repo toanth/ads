@@ -152,7 +152,7 @@ public:
 
     constexpr void buildMetadata() noexcept { buildRankMetadata(); }
 
-   constexpr void buildSelectMetadata(Index) noexcept {
+    constexpr void buildSelectMetadata(Index) noexcept {
         // nothing to do; TODO: Move into Layout class, use CRTP
     }
 
@@ -163,9 +163,9 @@ public:
         return rankOneUnchecked(pos);
     }
 
-    [[nodiscard]] Index numOnes() const noexcept { return getSuperBlockCount(numSuperBlocks()); }
+    [[nodiscard]] constexpr Index numOnes() const noexcept { return getSuperBlockCount(numSuperBlocks()); }
 
-    [[nodiscard]] Index numZeros() const noexcept { return sizeInBits() - numOnes(); }
+    [[nodiscard]] constexpr Index numZeros() const noexcept { return sizeInBits() - numOnes(); }
 
 
     /// Unlike rankOne(), this dDoesn't check that `pos` is valid, although that gives close to no measurable performance benefits.

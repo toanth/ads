@@ -332,3 +332,19 @@ TEST(EliasFano, SuccessorRandom) {
         ASSERT_EQ(suc, ef.successor(searched));
     }
 }
+
+#ifdef ADS_HAS_CPP20
+
+// Constexpr tests implicitly test for UB -- the compiler is required to emit an error in that case
+TEST(EliasFano, Constexpr) {
+    using T = EliasFano<>;
+    static_assert(T{1, 2, 3}.size() == 3);
+    static_assert(T{4, 5, 6}.get(1) == 5);
+    static_assert(T{0, 1234, 9999}.predecessor(9000) == 1234);
+    static_assert(T{0, Elem(-1)}.successor(99999999) == Elem(-1));
+    static_assert(T{}.size() == 0);
+    static_assert(T{0}.get(0) == 0);
+    static_assert(EliasFano<signed char>{-128, 127}.predecessor(0) == -128);
+}
+
+#endif

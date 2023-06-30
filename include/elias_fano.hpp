@@ -54,7 +54,7 @@ class EliasFano {
         upper.buildMetadata();
     }
 
-    [[nodiscard]] Elem predecessorImpl(Elem n) const {
+    [[nodiscard]] ADS_CPP20_CONSTEXPR Elem predecessorImpl(Elem n) const {
         Number upperSearchBits = n >> numLowerBitsPerNumber();
         Number lowerSearchBits = n & lowerBitMask;
         ADS_ASSUME(upper.numZeros() > upperSearchBits);
@@ -85,7 +85,7 @@ class EliasFano {
         return getImpl(first - 1);
     }
 
-    [[nodiscard]] Elem successorImpl(Elem n) const {
+    [[nodiscard]] ADS_CPP20_CONSTEXPR Elem successorImpl(Elem n) const {
         Number upperSearchBits = n >> numLowerBitsPerNumber();
         Number lowerSearchBits = n & lowerBitMask;
         Index first = upper.selectZero(upperSearchBits) - upperSearchBits;
@@ -115,7 +115,7 @@ class EliasFano {
         return getImpl(last + 1);
     }
 
-    [[nodiscard]] Elem getImpl(Index i) const {
+    [[nodiscard]] ADS_CPP20_CONSTEXPR Elem getImpl(Index i) const {
         if (i < 0 || i >= size()) {
             throw std::invalid_argument("EliasFano::get() Index out of range");
         }
@@ -128,14 +128,14 @@ class EliasFano {
     }
 
     /// \brief Use the bitvector to find the upper parts of the ith stored number.
-    [[nodiscard]] Elem getUpperPart(Index i) const { return upper.selectOne(i) - i - 1; }
+    [[nodiscard]] constexpr Elem getUpperPart(Index i) const { return upper.selectOne(i) - i - 1; }
 
     /// \brief The ith entry in the lower array, which holds the lower bits of the ith stored number.
-    [[nodiscard]] Elem getLowerPart(Index i) const { return lower.getBits(i); }
+    [[nodiscard]] constexpr Elem getLowerPart(Index i) const { return lower.getBits(i); }
 
 public:
     template<typename Range, typename = std::void_t<decltype(maybe_ranges::begin(std::declval<Range&>()))>> // no concepts in C++17
-    explicit EliasFano(const Range& numbers) {
+    explicit ADS_CPP20_CONSTEXPR EliasFano(const Range& numbers) {
         numInts = maybe_ranges::size(numbers);
         Elem rangeOfValues = 0;
         if (numInts > 0) [[likely]] {
@@ -168,27 +168,28 @@ public:
         build(numbers);
     }
 
-    EliasFano(std::initializer_list<Number> list) noexcept
+    ADS_CPP20_CONSTEXPR EliasFano(std::initializer_list<Number> list) noexcept
         : EliasFano(maybe_ranges::begin(list), maybe_ranges::end(list)) {}
 
     template<typename ForwardIter, typename Sentinel>
-    EliasFano(ForwardIter first, Sentinel last) noexcept : EliasFano(Subrange<ForwardIter, Sentinel>{first, last}) {}
+    ADS_CPP20_CONSTEXPR EliasFano(ForwardIter first, Sentinel last) noexcept
+        : EliasFano(Subrange<ForwardIter, Sentinel>{first, last}) {}
 
-    [[nodiscard]] Index numBitsPerNumber() const noexcept { return bitsPerNumber; }
+    [[nodiscard]] constexpr Index numBitsPerNumber() const noexcept { return bitsPerNumber; }
 
-    [[nodiscard]] Number get(Index i) const { return Number(getImpl(i) + smallestNumber); }
+    [[nodiscard]] constexpr Number get(Index i) const { return Number(getImpl(i) + smallestNumber); }
 
-    [[nodiscard]] Number operator[](Index i) const { return get(i); }
+    [[nodiscard]] constexpr Number operator[](Index i) const { return get(i); }
 
     constexpr static auto getNumber = [](const auto& ef, Index i) -> Number { return ef.get(i); };
 
     using NumberIter = RandAccessIter<EliasFano, decltype(getNumber)>;
 
-    NumberIter numberIter(Index i) const { return NumberIter(*this, getNumber, i); }
+    constexpr NumberIter numberIter(Index i) const { return NumberIter(*this, getNumber, i); }
 
-    Subrange<NumberIter> numbers() const noexcept { return {numberIter(0), numberIter(size())}; }
+    constexpr Subrange<NumberIter> numbers() const noexcept { return {numberIter(0), numberIter(size())}; }
 
-    [[nodiscard]] Number predecessor(Number n) const {
+    [[nodiscard]] constexpr Number predecessor(Number n) const {
         // the cast is implementation defined before C++20 (but still does the right thing)
         if (n >= I64(largestNumber)) {
             return Number(largestNumber);
@@ -197,7 +198,7 @@ public:
     }
 
     // TODO: constexpr tests to detect UB
-    [[nodiscard]] Number successor(Number n) const {
+    [[nodiscard]] constexpr Number successor(Number n) const {
         // the cast is implementation defined before C++20 (but still does the right thing)
         if (n <= I64(smallestNumber)) {
             return Number(smallestNumber);
@@ -206,25 +207,27 @@ public:
     }
 
     /// \brief Returns the smallest value, which is the same as `*numbers().begin()` but more efficient
-    [[nodiscard]] Number getSmallest() const noexcept { return Number(smallestNumber); }
+    [[nodiscard]] constexpr Number getSmallest() const noexcept { return Number(smallestNumber); }
 
     /// \brief Returns the largest values, which is the same as *(numbers.end() - 1) but more efficient
-    [[nodiscard]] Number getLargest() const noexcept { return Number(largestNumber); }
+    [[nodiscard]] constexpr Number getLargest() const noexcept { return Number(largestNumber); }
 
     /// \brief The number of stored values.
-    [[nodiscard]] Index size() const noexcept { return numInts; }
+    [[nodiscard]] constexpr Index size() const noexcept { return numInts; }
 
     /// \brief The total amount of bits allocated on the heap by this class, including its data members.
     /// Note that data members within this class itself, such as pointers to allocated memory, don't count.
-    [[nodiscard]] Index numAllocatedBits() const noexcept { return allocatedSizeInElems * 8 * sizeof(Elem); }
+    [[nodiscard]] constexpr Index numAllocatedBits() const noexcept { return allocatedSizeInElems * 8 * sizeof(Elem); }
 
-    [[nodiscard]] const Bitvector<BitvecLayout>& getUpper() const noexcept { return upper; }
+    [[nodiscard]] constexpr const Bitvector<BitvecLayout>& getUpper() const noexcept { return upper; }
 
-    [[nodiscard]] const BitView<dynSize>& getLower() const noexcept { return lower; }
+    [[nodiscard]] constexpr const BitView<dynSize>& getLower() const noexcept { return lower; }
 
-    [[nodiscard]] Index numUpperBitsPerNumber() const noexcept { return numBitsPerNumber() - numLowerBitsPerNumber(); }
+    [[nodiscard]] constexpr Index numUpperBitsPerNumber() const noexcept {
+        return numBitsPerNumber() - numLowerBitsPerNumber();
+    }
 
-    [[nodiscard]] Index numLowerBitsPerNumber() const noexcept { return lower.bitAccess.numBits; }
+    [[nodiscard]] constexpr Index numLowerBitsPerNumber() const noexcept { return lower.bitAccess.numBits; }
 };
 
 
