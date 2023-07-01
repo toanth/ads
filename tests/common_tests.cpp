@@ -23,3 +23,15 @@ TEST(Common, RoundUpDiv) {
     ASSERT_EQ(roundUpDiv(14, 3), 5);
     ASSERT_EQ(roundUpDiv(16, 3), 6);
 }
+
+#ifdef ADS_HAS_CPP20
+
+TEST(Common, Constexpr) {
+    static_assert(bytesNeededForIndexing(123) == 1);
+    static_assert(bytesNeededForIndexing(257) == 2);
+    static_assert(roundUpDiv(53, 8) == 7);
+    static_assert(ads::abs(789) == 789);
+    static_assert(ads::abs(-1024) == 1024);
+}
+
+#endif

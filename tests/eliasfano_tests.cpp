@@ -33,7 +33,7 @@ TEST(EliasFano, ConstructionSmall) {
     EliasFano<> ef{12, 14, 990, 991, 100'000};
     ASSERT_EQ(ef.size(), 5);
     ASSERT_GT(ef.numLowerBitsPerNumber(), 0);
-    ASSERT_LT(ef.numLowerBitsPerNumber(), std::ceil(log2(100'000u)));
+    ASSERT_LT(ef.numLowerBitsPerNumber(), std::ceil(intLog2(100'000u)));
     ASSERT_EQ(ef.getLower()[0] % 2, 0);
     ASSERT_EQ(ef.getLower()[3] % 2, 1);
     ASSERT_EQ(ef.getLower()[0], 0);
@@ -259,7 +259,7 @@ TEST(EliasFano, PredecessorAscending) {
     std::vector<Elem> vec(1'000'000);
     std::iota(vec.begin(), vec.end(), 0);
     EliasFano<> ef(vec);
-    ASSERT_LE(ef.numBitsPerNumber(), log2(vec.size()) + 1);
+    ASSERT_LE(ef.numBitsPerNumber(), intLog2(vec.size()) + 1);
     ASSERT_EQ(ef.numLowerBitsPerNumber(), 0);
     ASSERT_LE(ef.numAllocatedBits(), 2 * (vec.size() + vec.size() / 10));
     auto engine = createRandomEngine();

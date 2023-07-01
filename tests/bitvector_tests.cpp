@@ -325,6 +325,7 @@ TYPED_TEST(ManyBitvecLayoutsTest, RandomLongRuns) {
 TYPED_TEST(ManyBitvecLayoutsTest, Constexpr) {
     using T = Bitvector<TypeParam>;
     static_assert(T("1").sizeInBits() == 1);
+    static_assert(T("").sizeInBits() == 0);
     static_assert(!T("00011").getBit(2));
     static_assert(T("00011").getBit(3));
     static_assert(T("10101").rankZero(3) == 1);

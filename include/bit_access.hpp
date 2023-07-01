@@ -142,7 +142,7 @@ public:
     }
 
     constexpr void setBits(T* ADS_RESTRICT ptr, Index i, T value) const noexcept {
-        i *= numBits; // TODO: Does this get optimized when called in a loop? (ie i += numBits each iteration)
+        i *= numBits; // TODO: Does this get optimized when called in a loop? (ie i += numBitsPerValue each iteration)
         setBits(ptr, i / bitsInT, i % bitsInT, value);
     }
 };
@@ -230,9 +230,25 @@ struct BitView {
         return *this;
     }
 
-    [[nodiscard]] constexpr T getBits(Index i) const noexcept { return bitAccess.getBits(ptr, i); }
+    [[nodiscard]] constexpr Index numBitsPerValue() const noexcept {
+        if constexpr (NumBits == -1) {
+            return bitAccess.numBits;
+        } else {
+            return NumBits;
+        }
+    }
 
-    constexpr void setBits(Index i, T value) noexcept { return bitAccess.setBits(ptr, i, value); }
+    [[nodiscard]] constexpr T getBits(Index i) const noexcept {
+        assert(i >= 0);
+        assert((i + 1) * numBitsPerValue() <= numT * sizeof(T) * 8);
+        return bitAccess.getBits(ptr, i);
+    }
+
+    constexpr void setBits(Index i, T value) noexcept {
+        assert(i >= 0);
+        assert((i + 1) * numBitsPerValue() <= numT * sizeof(T) * 8);
+        return bitAccess.setBits(ptr, i, value);
+    }
 
     constexpr T operator[](Index i) const noexcept { return getBits(i); }
 };
@@ -296,7 +312,7 @@ public:
 //     constexpr Array(Index n, Index bitLen) noexcept
 //         : Array(CreateWithSizeTag(), roundUpDiv(n * bitLen, (8 * sizeof(T)))) {
 //         static_assert(NumBits == dynSize, "Don't use this constructor for fixed-sized bit views");
-//         this->bitAccess.numBits = bitLen;
+//         this->bitAccess.numBitsPerValue = bitLen;
 //     }
 //
 //     ADS_CPP20_CONSTEXPR ~Array() noexcept { deallocate(this->ptr, this->numT); }

@@ -88,6 +88,10 @@ struct CacheEfficientLayout {
         return (1 + roundUpDiv(numElements, numElemsInSuperBlock())) * ELEMS_PER_CACHELINE;
     }
 
+    [[nodiscard]] static constexpr Index allocatedSizeInElemsForBits(Index numBits) noexcept {
+        return allocatedSizeInElems(roundUpDiv(numBits, 64));
+    }
+
     [[nodiscard]] constexpr Index allocatedSizeInElems() const noexcept { return allocatedSizeInElems(numElems()); }
 
     [[nodiscard]] constexpr Index numElems() const noexcept { return numElements; }
@@ -225,6 +229,10 @@ public:
         static_assert(sizeof(Elem) % sizeof(SuperBlockCount) == 0);
         return numElements + roundUpDiv(numBlocks(numElements) * sizeof(BlockCount), sizeof(Elem))
                + roundUpDiv((1 + numSuperBlocks(numElements)) * sizeof(SuperBlockCount), sizeof(Elem));
+    }
+
+    [[nodiscard]] static constexpr Index allocatedSizeInElemsForBits(Index numBits) noexcept {
+        return allocatedSizeInElems(roundUpDiv(numBits, 64));
     }
 
     [[nodiscard]] constexpr bool getBit(Index i) const noexcept { return bool(BitwiseAccess<1>::getBits(vec.ptr, i)); }

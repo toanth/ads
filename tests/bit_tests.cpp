@@ -6,15 +6,15 @@
 using namespace ads;
 
 
-TEST(Bit, Log2) {
-    ASSERT_EQ(log2(1u), 0);
-    ASSERT_EQ(log2(std::uint64_t(2)), 1);
-    ASSERT_EQ(log2(std::uint32_t(3)), 1);
-    ASSERT_EQ(log2(std::uint8_t(4)), 2);
-    ASSERT_EQ(log2(std::uint8_t(5)), 2);
-    ASSERT_EQ(log2(std::uint16_t(123)), 6);
-    ASSERT_EQ(log2(std::uint8_t(255)), 7);
-    ASSERT_EQ(log2(0x19ull), 4);
+TEST(Bit, IntLog2) {
+    ASSERT_EQ(intLog2(1u), 0);
+    ASSERT_EQ(intLog2(std::uint64_t(2)), 1);
+    ASSERT_EQ(intLog2(std::uint32_t(3)), 1);
+    ASSERT_EQ(intLog2(std::uint8_t(4)), 2);
+    ASSERT_EQ(intLog2(std::uint8_t(5)), 2);
+    ASSERT_EQ(intLog2(std::uint16_t(123)), 6);
+    ASSERT_EQ(intLog2(std::uint8_t(255)), 7);
+    ASSERT_EQ(intLog2(0x19ull), 4);
 }
 
 TEST(Bit, RoundUpLog2) {
@@ -91,39 +91,55 @@ TEST(Bit, ConstevalElemSelect) {
     static_assert(constevalElemSelect(Elem(-1), 7) == 7);
     static_assert(constevalElemSelect(Elem(-1), 63) == 63);
 }
-//
-// TEST(Bit, PrecomputeBitSelectTable4Bits) {
-//    auto table = precomputeBitSelectTable<4>();
-//    ASSERT_EQ(table.size(), 16);
-//    ASSERT_EQ(table[0].size(), 4);
-//    ASSERT_EQ(table[2][0], 1);
-//    ASSERT_EQ(table[15][3], 3);
-//    ASSERT_EQ(table[11][1], 1);
-//    ASSERT_EQ(table[13][0], 0);
-//}
-//
-// TEST(Bit, PrecomputeBitSelectTable) {
-//    auto table = precomputeBitSelectTable();
-//    ASSERT_EQ(table.size(), 256);
-//    ASSERT_EQ(table[0].size(), 8);
-//    ASSERT_EQ(table[1][0], 0);
-//    ASSERT_EQ(table[2][0], 1);
-//    ASSERT_EQ(table[3][0], 0);
-//    ASSERT_EQ(table[3][1], 1);
-//    ASSERT_EQ(table[11][2], 3);
-//    ASSERT_EQ(table[(1 << 7) + 4][1], 7);
-//    ASSERT_EQ(table[(1 << 6) + 9][2], 6);
-//    for (Index i = 0; i < 8; ++i) {
-//        ASSERT_EQ(table[255][i], i);
-//    }
-//}
-//
-// TEST(Bit, ElemSelectWithTable) {
-//    ASSERT_EQ(elemSelectWithTable(1, 0), 0);
-//    ASSERT_EQ(elemSelectWithTable(2, 0), 1);
-//    ASSERT_EQ(elemSelectWithTable(3, 0), 0);
-//    ASSERT_EQ(elemSelectWithTable(3, 1), 1);
-//    ASSERT_EQ(elemSelectWithTable((Elem(1) << 15) + 3, 2), 15);
-//    ASSERT_EQ(elemSelectWithTable(Elem(-1), 7), 7);
-//    ASSERT_EQ(elemSelectWithTable(Elem(-1), 63), 63);
-//}
+
+TEST(Bit, PrecomputeBitSelectTable4Bits) {
+    auto table = precomputeBitSelectTable<4>();
+    ASSERT_EQ(table.size(), 16);
+    ASSERT_EQ(table[0].size(), 4);
+    ASSERT_EQ(table[2][0], 1);
+    ASSERT_EQ(table[15][3], 3);
+    ASSERT_EQ(table[11][1], 1);
+    ASSERT_EQ(table[13][0], 0);
+}
+
+TEST(Bit, PrecomputeBitSelectTable) {
+    auto table = precomputeBitSelectTable();
+    ASSERT_EQ(table.size(), 256);
+    ASSERT_EQ(table[0].size(), 8);
+    ASSERT_EQ(table[1][0], 0);
+    ASSERT_EQ(table[2][0], 1);
+    ASSERT_EQ(table[3][0], 0);
+    ASSERT_EQ(table[3][1], 1);
+    ASSERT_EQ(table[11][2], 3);
+    ASSERT_EQ(table[(1 << 7) + 4][1], 7);
+    ASSERT_EQ(table[(1 << 6) + 9][2], 6);
+    for (Index i = 0; i < 8; ++i) {
+        ASSERT_EQ(table[255][i], i);
+    }
+}
+
+TEST(Bit, ElemSelectWithTable) {
+    ASSERT_EQ(elemSelectWithTable(1, 0), 0);
+    ASSERT_EQ(elemSelectWithTable(2, 0), 1);
+    ASSERT_EQ(elemSelectWithTable(3, 0), 0);
+    ASSERT_EQ(elemSelectWithTable(3, 1), 1);
+    ASSERT_EQ(elemSelectWithTable((Elem(1) << 15) + 3, 2), 15);
+    ASSERT_EQ(elemSelectWithTable(Elem(-1), 7), 7);
+    ASSERT_EQ(elemSelectWithTable(Elem(-1), 63), 63);
+}
+
+
+#ifdef ADS_HAS_CPP20
+
+TEST(Bit, Constexpr) {
+    static_assert(intLog2(987u) == 9);
+    static_assert(roundUpLog2(42ul) == 6);
+    static_assert(popcount(0xabcu) == 2 + 3 + 2);
+    static_assert(reverseBits(0x0123u) == (0xc480u << 16));
+    static_assert(countTrailingZeros((unsigned char)14) == 1);
+    static_assert(elemSelect(0x1234ull, 3) == 9);
+    static_assert(constevalElemSelect(1243619ull, 12) == elemSelect(1243619, 12));
+    static_assert(elemSelectWithTable(127ull, 4) == 4);
+}
+
+#endif

@@ -17,11 +17,11 @@ SuccinctRMQ randomRmq(Index length) {
 
 void testRmmTree(const RangeMinMaxTree<>& tree) {
     ASSERT_EQ(tree.size - 1, tree.leafIdxInArr(tree.numLeaves - 1));
-    Index treeDepth = log2(Elem(tree.size - 1));
+    Index treeDepth = intLog2(Elem(tree.size - 1));
     for (Index i = 1; i < tree.leafIdxInArr(0); ++i) {
         Index leftChild = 2 * i;
         Index rightChild = 2 * i + 1;
-        Index childDepth = log2(Elem(rightChild));
+        Index childDepth = intLog2(Elem(rightChild));
         bool rightChildExists = ((tree.size - 1) >> (treeDepth - childDepth)) >= rightChild;
         bool leftChildExists = ((tree.size - 1) >> (treeDepth - childDepth)) >= leftChild;
         if (rightChildExists) {
@@ -34,7 +34,8 @@ void testRmmTree(const RangeMinMaxTree<>& tree) {
 }
 
 TEST(RmmTree, Small) {
-    RangeMinMaxTree<> tree(Bitvector<>("11110000"));
+    Allocation allocation(Bitvector<>::allocatedSizeInElems(1));
+    RangeMinMaxTree<> tree(Bitvector<>("11110000"), allocation.memory());
     ASSERT_EQ(tree.size, 2);
     ASSERT_EQ(tree.findMinInBlock(0, 8).pos, 7);
     ASSERT_EQ(tree.findMinInBlock(0, 8).minExcess, 0);
@@ -51,7 +52,8 @@ TEST(RmmTree, 1BlockDescending) {
     for (Index i = str.size() / 2; i < str.size(); ++i) {
         str[i] = '0';
     }
-    RangeMinMaxTree<> tree((Bitvector<>(str)));
+    Allocation allocation(Bitvector<>::allocatedSizeInElemsForBits(str.size()));
+    RangeMinMaxTree<> tree((Bitvector<>(str)), allocation.memory());
     ASSERT_EQ(tree.size, 2);
     ASSERT_EQ(tree.rmmArr[tree.leafIdxInArr(0)], 0);
     ASSERT_EQ(tree.findMinInTree(0, 1).minExcess, tree.findMinInBlock(0, blockSize).minExcess);
@@ -99,7 +101,8 @@ TEST(RmmTree, 2Blocks) {
     for (Index i = str.size() / 2; i < str.size(); ++i) {
         str[i] = '0';
     }
-    RangeMinMaxTree<> tree((Bitvector<>(str)));
+    Allocation allocation(Bitvector<>::allocatedSizeInElemsForBits(str.size()));
+    RangeMinMaxTree<> tree((Bitvector<>(str)), allocation.memory());
     ASSERT_EQ(tree.bitvecRmq(blockSize - 4, str.size()), str.size() - 1);
     testRmmTree(tree);
     str = std::string(blockSize * 2, '1');
@@ -107,7 +110,8 @@ TEST(RmmTree, 2Blocks) {
         str[i] = '0';
     }
     str.back() = '0';
-    tree = RangeMinMaxTree<>((Bitvector<>(str)));
+    allocation = Allocation(Bitvector<>::allocatedSizeInElemsForBits(str.size()));
+    tree = RangeMinMaxTree<>((Bitvector<>(str)), allocation.memory());
     ASSERT_EQ(tree.bitvecRmq(0, blockSize), 0);
     ASSERT_EQ(tree.bitvecRmq(blockSize - 1, 2 * blockSize - 1), blockSize);
     ASSERT_EQ(tree.bitvecRmq(blockSize, 2 * blockSize), 2 * blockSize - 1);
@@ -123,7 +127,8 @@ TEST(RmmTree, 10BlocksAscending) {
     for (Index i = str.size() / 2; i < str.size(); ++i) {
         str[i] = '0';
     }
-    RangeMinMaxTree<> tree((Bitvector<>(str)));
+    Allocation allocation(Bitvector<>::allocatedSizeInElemsForBits(str.size()));
+    RangeMinMaxTree<> tree((Bitvector<>(str)), allocation.memory());
     ASSERT_EQ(tree.bv.getBit(5 * blockSize - 1), openParen);
     ASSERT_EQ(tree.bv.getBit(5 * blockSize), closeParen);
     ASSERT_EQ(tree.bv.sizeInBits(), blockSize * 10);
@@ -159,7 +164,8 @@ TEST(RmmTree, 9BlocksAscending) {
     for (Index i = str.size() / 2; i < str.size(); ++i) {
         str[i] = '0';
     }
-    RangeMinMaxTree<> tree((Bitvector<>(str)));
+    Allocation allocation(Bitvector<>::allocatedSizeInElemsForBits(str.size()));
+    RangeMinMaxTree<> tree((Bitvector<>(str)), allocation.memory());
     ASSERT_EQ(tree.bv.getBit(5 * blockSize), closeParen);
     ASSERT_EQ(tree.bv.getBit(4 * blockSize), openParen);
     ASSERT_EQ(tree.bv.getBit(mid), closeParen);
@@ -205,7 +211,8 @@ TEST(RmmTree, 10BlocksAlternating) {
         str[i + 8 * blockSize] = '0';
         str[i + 9 * blockSize] = '0';
     }
-    RangeMinMaxTree<> tree((Bitvector<>(str)));
+    Allocation allocation(Bitvector<>::allocatedSizeInElemsForBits(str.size()));
+    RangeMinMaxTree<> tree((Bitvector<>(str)), allocation.memory());
     ASSERT_EQ(tree.rmqImpl(blockSize, 5 * blockSize).minExcess, blockSize);
     ASSERT_EQ(tree.rmqImpl(blockSize - 1, blockSize + 3).minExcess, blockSize);
     ASSERT_EQ(tree.rmqImpl(2 * blockSize - 1, 2 * blockSize + 3).pos, 2 * blockSize + 2);
@@ -234,7 +241,8 @@ TEST(RmmTree, IncreasingDegree) {
         }
     }
     s.push_back('0');
-    RangeMinMaxTree<> tree((Bitvector<>(s)));
+    Allocation allocation(Bitvector<>::allocatedSizeInElemsForBits(s.size()));
+    RangeMinMaxTree<> tree((Bitvector<>(s)), allocation.memory());
     ASSERT_EQ(tree.rmqImpl(0, 2).minExcess, 1);
     ASSERT_EQ(tree.rmqImpl(0, 5000).minExcess, 1);
     ASSERT_EQ(tree.rmqImpl(1, 2345).minExcess, 1);
@@ -267,7 +275,8 @@ TEST(RmmTree, DecreasingDegreeAlternatingDegree1) {
     }
     s.push_back('0');
     s.push_back('0');
-    RangeMinMaxTree<> tree((Bitvector<>(s)));
+    Allocation allocation(Bitvector<>::allocatedSizeInElemsForBits(s.size()));
+    RangeMinMaxTree<> tree((Bitvector<>(s)), allocation.memory());
     ASSERT_EQ(tree.rmqImpl(0, 2).minExcess, 1);
     ASSERT_EQ(tree.rmqImpl(0, 5000).minExcess, 1);
     ASSERT_EQ(tree.rmqImpl(1, 3).minExcess, 2);
@@ -294,3 +303,12 @@ TEST(RmmTree, Random) {
         ASSERT_EQ(tree.findMinInBlock(i * blockSize, (i + 1) * blockSize).minExcess, tree.rmmArr[tree.leafIdxInArr(i)]);
     }
 }
+
+#ifdef ADS_HAS_CPP20
+
+TEST(RmmTree, Constexpr) {
+    //    static_assert(RangeMinMaxTree<>(Bitvector<>("10111000")).findMinInBlock(0, 3).pos == 1);
+    //    static_assert(RangeMinMaxTree<>(Bitvector<>("10111000")).bitvecRmq(0, 8) == 7);
+}
+
+#endif

@@ -23,12 +23,27 @@ struct RangeMinMaxTree {
 
     static constexpr Index blockSize = BlockSize;
 
-    std::unique_ptr<T[]> rmmArr = nullptr;
-    Bitvector<> bv;
     Index numLeaves = 0;
     Index size = 0;
+    View<T> rmmArr = View<T>();
+    Bitvector<> bv;
 
     constexpr RangeMinMaxTree() = default;
+
+    ADS_CPP20_CONSTEXPR ~RangeMinMaxTree() noexcept = default;
+
+    ADS_CPP20_CONSTEXPR RangeMinMaxTree(RangeMinMaxTree&&) noexcept = default;
+
+    ADS_CPP20_CONSTEXPR RangeMinMaxTree& operator=(RangeMinMaxTree&&) noexcept = default;
+    ADS_CPP20_CONSTEXPR RangeMinMaxTree& operator=(const RangeMinMaxTree&) noexcept = delete;
+
+    [[nodiscard]] constexpr static Index numLeavesForBits(Index numBits) noexcept {
+        return roundUpDiv(numBits, BlockSize);
+    }
+
+    [[nodiscard]] constexpr static Index numNodesInArray(Index numLeaves) noexcept {
+        return numLeaves + (Elem(1) << roundUpLog2(Elem(numLeaves))); // the missing -1 makes this a 1-indexed heap
+    }
 
     [[nodiscard]] constexpr Index leafIdxInArr(Index leafNum) const noexcept { return size - numLeaves + leafNum; }
 
@@ -46,20 +61,21 @@ struct RangeMinMaxTree {
     // faster (for the same block size, this additionally uses 16 bits per leaf, which is roughly 8 bits per node but
     // may cause cache misses)
 
-    explicit ADS_CPP20_CONSTEXPR RangeMinMaxTree(Bitvector<>&& bitvector) noexcept : bv(std::move(bitvector)) {
-        numLeaves = roundUpDiv(bv.sizeInBits(), BlockSize);
+    explicit ADS_CPP20_CONSTEXPR RangeMinMaxTree(Bitvector<>&& bitvector, T* rmmArrPtr) noexcept
+        : numLeaves(numLeavesForBits(bitvector.sizeInBits())), size(numNodesInArray(numLeaves)),
+          rmmArr(rmmArrPtr, size), bv(std::move(bitvector)) {
+        numLeaves = numLeavesForBits(bv.sizeInBits());
         assert(numLeaves > 0);
-        size = numLeaves + (Elem(1) << roundUpLog2(Elem(numLeaves))); // the missing -1 makes this a 1-indexed heap
+        size = numNodesInArray(numLeaves);
         assert(leafIdxInArr(0) % 2 == 0 || leafIdxInArr(0) == 1);
-        rmmArr = makeUniqueForOverwrite<T>(size);
         Index minExcessInBlock = 1;
         Index excess = 0;
         for (Index i = 0; i < bv.sizeInBits(); ++i) {
             if (i > 0 && i % BlockSize == 0) {
                 Index l = leafIdxInArr(i / BlockSize - 1);
-                rmmArr[l] = minExcessInBlock;
+                rmmArr.ptr[l] = minExcessInBlock;
                 while (isRightChild(l)) {
-                    rmmArr[l / 2] = std::min(rmmArr[l - 1], rmmArr[l]);
+                    rmmArr.ptr[l / 2] = std::min(rmmArr[l - 1], rmmArr[l]);
                     l /= 2;
                 }
                 minExcessInBlock = excess + 1;
@@ -74,12 +90,15 @@ struct RangeMinMaxTree {
         }
         assert(minExcessInBlock == 0);
         Index v = leafIdxInArr(numLeaves - 1);
-        rmmArr[v] = 0;
+        rmmArr.ptr[v] = 0;
         for (; v > 0; v /= 2) {
             if (isRightChild(v)) {
-                rmmArr[v / 2] = std::min(rmmArr[v], rmmArr[v - 1]);
+                if (v / 2 == 0) { // TODO: Remove
+                    rmmArr.ptr[v / 2] = rmmArr[v - 1];
+                }
+                rmmArr.ptr[v / 2] = std::min(rmmArr[v], rmmArr[v - 1]);
             } else {
-                rmmArr[v / 2] = rmmArr[v];
+                rmmArr.ptr[v / 2] = rmmArr[v];
             }
         }
     }
@@ -161,8 +180,8 @@ struct RangeMinMaxTree {
         }
         Index lower = leafIdxInArr(lowerBlockIdx);
         Index upper = leafIdxInArr(upperBlockIdx - 1);
-        assert(log2(Elem(lower)) == log2(Elem(upper)));
-        Index h = log2(Elem(lower) ^ Elem(upper)) + 1;
+        assert(intLog2(Elem(lower)) == intLog2(Elem(upper)));
+        Index h = intLog2(Elem(lower) ^ Elem(upper)) + 1;
         Index lca = lower >> h;
         Index v = lower;
         // TODO: This can probably be done with some bit fiddling instead of a loop (or look at rmmArr and don't set leftMinPos unless necessary), also for rightMinPos
@@ -205,7 +224,7 @@ struct RangeMinMaxTree {
             assert(minPos <= upper);
         }
         Index i = leafNum(minPos);
-        assert(std::min_element(rmmArr.get() + lower, rmmArr.get() + upper + 1) - rmmArr.get() == minPos);
+        assert(std::min_element(rmmArr.ptr + lower, rmmArr.ptr + upper + 1) - rmmArr.ptr == minPos);
         return findMinInBlock(i * BlockSize, (i + 1) * BlockSize);
     }
 
@@ -238,33 +257,34 @@ class SuccinctRMQ {
 
     using RmmTree = RangeMinMaxTree<>;
 
+    Allocation<> allocation = Allocation();
     RmmTree rmmTree = RmmTree();
     Index length = 0;
 
-public:
-    constexpr static const char name[] = "Succinct Rmq";
+    template<typename Container>
+    [[nodiscard]] static ADS_CPP20_CONSTEXPR Index numAllocatedElems(const Container& container) noexcept {
+        Index numBits = container.size() * 2 + 2;
+        return Bitvector<>::allocatedSizeInElemsForBits(numBits) + RmmTree::numNodesInArray(RmmTree::numLeavesForBits(numBits));
+    }
 
-    constexpr SuccinctRMQ() = default;
-
-    template<typename Container, typename Comp = std::less<typename Container::value_type>>
-    ADS_CPP20_CONSTEXPR explicit SuccinctRMQ(const Container& container, Comp comp = Comp())
-        : length(container.size()) {
-        Bitvector<> dfuds(container.size() * 2 + 2);
+    template<typename Container, typename Comp>
+    ADS_CPP20_CONSTEXPR static Bitvector<> createDfuds(const Container& container, Comp comp, Elem* mem) noexcept {
+        Bitvector<> dfuds(container.size() * 2 + 2, mem);
         Index bvIdx = dfuds.sizeInBits();
-        std::stack<Index, std::vector<Index>> stack;
+        std::vector<Index> stack;
         for (Index i = container.size() - 1; i + 1 > 0; --i) {
             assert(bvIdx > 1);
             dfuds.setBit(--bvIdx, closeParen);
-            while (!stack.empty() && comp(container[i], container[stack.top()])) {
+            while (!stack.empty() && comp(container[i], container[stack.back()])) {
                 assert(bvIdx > 1);
                 dfuds.setBit(--bvIdx, openParen);
-                stack.pop();
+                stack.pop_back();
             }
-            stack.push(i);
+            stack.push_back(i);
         }
         dfuds.setBit(--bvIdx, closeParen);
         while (!stack.empty()) {
-            stack.pop();
+            stack.pop_back();
             dfuds.setBit(--bvIdx, openParen);
         }
         assert(bvIdx == 1);
@@ -272,8 +292,26 @@ public:
         for (Index i = 0; i < dfuds.numSuperBlocks(); ++i) {
             dfuds.buildRankMetadata(i);
         }
-        rmmTree = RmmTree(std::move(dfuds));
+        return dfuds;
     }
+
+    template<typename Container, typename Comp>
+    ADS_CPP20_CONSTEXPR RmmTree createRmmTree(const Container& container, Comp comp) const noexcept {
+        Bitvector<> bv = createDfuds(container, comp, allocation.memory());
+        Elem* ptr = allocation.memory() + bv.allocatedSizeInElems();
+        return RmmTree(std::move(bv), ptr);
+    }
+
+public:
+    constexpr static const char name[] = "Succinct Rmq";
+
+    constexpr SuccinctRMQ() = default;
+
+    ADS_CPP20_CONSTEXPR ~SuccinctRMQ() noexcept = default;
+
+    template<typename Container, typename Comp = std::less<typename Container::value_type>>
+    ADS_CPP20_CONSTEXPR explicit SuccinctRMQ(const Container& container, Comp comp = Comp())
+        : allocation(numAllocatedElems(container)), rmmTree(createRmmTree(container, comp)), length(container.size()) {}
 
     template<typename T>
     ADS_CPP20_CONSTEXPR SuccinctRMQ(std::unique_ptr<T> ptr, Index length)
@@ -282,6 +320,12 @@ public:
     template<typename T = Elem>
     ADS_CPP20_CONSTEXPR SuccinctRMQ(std::initializer_list<T> list)
         : SuccinctRMQ(Span<const T>(list.begin(), list.end())) {}
+
+    ADS_CPP20_CONSTEXPR SuccinctRMQ(SuccinctRMQ&&) noexcept = default;
+
+    ADS_CPP20_CONSTEXPR SuccinctRMQ& operator=(SuccinctRMQ&&) noexcept = default;
+
+    ADS_CPP20_CONSTEXPR SuccinctRMQ& operator=(const SuccinctRMQ&) noexcept = delete;
 
     [[nodiscard]] ADS_CPP20_CONSTEXPR Index rmq(Index lower, Index upper) const noexcept {
         assert(lower < upper);

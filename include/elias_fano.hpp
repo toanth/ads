@@ -146,7 +146,7 @@ public:
             rangeOfValues = largestNumber - smallestNumber;
         }
 
-        bitsPerNumber = 1 + log2(std::max(rangeOfValues, Elem(1)));
+        bitsPerNumber = 1 + intLog2(std::max(rangeOfValues, Elem(1)));
         Index upperBitsPerNumber = roundUpLog2(Elem(numInts + 2)); // + 2 to prevent UB for numInts <= 1
         bitsPerNumber = std::max(bitsPerNumber, upperBitsPerNumber);
         Index lowerBitsPerNumber = bitsPerNumber - upperBitsPerNumber;

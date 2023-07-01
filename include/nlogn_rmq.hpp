@@ -11,7 +11,7 @@ ADS_CPP20_CONSTEXPR Index numLevels(Index length) noexcept {
     if (length <= 1) {
         return length;
     }
-    return log2(Elem(length)) + 1;
+    return intLog2(Elem(length)) + 1;
 }
 
 ADS_CPP20_CONSTEXPR Index minimaSize(Index length) noexcept {
@@ -78,7 +78,7 @@ public:
             throw std::invalid_argument("Invalid rmq range");
         }
         //        if (lower == upper) { return lower; }
-        Index log2Length = log2(Elem(upper - lower));
+        Index log2Length = intLog2(Elem(upper - lower));
         Index leftMin = getMinimumStartingAt(lower, log2Length);
         Index rightMin = getMinimumEndingAt(upper, log2Length);
         return comp(derived().getArrayElement(leftMin), derived().getArrayElement(rightMin)) ? leftMin : rightMin;
@@ -126,6 +126,9 @@ struct NLogNRmq : NLogNRmqOps<NLogNRmq<T, IndexType, Comp>, Comp> {
 
     ADS_CPP20_CONSTEXPR NLogNRmq(T* ptr, Index length, T* mem = nullptr) : NLogNRmq(Span<const T>(ptr, length), mem) {}
 
+    ADS_CPP20_CONSTEXPR ~NLogNRmq() noexcept = default;
+
+    ADS_CPP20_CONSTEXPR NLogNRmq& operator=(NLogNRmq&&) noexcept = default;
 
     static ADS_CPP20_CONSTEXPR Index completeSize(Index length) noexcept {
         return length + roundUpDiv(minimaSize(length) * sizeof(IndexType), sizeof(T));

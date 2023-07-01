@@ -50,6 +50,7 @@ class Bitvector : private Layout {
 
 public:
     using Base::allocatedSizeInElems;
+    using Base::allocatedSizeInElemsForBits;
     using Base::blockSize;
     using Base::getBit;
     using Base::getElem;
@@ -65,32 +66,33 @@ public:
 
     constexpr Bitvector() noexcept : numBits(0) {}
 
-    explicit constexpr Bitvector(Index numBits, Elem* mem = nullptr) noexcept
+    explicit ADS_CPP20_CONSTEXPR Bitvector(Index numBits, Elem* mem = nullptr) noexcept
         : Base(numElems(numBits), mem), numBits(numBits) {}
 
-    constexpr Bitvector(Index numBits, Elem fill, Elem* mem = nullptr) : Bitvector(numBits, mem) {
+    ADS_CPP20_CONSTEXPR Bitvector(Index numBits, Elem fill, Elem* mem = nullptr) : Bitvector(numBits, mem) {
         for (Index i = 0; i < sizeInElems(); ++i) {
             setElem(i, fill);
         }
         buildMetadata();
     }
 
-    explicit constexpr Bitvector(Span<Elem> elems, Elem* mem = nullptr) noexcept
+    explicit ADS_CPP20_CONSTEXPR Bitvector(Span<Elem> elems, Elem* mem = nullptr) noexcept
         : Bitvector(elems, elems.size() * 64, mem) {}
 
-    constexpr Bitvector(Span<Elem> elems, Index numBits, Elem* mem = nullptr) noexcept : Bitvector(numBits, mem) {
+    ADS_CPP20_CONSTEXPR Bitvector(Span<Elem> elems, Index numBits, Elem* mem = nullptr) noexcept
+        : Bitvector(numBits, mem) {
         for (Index i = 0; i < sizeInElems(); ++i) {
             setElem(i, elems[i]);
         }
         buildMetadata();
     }
 
-    explicit constexpr Bitvector(std::string_view str, Index base = 2, Elem* mem = nullptr)
-        : Bitvector(Index(str.size()) * log2(Elem(base)), mem) {
+    explicit ADS_CPP20_CONSTEXPR Bitvector(std::string_view str, Index base = 2, Elem* mem = nullptr)
+        : Bitvector(Index(str.size()) * intLog2(Elem(base)), mem) {
         if (base != 2 && base != 4 && base != 16) [[unlikely]] {
             throw std::invalid_argument("base must be one of 2, 4, or 16");
         }
-        const Index log2ofBase = log2(Elem(base));
+        const Index log2ofBase = intLog2(Elem(base));
         const std::size_t charsPerElem = 64 / log2ofBase;
         Index i = 0;
         for (Index superblock = 0; superblock < numSuperBlocks(); ++superblock) {
@@ -458,7 +460,7 @@ public:
         return os;
     }
 
-    [[nodiscard]] constexpr std::string toString() const noexcept {
+    [[nodiscard]] ADS_CPP20_CONSTEXPR std::string toString() const noexcept {
         std::string res;
         for (bool b : bitView()) {
             if (b) {
@@ -486,11 +488,7 @@ constexpr bool operator!=(const Bitvector<L1>& lhs, const Bitvector<L2>& rhs) {
 
 template<ADS_LAYOUT_CONCEPT L1, ADS_LAYOUT_CONCEPT L2>
 constexpr std::strong_ordering operator<=>(const Bitvector<L1>& lhs, const Bitvector<L2>& rhs) noexcept {
-    if (lhs.sizeInBits() != rhs.sizeInBits()) {
-        return std::lexicographical_compare_three_way(
-                lhs.bitView().begin(), lhs.bitView().end(), rhs.bitView().begin(), rhs.bitView().end());
-    }
-    return std::lexicographical_compare_three_way(
+    return lexicographicalCompareThreeWay(
             lhs.elemView().begin(), lhs.elemView().end(), rhs.elemView().begin(), rhs.elemView().end());
 }
 

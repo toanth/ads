@@ -16,7 +16,7 @@ template<typename T = Elem>
 
 
 template<typename UnsignedInteger> // no concepts in C++17 :(
-[[nodiscard]] ADS_CPP20_CONSTEXPR Index log2(UnsignedInteger n) noexcept {
+[[nodiscard]] ADS_CPP20_CONSTEXPR Index intLog2(UnsignedInteger n) noexcept {
     static_assert(std::is_unsigned_v<UnsignedInteger>);
 #ifdef ADS_HAS_CPP20
     return 8 * sizeof(UnsignedInteger) - std::countl_zero(n) - 1;
@@ -37,9 +37,9 @@ template<typename UnsignedInteger>
     assert(n > 0);
 #ifdef ADS_HAS_CPP20
     if (std::has_single_bit(n)) {
-        return log2(n);
+        return intLog2(n);
     }
-    return log2(n) + 1; // TODO: Test if this is actually faster than the fallback, use for non-c++20 mode as well if faster
+    return intLog2(n) + 1; // TODO: Test if this is actually faster than the fallback, use for non-c++20 mode as well if faster
 #else
     if (n <= 1) {
         return 0;
@@ -103,7 +103,7 @@ template<typename UnsignedInteger>
 #elif defined ADS_HAS_MSVC_INTRINSICS
     return static_cast<Index>(_BitScanForward64(n));
 #else
-    return static_cast<Index>(64 - 1 - log2(reverseBits(n))); // not very fast, but this shouldn't really be executed anyway
+    return static_cast<Index>(64 - 1 - intLog2(reverseBits(n))); // not very fast, but this shouldn't really be executed anyway
 #endif
 }
 

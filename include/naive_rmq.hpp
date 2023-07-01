@@ -71,7 +71,8 @@ struct SimpleRMQ : std::vector<T> {
 /// \tparam Comparator Used to compare two elements, defaults to std::less (std::greater would turn this into range maximum queries)
 template<typename Comparator = std::less<>>
 class NaiveRMQ {
-    std::unique_ptr<Index[]> arr = nullptr;
+    Allocation<Index> allocation = Allocation<Index>();
+    View<Index> arr = View<Index>();
     Index length = 0;
     [[no_unique_address]] Comparator comp = Comparator{};
 
@@ -82,7 +83,7 @@ class NaiveRMQ {
     }
 
     ADS_CPP20_CONSTEXPR NaiveRMQ(Index length, CreateWithSizeTag)
-        : arr(makeUniqueForOverwrite<Index>(completeSize(length))), length(length) {}
+        : allocation(completeSize(length)), arr(allocation.memory(), allocation.size()), length(length) {}
 
     [[nodiscard]] ADS_CPP20_CONSTEXPR Index arrIndex(Index first, Index last) const noexcept {
         assert(0 <= first && first < last && last <= length);
@@ -92,7 +93,7 @@ class NaiveRMQ {
     }
 
     [[nodiscard]] ADS_CPP20_CONSTEXPR Index& minIdx(Index first, Index last) noexcept {
-        return arr[arrIndex(first, last)];
+        return arr.ptr[arrIndex(first, last)];
     }
     [[nodiscard]] ADS_CPP20_CONSTEXPR Index minIdx(Index first, Index last) const noexcept {
         return arr[arrIndex(first, last)];
@@ -101,6 +102,7 @@ class NaiveRMQ {
 
 public:
     constexpr static const char name[] = "Naive RMQ";
+
     constexpr NaiveRMQ() = default;
 
     template<typename Range, typename = std::void_t<decltype(maybe_ranges::begin(std::declval<Range&>()))>> // no concepts in C++17
@@ -126,6 +128,8 @@ public:
             }
         }
     }
+
+    ADS_CPP20_CONSTEXPR NaiveRMQ& operator=(NaiveRMQ&&) noexcept = default;
 
     [[nodiscard]] constexpr Index rmq(Index first, Index last) const noexcept { return minIdx(first, last); }
 

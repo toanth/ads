@@ -42,7 +42,7 @@ void testQuery(const TestRmq& testRmq, const ReferenceRmq& referenceRmq, Index l
     Index referenceAnswer = referenceRmq(lower, upper);
     ASSERT_EQ(referenceRmq[testeeAnswer], referenceRmq[referenceAnswer])
             << TestRmq::name << ", answers (test/ref) " << testeeAnswer << " " << referenceAnswer << ", interval "
-            << lower << " " << upper;
+            << lower << " " << upper << ", size " << referenceRmq.size();
 }
 
 template<typename RMQ>
@@ -251,3 +251,22 @@ TYPED_TEST(UsefulRmqsTest, LargeRandom) {
     std::uniform_int_distribution<Elem> dist(0, 1 << 18);
     testLargeRmq<TypeParam>(randomValues(Index(dist(engine)), 100));
 }
+
+
+#ifdef ADS_HAS_CPP20
+TYPED_TEST(AllRmqsTest, Constexpr) {
+    static_assert(TypeParam{}.size() == 0);
+    static_assert(TypeParam{3}(0, 1) == 0);
+    static_assert(TypeParam{0, 23, 2, 40, 4, 2, 1}(2, 5) == 2);
+    static constexpr Index size = std::same_as<TypeParam, NaiveRMQ<>>     ? 50 :
+                                  std::same_as<TypeParam, NLogNRmq<Elem>> ? 500 :
+                                                                            1234;
+    constexpr auto testVec = []() {
+        std::vector<Elem> res(size);
+        std::iota(res.begin(), res.end(), 987654);
+        res[42] = 123456;
+        return res;
+    };
+    static_assert(TypeParam(testVec())(12, size - 1) == 42);
+}
+#endif

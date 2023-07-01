@@ -21,6 +21,12 @@ static_assert(sizeof(void*) >= 8, "This library requires a 64 bit system");
 
 #elif defined __clang__ || defined __GNUC__
 
+#ifdef __clang__
+#pragma clang diagnostic ignored "-Wc++20-attribute-extensions" // else, clang complains in C++17 mode about [[likely]]
+// else, clang complains about function calls in ADS_ASSUME, but they are useful in debug mode when ADS_ASSUME is assert
+#pragma clang diagnostic ignored "-Wassume"
+#endif
+
 #define ADS_HAS_DEFAULT_GCC_INTRINSICS
 
 #if defined __x86_64__
@@ -208,6 +214,34 @@ ADS_CPP20_CONSTEXPR Integer abs(Integer val) noexcept {
     }
 }
 
+
+#ifdef ADS_HAS_CPP20
+template<typename Iter1, typename Iter2, typename Cmp = std::compare_three_way>
+constexpr auto lexicographicalCompareThreeWay(Iter1 first1, Iter1 last1, Iter2 first2, Iter2 last2, Cmp cmp = Cmp())
+        -> decltype(cmp(*first1, *first2)) {
+    // libc++ doesn't yet implement lexicographical_compare_three_way
+#if !defined _LIBCPP_VERSION
+    if constexpr (requires { std::lexicographical_compare_three_way(first1, last1, first2, last2, cmp); }) {
+        return std::lexicographical_compare_three_way(first1, last1, first2, last2, cmp);
+    }
+#else
+    for (; first1 != last1 && first2 != last2; ++first1, ++first2) {
+        if (auto r = cmp(*first1, *first2); r != 0) {
+            return r;
+        }
+    }
+    if (first1 != last1) {
+        return std::strong_ordering::greater;
+    } else if (first2 != last2) {
+        return std::strong_ordering::less;
+    } else {
+        return std::strong_ordering::equal;
+    }
+#endif // _LIBCPP_VERSION
+}
+#endif // ADS_HAS_CPP20
+
+
 static constexpr Index CACHELINE_SIZE_BYTES = 64;
 static constexpr Index ELEMS_PER_CACHELINE = CACHELINE_SIZE_BYTES / 8;
 
@@ -234,8 +268,7 @@ public:
     constexpr Span(T* first, T* last) noexcept : first(first), last(last) { assert(size() >= 0); }
 
     template<typename Container, typename = std::enable_if_t<std::is_same_v<typename Container::value_type, std::remove_cv_t<T>>>>
-    /*implicit*/ Span(Container& c) : Span(c.data(), c.size()) { // NOLINT(google-explicit-constructor)
-    }
+    /*implicit*/ ADS_CPP20_CONSTEXPR Span(Container& c) : Span(c.data(), c.size()) {}
 
     [[nodiscard]] constexpr Index size() const noexcept {
         assert(!std::less<>()(last, first));
@@ -250,7 +283,7 @@ public:
         assert(i >= 0 && i < size());
         return first[i];
     }
-    [[nodiscard]] bool empty() const noexcept { return size() == 0; }
+    [[nodiscard]] constexpr bool empty() const noexcept { return size() == 0; }
 
     constexpr T* data() noexcept { return first; }
     constexpr const T* data() const noexcept { return first; }
@@ -301,6 +334,7 @@ std::unique_ptr<T[]> makeUniqueForOverwrite(Index size) noexcept {
     return std::unique_ptr<T[]>(new std::remove_extent_t<T>[size]);
 }
 
+// TODO: Remove
 template<typename T>
 ADS_CPP20_CONSTEXPR std::unique_ptr<T[]> toUniquePtr(Span<const T> values, Index size) noexcept {
     std::unique_ptr<T[]> res = makeUniqueForOverwrite<T>(size);
