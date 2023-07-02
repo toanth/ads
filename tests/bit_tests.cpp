@@ -9,10 +9,10 @@ using namespace ads;
 TEST(Bit, IntLog2) {
     ASSERT_EQ(intLog2(1u), 0);
     ASSERT_EQ(intLog2(std::uint64_t(2)), 1);
-    ASSERT_EQ(intLog2(std::uint32_t(3)), 1);
+    ASSERT_EQ(intLog2(std::int32_t(3)), 1);
     ASSERT_EQ(intLog2(std::uint8_t(4)), 2);
-    ASSERT_EQ(intLog2(std::uint8_t(5)), 2);
-    ASSERT_EQ(intLog2(std::uint16_t(123)), 6);
+    ASSERT_EQ(intLog2(std::int8_t(5)), 2);
+    ASSERT_EQ(intLog2(std::int64_t(123)), 6);
     ASSERT_EQ(intLog2(std::uint8_t(255)), 7);
     ASSERT_EQ(intLog2(0x19ull), 4);
 }
@@ -72,24 +72,24 @@ TEST(Bit, CountTrailingZeros) {
     ASSERT_EQ(countTrailingZeros(Elem(-1)), 0);
 }
 
-TEST(Bit, ElemSelect) {
-    ASSERT_EQ(elemSelect(1, 0), 0);
-    ASSERT_EQ(elemSelect(2, 0), 1);
-    ASSERT_EQ(elemSelect(3, 0), 0);
-    ASSERT_EQ(elemSelect(3, 1), 1);
-    ASSERT_EQ(elemSelect((Elem(1) << 15) + 3, 2), 15);
-    ASSERT_EQ(elemSelect(Elem(-1), 7), 7);
-    ASSERT_EQ(elemSelect(Elem(-1), 63), 63);
+TEST(Bit, U64Select) {
+    ASSERT_EQ(u64Select(1, 0), 0);
+    ASSERT_EQ(u64Select(2, 0), 1);
+    ASSERT_EQ(u64Select(3, 0), 0);
+    ASSERT_EQ(u64Select(3, 1), 1);
+    ASSERT_EQ(u64Select((Elem(1) << 15) + 3, 2), 15);
+    ASSERT_EQ(u64Select(Elem(-1), 7), 7);
+    ASSERT_EQ(u64Select(Elem(-1), 63), 63);
 }
 
-TEST(Bit, ConstevalElemSelect) {
-    static_assert(constevalElemSelect(1, 0) == 0);
-    static_assert(constevalElemSelect(2, 0) == 1);
-    static_assert(constevalElemSelect(3, 0) == 0);
-    static_assert(constevalElemSelect(3, 1) == 1);
-    static_assert(constevalElemSelect((Elem(1) << 15) + 3, 2) == 15);
-    static_assert(constevalElemSelect(Elem(-1), 7) == 7);
-    static_assert(constevalElemSelect(Elem(-1), 63) == 63);
+TEST(Bit, ConstevalU64Select) {
+    static_assert(constevalU64Select(1, 0) == 0);
+    static_assert(constevalU64Select(2, 0) == 1);
+    static_assert(constevalU64Select(3, 0) == 0);
+    static_assert(constevalU64Select(3, 1) == 1);
+    static_assert(constevalU64Select((Elem(1) << 15) + 3, 2) == 15);
+    static_assert(constevalU64Select(Elem(-1), 7) == 7);
+    static_assert(constevalU64Select(Elem(-1), 63) == 63);
 }
 
 TEST(Bit, PrecomputeBitSelectTable4Bits) {
@@ -118,14 +118,14 @@ TEST(Bit, PrecomputeBitSelectTable) {
     }
 }
 
-TEST(Bit, ElemSelectWithTable) {
-    ASSERT_EQ(elemSelectWithTable(1, 0), 0);
-    ASSERT_EQ(elemSelectWithTable(2, 0), 1);
-    ASSERT_EQ(elemSelectWithTable(3, 0), 0);
-    ASSERT_EQ(elemSelectWithTable(3, 1), 1);
-    ASSERT_EQ(elemSelectWithTable((Elem(1) << 15) + 3, 2), 15);
-    ASSERT_EQ(elemSelectWithTable(Elem(-1), 7), 7);
-    ASSERT_EQ(elemSelectWithTable(Elem(-1), 63), 63);
+TEST(Bit, u64SelectWithTable) {
+    ASSERT_EQ(u64SelectWithTable(1, 0), 0);
+    ASSERT_EQ(u64SelectWithTable(2, 0), 1);
+    ASSERT_EQ(u64SelectWithTable(3, 0), 0);
+    ASSERT_EQ(u64SelectWithTable(3, 1), 1);
+    ASSERT_EQ(u64SelectWithTable((Elem(1) << 15) + 3, 2), 15);
+    ASSERT_EQ(u64SelectWithTable(Elem(-1), 7), 7);
+    ASSERT_EQ(u64SelectWithTable(Elem(-1), 63), 63);
 }
 
 
@@ -133,13 +133,14 @@ TEST(Bit, ElemSelectWithTable) {
 
 TEST(Bit, Constexpr) {
     static_assert(intLog2(987u) == 9);
+    static_assert(intLog2(1) == 0);
     static_assert(roundUpLog2(42ul) == 6);
     static_assert(popcount(0xabcu) == 2 + 3 + 2);
     static_assert(reverseBits(0x0123u) == (0xc480u << 16));
     static_assert(countTrailingZeros((unsigned char)14) == 1);
-    static_assert(elemSelect(0x1234ull, 3) == 9);
-    static_assert(constevalElemSelect(1243619ull, 12) == elemSelect(1243619, 12));
-    static_assert(elemSelectWithTable(127ull, 4) == 4);
+    static_assert(u64Select(0x1234ull, 3) == 9);
+    static_assert(constevalU64Select(1243619ull, 12) == u64Select(1243619, 12));
+    static_assert(u64SelectWithTable(127ull, 4) == 4);
 }
 
 #endif

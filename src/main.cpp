@@ -1,4 +1,4 @@
-#include "../include/bitvector.hpp"
+
 #include "../include/elias_fano.hpp"
 #include <chrono>
 #include <cstdio>

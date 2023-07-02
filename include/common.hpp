@@ -81,6 +81,7 @@ using U64 = std::uint64_t;
 using I64 = std::int64_t;
 // TODO: Instead of a global Elem alias, define per template to allow smaller sizes
 using Elem = U64;
+using Limb = U64;
 
 
 
@@ -108,7 +109,15 @@ using Elem = U64;
 #define ADS_ASSUME(x) assert(x)
 #endif
 
+#ifdef _MSC_VER
+#define ADS_FORCE_INLINE(func) __forceinline func
+#elif defined __GNUC__ || defined __clang__
+#define ADS_FORCE_INLINE(func) func __attribute__((always_inline))
+#endif
+
 struct CreateWithSizeTag {};
+
+struct UninitializedTag {};
 
 namespace detail {
 
@@ -194,18 +203,18 @@ constexpr std::from_chars_result fromChars(const char* first, const char* last, 
 }
 
 
-constexpr Index roundUpDiv(Index divisor, Index quotient) noexcept {
-    assert(divisor >= 0 && quotient > 0);
-    return (divisor + quotient - 1) / quotient; // hopefully, this function gets inlined and optimized (quotient is usually a power of 2)
+[[nodiscard]] constexpr Index roundUpDiv(Index dividend, Index divisor) noexcept {
+    assert(dividend >= 0 && divisor > 0);
+    return (dividend + divisor - 1) / divisor; // hopefully, this function gets inlined and optimized (divisor is usually a power of 2)
 }
 
-ADS_CONSTEVAL static Index bytesNeededForIndexing(Index numElements) noexcept {
+[[nodiscard]] ADS_CONSTEVAL static Index bytesNeededForIndexing(Index numElements) noexcept {
     // no constexpr std::bit_floor in C++17; using <= instead of < is fine because no entry actually stores this number
     return numElements <= 256 ? 1 : 1 + bytesNeededForIndexing(roundUpDiv(numElements, 256));
 }
 
 template<typename Integer>
-ADS_CPP20_CONSTEXPR Integer abs(Integer val) noexcept {
+[[nodiscard]] ADS_CPP20_CONSTEXPR Integer abs(Integer val) noexcept {
     ADS_IF_CONSTEVAL {
         return val < 0 ? -val : val;
     }
@@ -217,8 +226,8 @@ ADS_CPP20_CONSTEXPR Integer abs(Integer val) noexcept {
 
 #ifdef ADS_HAS_CPP20
 template<typename Iter1, typename Iter2, typename Cmp = std::compare_three_way>
-constexpr auto lexicographicalCompareThreeWay(Iter1 first1, Iter1 last1, Iter2 first2, Iter2 last2, Cmp cmp = Cmp())
-        -> decltype(cmp(*first1, *first2)) {
+[[nodiscard]] constexpr auto lexicographicalCompareThreeWay(
+        Iter1 first1, Iter1 last1, Iter2 first2, Iter2 last2, Cmp cmp = Cmp()) -> decltype(cmp(*first1, *first2)) {
     // libc++ doesn't yet implement lexicographical_compare_three_way
 #if !defined _LIBCPP_VERSION
     if constexpr (requires { std::lexicographical_compare_three_way(first1, last1, first2, last2, cmp); }) {
@@ -243,11 +252,11 @@ constexpr auto lexicographicalCompareThreeWay(Iter1 first1, Iter1 last1, Iter2 f
 
 
 static constexpr Index CACHELINE_SIZE_BYTES = 64;
-static constexpr Index ELEMS_PER_CACHELINE = CACHELINE_SIZE_BYTES / 8;
+static constexpr Index U64_PER_CACHELINE = CACHELINE_SIZE_BYTES / 8;
 
 
 // Useful for testing
-inline std::mt19937_64 createRandomEngine() noexcept {
+[[nodiscard]] inline std::mt19937_64 createRandomEngine() noexcept {
     std::random_device rd;
     std::seed_seq seq{rd(), rd(), rd(), rd()};
     return std::mt19937_64(seq);
@@ -256,7 +265,7 @@ inline std::mt19937_64 createRandomEngine() noexcept {
 
 // Simpler version of std::span, which doesn't exist is C++17
 template<typename T>
-class Span {
+class [[nodiscard]] Span {
     T* first = nullptr;
     T* last = nullptr;
 
@@ -285,12 +294,12 @@ public:
     }
     [[nodiscard]] constexpr bool empty() const noexcept { return size() == 0; }
 
-    constexpr T* data() noexcept { return first; }
-    constexpr const T* data() const noexcept { return first; }
-    constexpr T* begin() noexcept { return first; }
-    constexpr const T* begin() const noexcept { return first; }
-    constexpr T* end() noexcept { return last; }
-    constexpr const T* end() const noexcept { return last; }
+    [[nodiscard]] constexpr T* data() noexcept { return first; }
+    [[nodiscard]] constexpr const T* data() const noexcept { return first; }
+    [[nodiscard]] constexpr T* begin() noexcept { return first; }
+    [[nodiscard]] constexpr const T* begin() const noexcept { return first; }
+    [[nodiscard]] constexpr T* end() noexcept { return last; }
+    [[nodiscard]] constexpr const T* end() const noexcept { return last; }
 
     friend std::ostream& operator<<(std::ostream& os, Span s) noexcept {
         os << "[";
@@ -311,7 +320,7 @@ Span(const Container&) -> Span<const typename Container::value_type>;
 
 // Simpler version of std::ranges::subrange, C++17 compatible
 template<typename Iter, typename Sentinel = Iter>
-struct Subrange {
+struct [[nodiscard]] Subrange {
     Iter first;
     Sentinel last;
 

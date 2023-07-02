@@ -1,10 +1,10 @@
 #ifndef ADS_BITVECTOR_HPP
 #define ADS_BITVECTOR_HPP
 
-#include "bit.hpp"
-#include "bitvec_layouts.hpp"
-#include "common.hpp"
-#include "rand_access_iter.hpp"
+#include "../bit.hpp"
+#include "../bitvec_layouts.hpp"
+#include "../common.hpp"
+#include "../rand_access_iter.hpp"
 
 #include <cassert>
 #include <charconv>

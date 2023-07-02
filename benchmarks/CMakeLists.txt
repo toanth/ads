@@ -22,19 +22,19 @@ if (NOT benchmark_POPULATED)
 endif ()
 
 
-if (MSVC)
-    add_compile_options(/W4 /WX)
-else ()
-    add_compile_options(-Wall -Wextra -Wpedantic -Wno-sign-compare) # TODO: Enable Wsign-compare
-endif ()
+#if (MSVC)
+#    add_compile_options(/W4 /WX)
+#else ()
+#    add_compile_options(-Wall -Wextra -Wpedantic -Wno-sign-compare) # TODO: Enable Wsign-compare
+#endif ()
 
 if (MSVC)
     #    TODO
 else ()
-    add_compile_options(-march=native)
+    add_compile_options(-fno-finite-math-only)
 endif ()
 
-add_executable(benchmarks bitvector_benchmarks.cpp ../include/bit.hpp eliasfano_benchmarks.cpp eliasfano_benchmarks.cpp benchmarks_common.hpp)
+add_executable(benchmarks bitvector_benchmarks.cpp ../include/bit.hpp eliasfano_benchmarks.cpp eliasfano_benchmarks.cpp benchmarks_common.hpp ../include/bitvector/bitvec_base.hpp ../include/bitvector/cache_efficient_rank_bitvec.hpp ../include/bitvector/efficient_rank_bitvec.hpp)
 
 target_link_libraries(benchmarks benchmark::benchmark benchmark::benchmark_main)
 

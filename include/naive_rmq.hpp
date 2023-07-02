@@ -38,7 +38,7 @@ concept Rmq = requires(const RmqType& r) {
 #endif
 
 template<typename T = Elem, typename Comparator = std::less<>>
-struct SimpleRMQ : std::vector<T> {
+struct [[nodiscard]] SimpleRMQ : std::vector<T> {
     using Base = std::vector<T>;
 
     [[no_unique_address]] Comparator comp = Comparator{};
@@ -70,7 +70,7 @@ struct SimpleRMQ : std::vector<T> {
 /// \tparam T type of elements, ie. the `value_type`
 /// \tparam Comparator Used to compare two elements, defaults to std::less (std::greater would turn this into range maximum queries)
 template<typename Comparator = std::less<>>
-class NaiveRMQ {
+class [[nodiscard]] NaiveRMQ {
     Allocation<Index> allocation = Allocation<Index>();
     View<Index> arr = View<Index>();
     Index length = 0;

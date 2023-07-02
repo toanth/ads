@@ -6,7 +6,7 @@
 namespace ads {
 
 template<typename Container, typename Projection, typename Ref = decltype(std::declval<Projection&>()(std::declval<Container&>(), Index()))>
-class RandAccessIter {
+class [[nodiscard]] RandAccessIter {
 
     const Container* cPtr;
     [[no_unique_address]] Projection p;
@@ -29,6 +29,8 @@ public:
         return *this;
     }
 
+    [[nodiscard]] constexpr Index index() const noexcept { return i; }
+
     constexpr RandAccessIter& operator++() { return *this += 1; }
     constexpr RandAccessIter operator++(int) {
         RandAccessIter copy(*this);
@@ -50,25 +52,29 @@ public:
         return *this;
     }
 
-    friend constexpr RandAccessIter operator+(RandAccessIter iter, Index n) { return iter += n; }
-    friend constexpr RandAccessIter operator+(Index n, RandAccessIter iter) { return iter += n; }
-    friend constexpr RandAccessIter operator-(RandAccessIter iter, Index n) { return iter -= n; }
-    friend constexpr Index operator-(RandAccessIter a, RandAccessIter b) { return a.i - b.i; }
+    [[nodiscard]] friend constexpr RandAccessIter operator+(RandAccessIter iter, Index n) { return iter += n; }
+    [[nodiscard]] friend constexpr RandAccessIter operator+(Index n, RandAccessIter iter) { return iter += n; }
+    [[nodiscard]] friend constexpr RandAccessIter operator-(RandAccessIter iter, Index n) { return iter -= n; }
+    [[nodiscard]] friend constexpr Index operator-(RandAccessIter a, RandAccessIter b) { return a.i - b.i; }
 
-    constexpr reference operator*() const { return operator[](0); }
+    [[nodiscard]] constexpr reference operator*() const { return operator[](0); }
 
-    constexpr reference operator[](Index n) const { return p(*cPtr, i + n); }
+    [[nodiscard]] constexpr reference operator[](Index n) const { return p(*cPtr, i + n); }
 
-    friend constexpr bool operator==(const RandAccessIter& lhs, const RandAccessIter& rhs) { return lhs.i == rhs.i; }
-    friend constexpr bool operator!=(const RandAccessIter& lhs, const RandAccessIter& rhs) { return !(rhs == lhs); }
+    [[nodiscard]] friend constexpr bool operator==(const RandAccessIter& lhs, const RandAccessIter& rhs) {
+        return lhs.i == rhs.i;
+    }
+    [[nodiscard]] friend constexpr bool operator!=(const RandAccessIter& lhs, const RandAccessIter& rhs) {
+        return !(rhs == lhs);
+    }
 
 #ifdef ADS_HAS_CPP20
-    friend constexpr std::strong_ordering operator<=>(RandAccessIter, RandAccessIter) = default;
+    [[nodiscard]] friend constexpr std::strong_ordering operator<=>(RandAccessIter, RandAccessIter) = default;
 #else
-    friend constexpr bool operator<(RandAccessIter lhs, RandAccessIter rhs) { return lhs.i < rhs.i; }
-    friend constexpr bool operator>(RandAccessIter lhs, RandAccessIter rhs) { return rhs < lhs; }
-    friend constexpr bool operator<=(RandAccessIter lhs, RandAccessIter rhs) { return !(rhs < lhs); }
-    friend constexpr bool operator>=(RandAccessIter lhs, RandAccessIter rhs) { return !(lhs < rhs); }
+    [[nodiscard]] friend constexpr bool operator<(RandAccessIter lhs, RandAccessIter rhs) { return lhs.i < rhs.i; }
+    [[nodiscard]] friend constexpr bool operator>(RandAccessIter lhs, RandAccessIter rhs) { return rhs < lhs; }
+    [[nodiscard]] friend constexpr bool operator<=(RandAccessIter lhs, RandAccessIter rhs) { return !(rhs < lhs); }
+    [[nodiscard]] friend constexpr bool operator>=(RandAccessIter lhs, RandAccessIter rhs) { return !(lhs < rhs); }
 #endif
 };
 

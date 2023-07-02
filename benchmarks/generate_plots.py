@@ -3,7 +3,7 @@ import json
 from argparse import ArgumentParser
 from dataclasses import dataclass
 from itertools import groupby
-from os.path import realpath, dirname
+from os.path import realpath, dirname, commonprefix
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -112,6 +112,7 @@ class FamilyResults:
     input_sizes: np.array
     errors: np.array
     per_n: bool
+    subtract_n_from_bits: bool
     repetitions: int
     name: str
     comp_name: str
@@ -120,22 +121,26 @@ class FamilyResults:
 def get_performance_measurements(family_info: FamilyInfo) -> FamilyResults:
     data = family_info.median_data
     assert len(data) > 1
-    divide_by_n = 'perN' in data[0]
+    per_n_val = int(data[0]['perN']) if 'perN' in data[0] else 0
+    subtract_n_from_bits = bool(per_n_val & 2)
+    divide_by_n = bool(per_n_val & 1)
     input_sizes = [int(benchmark['run_name'].split('/')[-1]) for benchmark in data]
     times = np.array([benchmark['cpu_time'] for benchmark in data])
     errors = family_info.error_bars
     bits = np.array([benchmark['bits'] for benchmark in data])
-    bits = bits / input_sizes
+    if subtract_n_from_bits:
+        bits -= input_sizes
+    bits /= input_sizes
     assert (times.shape == bits.shape == errors[0].shape == errors[1].shape == (len(data),))
-    return FamilyResults(times, bits, input_sizes, errors, divide_by_n, get_repetitions(data), get_name(data),
-                         family_info.comp_name)
+    return FamilyResults(times, bits, input_sizes, errors, divide_by_n, subtract_n_from_bits, get_repetitions(data),
+                         get_name(data), family_info.comp_name)
 
 
 def generate_single_plot(family_infos: [FamilyInfo]):
     family_infos = [f for f in family_infos if f is not None]
     assert len(family_infos) > 0
     results: [FamilyResults] = [get_performance_measurements(family) for family in family_infos]
-    styles = ['b-s', 'g-o', 'r-*', 'y-3', 'k-0', 'm-x']
+    styles = ['b-s', 'g-o', 'r-*', 'y-3', 'k-+', 'm-x']
     per_n = all([r.per_n for r in results])
     times = [r.times for r in results]
     errors = [np.array(r.errors) for r in results]
@@ -283,9 +288,8 @@ def generate_plots(data, baseline_data):
         for family in group:
             family.comp_name = family.name
         fig = generate_single_plot(group)
-        name = "Compare " + group[0].name
-        for f in group[1:]:
-            name += " vs " + f.name
+        prefix = commonprefix([g.name for g in group])
+        name = "compare_" + str(len(group)) + '_' + prefix + 's' + '_' + group[0].name[len(prefix):]
         yield fig, name
 
 

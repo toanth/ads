@@ -1,24 +1,24 @@
 #ifndef BITVECTOR_ELIAS_FANO_HPP
 #define BITVECTOR_ELIAS_FANO_HPP
 
-#include "bitvector.hpp"
+#include "bitvector/efficient_rank_bitvec.hpp" // TODO: Use better bitvector implementation
 #include <cmath>
 namespace ads {
 
-template<typename Number = std::uint64_t, ADS_LAYOUT_CONCEPT BitvecLayout = SimpleLayout<>>
-class EliasFano {
+template<typename Number = std::uint64_t, ADS_BITVEC_CONCEPT Bitvec = EfficientSelectBitvec<>>
+class [[nodiscard]] EliasFano {
     // TODO: It might make sense to also allow user defined structs like custom n bit integers?
     static_assert(std::is_integral_v<Number>, "Elias fano only works for integers");
 
     Index numInts = 0;
     //    Index numLowerBitsPerNumber = 0;
     Index lowerBitMask = 0;
-    Index allocatedSizeInElems = 0;
+    Index allocatedSizeInLimbs = 0;
     Elem smallestNumber = 0;
     Elem largestNumber = 0;
     Index bitsPerNumber = sizeof(Number) * 8; // usually overwritten in the ctor
     Allocation<> allocation = Allocation<>();
-    Bitvector<BitvecLayout> upper = Bitvector<BitvecLayout>();
+    Bitvec upper = Bitvec();
     BitView<dynSize> lower = BitView<dynSize>(); // TODO: Change to BitView?
     constexpr static Index linearFallbackSize = 8;
 
@@ -34,9 +34,9 @@ class EliasFano {
             Index newBitIdx = upperPart + i + 1;
             Index currentUpperElemIdx = newBitIdx / 64;
             if (currentUpperElemIdx > lastUpperElemIdx) {
-                upper.setElem(lastUpperElemIdx, currentUpperEntry);
+                upper.setLimb(lastUpperElemIdx, currentUpperEntry);
                 for (Index k = lastUpperElemIdx + 1; k < currentUpperElemIdx; ++k) {
-                    upper.setElem(k, 0);
+                    upper.setLimb(k, 0);
                 }
                 lastUpperElemIdx = currentUpperElemIdx;
                 currentUpperEntry = 0;
@@ -47,9 +47,9 @@ class EliasFano {
             }
             ++i;
         }
-        upper.setElem(lastUpperElemIdx, currentUpperEntry);
-        for (++lastUpperElemIdx; lastUpperElemIdx < upper.sizeInElems(); ++lastUpperElemIdx) {
-            upper.setElem(lastUpperElemIdx, 0);
+        upper.setLimb(lastUpperElemIdx, currentUpperEntry);
+        for (++lastUpperElemIdx; lastUpperElemIdx < upper.sizeInLimbs(); ++lastUpperElemIdx) {
+            upper.setLimb(lastUpperElemIdx, 0);
         }
         upper.buildMetadata();
     }
@@ -153,17 +153,17 @@ public:
         Index lowerSizeInElems = roundUpDiv(lowerBitsPerNumber * numInts, 8 * sizeof(Elem));
         Index maxUpperVal = Index(rangeOfValues >> lowerBitsPerNumber);
         Index numBitsInUpper = 1 + numInts + maxUpperVal; // +1 because the first bit is always a zero
-        Index allocatedUpperSizeInElems = Bitvector<BitvecLayout>::allocatedSizeInElems(roundUpDiv(numBitsInUpper, 64));
+        Index allocatedUpperSizeInElems = Bitvec::allocatedSizeInLimbsForBits(numBitsInUpper);
         ADS_ASSUME(maxUpperVal < Index(1) << upperBitsPerNumber);
 
-        allocatedSizeInElems = lowerSizeInElems + allocatedUpperSizeInElems;
-        allocation = Allocation<>(allocatedSizeInElems);
+        allocatedSizeInLimbs = lowerSizeInElems + allocatedUpperSizeInElems;
+        allocation = Allocation<>(allocatedSizeInLimbs);
         lower = BitView<dynSize>(allocation.memory(), lowerSizeInElems);
         lowerBitMask = (Number(1) << lowerBitsPerNumber) - 1;
         lower.bitAccess.numBits = lowerBitsPerNumber;
         assert(lowerSizeInElems == lower.numT);
-        upper = Bitvector<BitvecLayout>(numBitsInUpper, allocation.memory() + lowerSizeInElems);
-        assert(upper.allocatedSizeInElems() == allocatedUpperSizeInElems);
+        upper = Bitvec::uninitializedForSize(numBitsInUpper, allocation.memory() + lowerSizeInElems);
+        assert(upper.allocatedSizeInLimbs() == allocatedUpperSizeInElems);
 
         build(numbers);
     }
@@ -217,9 +217,9 @@ public:
 
     /// \brief The total amount of bits allocated on the heap by this class, including its data members.
     /// Note that data members within this class itself, such as pointers to allocated memory, don't count.
-    [[nodiscard]] constexpr Index numAllocatedBits() const noexcept { return allocatedSizeInElems * 8 * sizeof(Elem); }
+    [[nodiscard]] constexpr Index numAllocatedBits() const noexcept { return allocatedSizeInLimbs * 8 * sizeof(Elem); }
 
-    [[nodiscard]] constexpr const Bitvector<BitvecLayout>& getUpper() const noexcept { return upper; }
+    [[nodiscard]] constexpr const Bitvec& getUpper() const noexcept { return upper; }
 
     [[nodiscard]] constexpr const BitView<dynSize>& getLower() const noexcept { return lower; }
 

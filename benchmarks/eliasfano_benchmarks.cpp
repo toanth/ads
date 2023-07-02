@@ -6,7 +6,7 @@
 
 using namespace ads;
 
-constexpr Index maxNumValues = Index(1) << 27;
+// constexpr Index maxNumValues = Index(1) << 27;
 
 static std::vector<Elem> createSortedRandomVector(Index size = maxNumValues) noexcept {
     std::vector<Elem> vec = randomArray(size);
@@ -14,21 +14,12 @@ static std::vector<Elem> createSortedRandomVector(Index size = maxNumValues) noe
     return vec;
 }
 
-static std::unordered_map<Index, std::vector<Elem>> createSortedVectors() noexcept {
-    std::unordered_map<Index, std::vector<Elem>> res;
-    for (Index i = 1; i < maxNumValues; i *= 5) {
-        res.try_emplace(i, createSortedRandomVector(i));
-    }
-    res.try_emplace(maxNumValues, createSortedRandomVector());
-    return res;
-}
-
-static std::unordered_map<Index, std::vector<Elem>> vecs = createSortedVectors();
+static std::unordered_map<Index, std::vector<Elem>> efVecs /*= createSortedVectors()*/;
 
 static const std::vector<Elem>& getEFNumbers(Index size) noexcept {
-    auto it = vecs.find(size);
-    if (it == vecs.end()) {
-        it = vecs.try_emplace(size, createSortedRandomVector(size)).first;
+    auto it = efVecs.find(size);
+    if (it == efVecs.end()) {
+        it = efVecs.try_emplace(size, createSortedRandomVector(size)).first;
     }
     return it->second;
 }
@@ -127,8 +118,8 @@ static void BM_EliasFanoPredecessorAcendingThenLarge(bm::State& state) {
 }
 
 
-BENCHMARK(BM_EliasFanoCreation)->RangeMultiplier(5)->Range(5, maxNumValues)->Complexity(bm::oN);
-BENCHMARK(BM_EliasFanoPredecessorInArray)->RangeMultiplier(5)->Range(5, maxNumValues)->Complexity(bm::oN);
-BENCHMARK(BM_EliasFanoPredecessorRandom)->RangeMultiplier(5)->Range(5, maxNumValues)->Complexity(bm::oN);
-BENCHMARK(BM_EliasFanoPredecessorAcending)->RangeMultiplier(5)->Range(5, maxNumValues)->Complexity(bm::oN);
-BENCHMARK(BM_EliasFanoPredecessorAcendingThenLarge)->RangeMultiplier(5)->Range(5, maxNumValues)->Complexity(bm::oN);
+// BENCHMARK(BM_EliasFanoCreation)->RangeMultiplier(5)->Range(5, maxNumValues)->Complexity(bm::oN);
+// BENCHMARK(BM_EliasFanoPredecessorInArray)->RangeMultiplier(5)->Range(5, maxNumValues)->Complexity(bm::oN);
+// BENCHMARK(BM_EliasFanoPredecessorRandom)->RangeMultiplier(5)->Range(5, maxNumValues)->Complexity(bm::oN);
+// BENCHMARK(BM_EliasFanoPredecessorAcending)->RangeMultiplier(5)->Range(5, maxNumValues)->Complexity(bm::oN);
+// BENCHMARK(BM_EliasFanoPredecessorAcendingThenLarge)->RangeMultiplier(5)->Range(5, maxNumValues)->Complexity(bm::oN);

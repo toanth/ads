@@ -7,7 +7,7 @@
 
 namespace ads {
 
-template<typename T = Elem>
+template<typename T = U64>
 [[nodiscard]] constexpr T lastNBitsMask(Index n) noexcept {
     ADS_ASSUME(n >= 0);
     ADS_ASSUME(n < sizeof(T) * 8);
@@ -15,20 +15,25 @@ template<typename T = Elem>
 }
 
 
-template<typename UnsignedInteger> // no concepts in C++17 :(
-[[nodiscard]] ADS_CPP20_CONSTEXPR Index intLog2(UnsignedInteger n) noexcept {
-    static_assert(std::is_unsigned_v<UnsignedInteger>);
+template<typename Integer> // no concepts in C++17 :(
+[[nodiscard]] ADS_CPP20_CONSTEXPR Index intLog2(Integer n) noexcept {
+    if constexpr (std::is_signed_v<Integer>) {
+        // converting a negative value to an unsigned integer was implementation defined before C++20, but did the right thing
+        return intLog2(static_cast<std::make_unsigned_t<Integer>>(n));
+    } else {
+        static_assert(std::is_unsigned_v<Integer>);
 #ifdef ADS_HAS_CPP20
-    return 8 * sizeof(UnsignedInteger) - std::countl_zero(n) - 1;
+        return 8 * sizeof(Integer) - std::countl_zero(n) - 1;
 #elif defined ADS_HAS_DEFAULT_GCC_INTRINSICS
-    return 8 * sizeof(unsigned long long) - __builtin_clzll(n) - 1;
+        return 8 * sizeof(unsigned long long) - __builtin_clzll(n) - 1;
 #elif defined ADS_HAS_MSVC_INTRINSICS
-    std::uint64 pos;
-    _BitScanReverse64(&pos, std::uint64_t(n));
-    return 64 - pos - 1;
+        std::uint64 pos;
+        _BitScanReverse64(&pos, std::uint64_t(n));
+        return 64 - pos - 1;
 #else
-    return Index(std::log2(n));
+        return Index(std::log2(n));
 #endif
+    }
 }
 
 template<typename UnsignedInteger>
@@ -93,7 +98,7 @@ template<typename UnsignedInteger>
 }
 
 
-[[nodiscard]] ADS_CPP20_CONSTEXPR Index countTrailingZeros(Elem n) noexcept {
+[[nodiscard]] ADS_CPP20_CONSTEXPR Index countTrailingZeros(U64 n) noexcept {
     assert(n > 0);                                  // undefined otherwise
 #ifdef ADS_HAS_CPP20
     return static_cast<Index>(std::countr_zero(n)); // TODO: Check if intrinsics are faster since they work in less cases
@@ -107,7 +112,7 @@ template<typename UnsignedInteger>
 #endif
 }
 
-[[nodiscard]] ADS_CPP20_CONSTEXPR Elem elemSelectImpl(Elem n, Index bitRank) noexcept {
+[[nodiscard]] ADS_CPP20_CONSTEXPR U64 u64SelectImpl(U64 n, Index bitRank) noexcept {
     // #if defined ADS_HAS_GCC_BMI2 || (defined ADS_HAS_MSVC_INTRINSICS && defined ADS_USE_BMI2_INTRINSICS)
     //     // see https://stackoverflow.com/questions/7669057/find-nth-set-bit-in-an-int/27453505#27453505
     //     // TODO: Measure if faster than fallback (in general, but especially) on AMD processors before Zen 3.
@@ -127,8 +132,8 @@ template<typename UnsignedInteger>
 }
 
 
-// Depending on macros, not every version of elemSelect is constexpr and there is no std::is_constant_evaluated in C++17
-[[nodiscard]] ADS_CONSTEVAL Index constevalElemSelect(Elem value, Index bitRank) noexcept {
+// Depending on macros, not every version of u64Select is constexpr and there is no std::is_constant_evaluated in C++17
+[[nodiscard]] ADS_CONSTEVAL Index constevalU64Select(U64 value, Index bitRank) noexcept {
     Index numSet = popcountFallback(value);
     if (bitRank >= numSet) {
         return -1;
@@ -151,7 +156,7 @@ template<Index BitSize = 8>
     BitSelectTable<BitSize> table{}; // {} needed for constant evaluation
     for (Index bitString = 0; bitString < Index(table.size()); ++bitString) {
         for (Index bitRank = 0; bitRank < BitSize; ++bitRank) {
-            table[bitString][bitRank] = static_cast<unsigned char>(constevalElemSelect(bitString, bitRank));
+            table[bitString][bitRank] = static_cast<unsigned char>(constevalU64Select(bitString, bitRank));
         }
     }
     return table;
@@ -163,19 +168,19 @@ constexpr static inline BitSelectTable<> byteSelectTable = precomputeBitSelectTa
     return byteSelectTable[byte][bitRank];
 }
 
-[[nodiscard]] ADS_CPP20_CONSTEXPR Index elemSelectWithTable(Elem value, Index bitRank) noexcept {
+[[nodiscard]] ADS_CPP20_CONSTEXPR Index u64SelectWithTable(U64 value, Index bitRank) noexcept {
     // code based on https://github.com/s-yata/marisa-trie/blob/master/lib/marisa/grimoire/vector/bit-vector.cc#L180
     // this effectively performs a parallel popcount (compare https://graphics.stanford.edu/~seander/bithacks.html#CountBitsSetParallel
     // or the popcountFallback() implementation) for each individual byte in parallel,
     // then selects the correct byte and uses the lookup table to select within the chosen byte.
-    Elem counts = value - ((value >> 1) & 0x5555'5555'5555'5555ull);
+    U64 counts = value - ((value >> 1) & 0x5555'5555'5555'5555ull);
     counts = (counts & 0x3333'3333'3333'3333ull) + ((counts >> 2) & 0x3333'3333'3333'3333ull);
     counts = (counts + (counts >> 4)) & 0x0f0f'0f0f'0f0f'0f0full;
     counts *= 0x0101'0101'0101'0101ull; // parallel prefix sum
     // Now, find the first byte with higher popcount prefix sum: The maximum (rank + 1) is 64, so add 128 to each byte
     // and then subtract the bytewise prefix count. The rightmost byte where the 7th bit remained set is the first byte
     // where bitRank + 1 is greater than the number of set bits up to and including this byte.
-    Elem x = (counts | 0x8080'8080'8080'8080ull) - ((bitRank + 1) * 0x0101'0101'0101'0101ull);
+    U64 x = (counts | 0x8080'8080'8080'8080ull) - ((bitRank + 1) * 0x0101'0101'0101'0101ull);
     Index numBitsBeforeByte = countTrailingZeros((x & 0x8080'8080'8080'8080ull) >> 7);
     ADS_ASSUME(numBitsBeforeByte >= 0);
     ADS_ASSUME(numBitsBeforeByte <= 64 - 8);
@@ -186,9 +191,9 @@ constexpr static inline BitSelectTable<> byteSelectTable = precomputeBitSelectTa
 }
 
 
-[[nodiscard]] ADS_CPP20_CONSTEXPR Index elemSelect(Elem value, Index bitRank) noexcept {
-    return elemSelectWithTable(value, bitRank);
-    //    return countTrailingZeros(elemSelectImpl(value, bitRank));
+[[nodiscard]] ADS_CPP20_CONSTEXPR Index u64Select(U64 value, Index bitRank) noexcept {
+    return u64SelectWithTable(value, bitRank);
+    //    return countTrailingZeros(u64SelectImpl(value, bitRank));
 }
 
 

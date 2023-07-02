@@ -2,7 +2,7 @@
 #ifndef BITVECTOR_SUCCINCT_RMQ_HPP
 #define BITVECTOR_SUCCINCT_RMQ_HPP
 
-#include "bitvector.hpp"
+#include "bitvector/efficient_rank_bitvec.hpp" // TODO: Use better implementation
 #include "common.hpp"
 #include <algorithm>
 #include <stack>
@@ -14,8 +14,8 @@ namespace ads {
 constexpr static bool openParen = true;
 constexpr static bool closeParen = false;
 
-template<typename T = Elem, Index BlockSize = 512> // TODO: Make sure the bitvector allocates cacheline-aligned
-struct RangeMinMaxTree {
+template<typename T = Elem, Index BlockSize = 512, typename Bitvec = EfficientSelectBitvec<>> // TODO: Make sure the bitvector allocates cacheline-aligned
+struct [[nodiscard]] RangeMinMaxTree {
     static_assert(BlockSize <= std::numeric_limits<T>::max() / 2);
     static_assert(BlockSize % 64 == 0);
 
@@ -26,7 +26,7 @@ struct RangeMinMaxTree {
     Index numLeaves = 0;
     Index size = 0;
     View<T> rmmArr = View<T>();
-    Bitvector<> bv;
+    Bitvec bv;
 
     constexpr RangeMinMaxTree() = default;
 
@@ -61,7 +61,7 @@ struct RangeMinMaxTree {
     // faster (for the same block size, this additionally uses 16 bits per leaf, which is roughly 8 bits per node but
     // may cause cache misses)
 
-    explicit ADS_CPP20_CONSTEXPR RangeMinMaxTree(Bitvector<>&& bitvector, T* rmmArrPtr) noexcept
+    explicit ADS_CPP20_CONSTEXPR RangeMinMaxTree(Bitvec&& bitvector, T* rmmArrPtr) noexcept
         : numLeaves(numLeavesForBits(bitvector.sizeInBits())), size(numNodesInArray(numLeaves)),
           rmmArr(rmmArrPtr, size), bv(std::move(bitvector)) {
         numLeaves = numLeavesForBits(bv.sizeInBits());
@@ -180,8 +180,8 @@ struct RangeMinMaxTree {
         }
         Index lower = leafIdxInArr(lowerBlockIdx);
         Index upper = leafIdxInArr(upperBlockIdx - 1);
-        assert(intLog2(Elem(lower)) == intLog2(Elem(upper)));
-        Index h = intLog2(Elem(lower) ^ Elem(upper)) + 1;
+        assert(intLog2(lower) == intLog2(upper));
+        Index h = intLog2(lower ^ upper) + 1;
         Index lca = lower >> h;
         Index v = lower;
         // TODO: This can probably be done with some bit fiddling instead of a loop (or look at rmmArr and don't set leftMinPos unless necessary), also for rightMinPos
@@ -249,11 +249,12 @@ struct RangeMinMaxTree {
         return rmqImpl(lower, upper).pos;
     }
 
-    [[nodiscard]] ADS_CPP20_CONSTEXPR const Bitvector<>& getBitvector() const noexcept { return bv; }
+    [[nodiscard]] ADS_CPP20_CONSTEXPR const Bitvec& getBitvector() const noexcept { return bv; }
 };
 
 
-class SuccinctRMQ {
+template<typename Bitvec = EfficientSelectBitvec<>>
+class [[nodiscard]] SuccinctRMQ {
 
     using RmmTree = RangeMinMaxTree<>;
 
@@ -264,12 +265,12 @@ class SuccinctRMQ {
     template<typename Container>
     [[nodiscard]] static ADS_CPP20_CONSTEXPR Index numAllocatedElems(const Container& container) noexcept {
         Index numBits = container.size() * 2 + 2;
-        return Bitvector<>::allocatedSizeInElemsForBits(numBits) + RmmTree::numNodesInArray(RmmTree::numLeavesForBits(numBits));
+        return Bitvec::allocatedSizeInLimbsForBits(numBits) + RmmTree::numNodesInArray(RmmTree::numLeavesForBits(numBits));
     }
 
     template<typename Container, typename Comp>
-    ADS_CPP20_CONSTEXPR static Bitvector<> createDfuds(const Container& container, Comp comp, Elem* mem) noexcept {
-        Bitvector<> dfuds(container.size() * 2 + 2, mem);
+    ADS_CPP20_CONSTEXPR static Bitvec createDfuds(const Container& container, Comp comp, Elem* mem) noexcept {
+        Bitvec dfuds = Bitvec::uninitializedForSize(container.size() * 2 + 2, mem);
         Index bvIdx = dfuds.sizeInBits();
         std::vector<Index> stack;
         for (Index i = container.size() - 1; i + 1 > 0; --i) {
@@ -289,7 +290,7 @@ class SuccinctRMQ {
         }
         assert(bvIdx == 1);
         dfuds.setBit(0, openParen);
-        for (Index i = 0; i < dfuds.numSuperBlocks(); ++i) {
+        for (Index i = 0; i < dfuds.numSuperblocks(); ++i) {
             dfuds.buildRankMetadata(i);
         }
         return dfuds;
@@ -297,8 +298,8 @@ class SuccinctRMQ {
 
     template<typename Container, typename Comp>
     ADS_CPP20_CONSTEXPR RmmTree createRmmTree(const Container& container, Comp comp) const noexcept {
-        Bitvector<> bv = createDfuds(container, comp, allocation.memory());
-        Elem* ptr = allocation.memory() + bv.allocatedSizeInElems();
+        Bitvec bv = createDfuds(container, comp, allocation.memory());
+        Elem* ptr = allocation.memory() + bv.allocatedSizeInLimbs();
         return RmmTree(std::move(bv), ptr);
     }
 
@@ -332,9 +333,9 @@ public:
         if (lower + 1 == upper) {
             return lower;
         }
-        const Bitvector<>& dfuds = rmmTree.getBitvector();
-        Index x = dfuds.select<closeParen>(lower);
-        Index y = dfuds.select<closeParen>(upper - 1) + 1;
+        const Bitvec& dfuds = rmmTree.getBitvector();
+        Index x = dfuds.template select<closeParen>(lower);
+        Index y = dfuds.template select<closeParen>(upper - 1) + 1;
         assert(dfuds.getBit(x) == closeParen && dfuds.getBit(y - 1) == closeParen);
         Index w = rmmTree.bitvecRmq(x, y);
         assert(w >= x && w < y);
@@ -343,7 +344,7 @@ public:
         // It only handles the case of lca == lower, but in this case, w is equal to x because no descendant of lower can have a smaller excess
         // and lower is the leftmost value with such an excess (see https://doi.org/10.1016/j.jcss.2011.09.002).
         // Therefore, rank<closeParen>(w) already computes the correct answer.
-        return dfuds.rank<closeParen>(w);
+        return dfuds.template rank<closeParen>(w);
     }
 
     [[nodiscard]] ADS_CPP20_CONSTEXPR Index operator()(Index lower, Index upper) const noexcept {

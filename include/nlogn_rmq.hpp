@@ -11,7 +11,7 @@ ADS_CPP20_CONSTEXPR Index numLevels(Index length) noexcept {
     if (length <= 1) {
         return length;
     }
-    return intLog2(Elem(length)) + 1;
+    return intLog2(length) + 1;
 }
 
 ADS_CPP20_CONSTEXPR Index minimaSize(Index length) noexcept {
@@ -25,7 +25,7 @@ ADS_CPP20_CONSTEXPR Index minimaSize(Index length) noexcept {
 /// \tparam Derived The actual RMQ type.
 /// \tparam Comp comparator, defaults to std::less<>
 template<typename Derived, typename Comp>
-class NLogNRmqOps {
+class [[nodiscard]] NLogNRmqOps {
 
     [[no_unique_address]] Comp comp = Comp();
 
@@ -78,7 +78,7 @@ public:
             throw std::invalid_argument("Invalid rmq range");
         }
         //        if (lower == upper) { return lower; }
-        Index log2Length = intLog2(Elem(upper - lower));
+        Index log2Length = intLog2(upper - lower);
         Index leftMin = getMinimumStartingAt(lower, log2Length);
         Index rightMin = getMinimumEndingAt(upper, log2Length);
         return comp(derived().getArrayElement(leftMin), derived().getArrayElement(rightMin)) ? leftMin : rightMin;
@@ -93,7 +93,7 @@ public:
 
 
 template<typename T = Elem, typename IndexType = Index, typename Comp = std::less<>>
-struct NLogNRmq : NLogNRmqOps<NLogNRmq<T, IndexType, Comp>, Comp> {
+struct [[nodiscard]] NLogNRmq : NLogNRmqOps<NLogNRmq<T, IndexType, Comp>, Comp> {
     using Base = NLogNRmqOps<NLogNRmq<T, IndexType, Comp>, Comp>;
     friend Base;
     Allocation<T> allocation = Allocation<T>(); // must be the first data member so that its destructor is called last

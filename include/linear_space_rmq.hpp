@@ -9,7 +9,7 @@ namespace ads {
 
 // TODO: For small sizes, use naive rmq instead of nlogn bitvecRmq?
 template<typename T, Index BlockSize, typename InBlockIdx, typename BlockNumIdx, typename Comp>
-struct NLogNBlockRmq : NLogNRmqOps<NLogNBlockRmq<T, BlockSize, InBlockIdx, BlockNumIdx, Comp>, Comp> {
+struct [[nodiscard]] NLogNBlockRmq : NLogNRmqOps<NLogNBlockRmq<T, BlockSize, InBlockIdx, BlockNumIdx, Comp>, Comp> {
     Index length = 0;
     const T* values = nullptr;
     InBlockIdx* minimumInBlock = nullptr;
@@ -44,7 +44,7 @@ struct NLogNBlockRmq : NLogNRmqOps<NLogNBlockRmq<T, BlockSize, InBlockIdx, Block
 //          Index SubBlockSize = 1 << 8, typename Comp = std::less<>>
 template<typename T = Elem, Index BlockSize = 1 << 8, typename BlockNumIdx = std::uint64_t, Index SubBlockSize = 1 << 3,
         typename Comp = std::less<>, bool SubBlockStoresSubBlockIdx = false>
-class LinearSpaceRMQ {
+class [[nodiscard]] LinearSpaceRMQ {
     static_assert(BlockSize % SubBlockSize == 0, "subblock size must divide block size");
     using InBlockIdx = IntType<bytesNeededForIndexing(BlockSize)>;
     using SubBlockIndex = IntType<bytesNeededForIndexing(SubBlockStoresSubBlockIdx ? BlockSize / SubBlockSize : BlockSize)>;

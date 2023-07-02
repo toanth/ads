@@ -10,10 +10,13 @@ set(CMAKE_CXX_STANDARD 20)
 if (MSVC)
     add_compile_options(/W4 /WX)
 else ()
-    add_compile_options(-Wall -Wextra -Wpedantic -Wno-sign-compare) # TODO: Enable Wsign-compare
+    add_compile_options(-Wall -Wextra -Wpedantic -Wno-sign-compare -flto=auto -march=native) # TODO: Enable Wsign-compare
+    add_link_options(-flto=auto)
     if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
         add_compile_options(-stdlib=libc++) # at least for C++20 features, clang doesn't fully support libstdc++
         add_link_options(-stdlib=libc++)
+    else ()
+        add_compile_options(-fuse-ld=mold) #faster linker, useful for tests because -flto makes them compile very slowly
     endif ()
 endif ()
 

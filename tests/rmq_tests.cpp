@@ -15,10 +15,10 @@ class AllRmqsTest : public ::testing::Test {};
 template<ADS_RMQ_CONCEPT RmqType>
 class UsefulRmqsTest : public ::testing::Test {};
 
-using AllRmqTypes = ::testing::Types<NaiveRMQ<>, NLogNRmq<>, LinearSpaceRMQ<>, SuccinctRMQ>;
+using AllRmqTypes = ::testing::Types<NaiveRMQ<>, NLogNRmq<>, LinearSpaceRMQ<>, SuccinctRMQ<>>;
 TYPED_TEST_SUITE(AllRmqsTest, AllRmqTypes);
 
-using UsefulRmqTypes = ::testing::Types<NLogNRmq<>, LinearSpaceRMQ<>, SuccinctRMQ>;
+using UsefulRmqTypes = ::testing::Types<NLogNRmq<>, LinearSpaceRMQ<>, SuccinctRMQ<>>;
 TYPED_TEST_SUITE(UsefulRmqsTest, UsefulRmqTypes);
 
 
