@@ -7,10 +7,11 @@ namespace ads {
 
 // This layout wastes a lot of memory; it needs roughly double the total memory of the actual bit vector
 // Still, for small bitvectors, this may be a good option
-class [[nodiscard]] CacheEfficientRankBitvec : public BitvecBase<CacheEfficientRankBitvec, std::uint8_t> {
+class [[nodiscard]] CacheEfficientRankBitvec : public NormalBitvecBase<CacheEfficientRankBitvec, std::uint8_t> {
 
-    using Base = BitvecBase<CacheEfficientRankBitvec, std::uint8_t>;
+    using Base = NormalBitvecBase<CacheEfficientRankBitvec, std::uint8_t>;
     friend Base;
+    friend Base::Base;
 
     View<Limb> vec = View<Limb>();
     Index numBits = 0;
@@ -86,6 +87,10 @@ public:
         BitwiseAccess<8>::setBits(vec.ptr, i, blockIdx, value);
     }
 };
+
+#ifdef ADS_HAS_CPP20
+static_assert(IsNormalBitvec<CacheEfficientRankBitvec>);
+#endif
 
 } // namespace ads
 
