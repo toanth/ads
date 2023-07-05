@@ -279,7 +279,7 @@ public:
 
     // This implementation is very slow and should be overwritten in a derived class
     [[nodiscard]] ADS_CPP20_CONSTEXPR Index rankOneUnchecked(Index pos) const {
-        return derived().template inefficientRank<true>(pos);
+        return derived().template rank<true>(pos);
     }
 
     /// Return the position `i` such that `getBit(i)` returns the `rank`th one, counting from 0.
@@ -315,7 +315,6 @@ public:
         } else {
             return derived().selectZero(bitRank);
         }
-        //        return derived().template inefficientSelect<IsOne>(bitRank);
     }
 
     // ** iterators and views over rank and select. Note that no effort is made to speed up consecutive rank calls etc,
@@ -357,13 +356,35 @@ public:
         return std::lower_bound(selects.begin(), selects.end(), i).index();
     }
 
-    template<bool IsOne> // TODO: Test
+    template<bool IsOne>
     [[nodiscard]] ADS_CPP20_CONSTEXPR Index inefficientSelect(Index bitRank) const {
         auto ranks = derived().template rankView<IsOne>();
         return std::lower_bound(ranks.begin(), ranks.end(), bitRank + 1).index() - 1;
     }
 
+private:
+    template<bool IsOne>
+    [[nodiscard]] ADS_CPP20_CONSTEXPR Index rankFallback([[maybe_unused]] Index bitRank) const {
+#ifdef ADS_NO_FALLBACKS // ensure at compile time that slow operations aren't called
+        // static_assert condition must depend on IsOne, else it will fail even if template isn't being instantiated
+        static_assert(IsOne != IsOne, "rank fallback isn't enabled");
+        return -1;
+#else
+        return this->template inefficientRank<IsOne>(bitRank);
+#endif
+    }
 
+    template<bool IsOne>
+    [[nodiscard]] ADS_CPP20_CONSTEXPR Index selectFallback([[maybe_unused]] Index bitRank) const {
+#ifdef ADS_NO_FALLBACKS // ensure at compile time that slow operations aren't called
+        static_assert(IsOne != IsOne, "select fallback isn't enabled");
+        return -1;
+#else
+        return this->template inefficientSelect<IsOne>(bitRank);
+#endif
+    }
+
+public:
     // ** Printing the bitvector. Again, not the most efficient implementation possible **
 
     friend std::ostream& operator<<(std::ostream& os, const BitvecBase& bv) {

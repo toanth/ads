@@ -6,7 +6,7 @@ using namespace ads;
 
 template<typename = void>
 // using Bitvector = EfficientRankBitvec<>; // TODO: Make benchmarks generic?
-using Bitvector = EfficientSelectBitvec<>;
+using Bitvector = EfficientBitvec<>;
 
 
 constexpr Index maxNumBits = maxNumValues * 64 * 2;

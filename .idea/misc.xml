@@ -1,4 +1,41 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="CMakeWorkspace" PROJECT_DIR="$PROJECT_DIR$" />
+  <component name="CidrRootsConfiguration">
+    <libraryRoots>
+      <file path="$PROJECT_DIR$/dependencies/benchmark-src" />
+      <file path="$PROJECT_DIR$/dependencies/googletest-src" />
+    </libraryRoots>
+    <excludeRoots>
+      <file path="$PROJECT_DIR$/ads.rep" />
+      <file path="$PROJECT_DIR$/benchmarks/plots" />
+      <file path="$PROJECT_DIR$/build" />
+      <file path="$PROJECT_DIR$/dependencies/benchmark-build" />
+      <file path="$PROJECT_DIR$/dependencies/benchmark-src/.github" />
+      <file path="$PROJECT_DIR$/dependencies/benchmark-src/bazel" />
+      <file path="$PROJECT_DIR$/dependencies/benchmark-src/bindings" />
+      <file path="$PROJECT_DIR$/dependencies/benchmark-src/cmake" />
+      <file path="$PROJECT_DIR$/dependencies/benchmark-src/docs" />
+      <file path="$PROJECT_DIR$/dependencies/benchmark-src/src" />
+      <file path="$PROJECT_DIR$/dependencies/benchmark-src/test" />
+      <file path="$PROJECT_DIR$/dependencies/benchmark-src/tools" />
+      <file path="$PROJECT_DIR$/dependencies/benchmark-subbuild" />
+      <file path="$PROJECT_DIR$/dependencies/googletest-build" />
+      <file path="$PROJECT_DIR$/dependencies/googletest-src/.github" />
+      <file path="$PROJECT_DIR$/dependencies/googletest-src/ci" />
+      <file path="$PROJECT_DIR$/dependencies/googletest-src/docs" />
+      <file path="$PROJECT_DIR$/dependencies/googletest-src/googlemock/cmake" />
+      <file path="$PROJECT_DIR$/dependencies/googletest-src/googlemock/docs" />
+      <file path="$PROJECT_DIR$/dependencies/googletest-src/googlemock/src" />
+      <file path="$PROJECT_DIR$/dependencies/googletest-src/googlemock/test" />
+      <file path="$PROJECT_DIR$/dependencies/googletest-src/googletest/cmake" />
+      <file path="$PROJECT_DIR$/dependencies/googletest-src/googletest/docs" />
+      <file path="$PROJECT_DIR$/dependencies/googletest-src/googletest/samples" />
+      <file path="$PROJECT_DIR$/dependencies/googletest-src/googletest/src" />
+      <file path="$PROJECT_DIR$/dependencies/googletest-src/googletest/test" />
+      <file path="$PROJECT_DIR$/dependencies/googletest-subbuild" />
+      <file path="$PROJECT_DIR$/sampleInputs" />
+      <file path="$PROJECT_DIR$/venv" />
+    </excludeRoots>
+  </component>
 </project>

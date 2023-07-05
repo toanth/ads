@@ -14,8 +14,8 @@ using LargeBlockCounts = EfficientRankBitvec<16, (1 << 12)>;
 using Trivial = TrivialBitvec<>;
 using StrangeTrivial = TrivialBitvec<U64, ads::Operations::SELECT_ONLY>;
 using VeryRecursive
-        = RecursiveBitvec<RecursiveBitvec<RecursiveBitvec<RecursiveBitvec<CacheEfficientRankBitvec>>, SupportedSelectQueries::ONES, 64, U32>>;
-using Strange = RecursiveBitvec<TrivialBitvec<U32, Operations::RANK_ONLY>, SupportedSelectQueries::ONES, 64 * 7>;
+        = RecursiveBitvec<RecursiveBitvec<RecursiveBitvec<RecursiveBitvec<CacheEfficientRankBitvec>>, SupportedSelects::ONE_ONLY, 64, U32>>;
+using Strange = RecursiveBitvec<TrivialBitvec<U32, Operations::RANK_ONLY>, SupportedSelects::ONE_ONLY, 64 * 7>;
 
 static_assert(IsNormalBitvec<VeryRecursive>);
 
@@ -31,12 +31,15 @@ class EfficientBitvecsTest : public ::testing::Test {};
 template<typename = void>
 using ReferenceBitvector = CacheEfficientRankBitvec;
 
+/// \brief A collectio of bitvectors that try to achive high coverage
 using AllBitvecs = ::testing::Types<CacheEfficientRankBitvec, EfficientRankBitvec<>, OneBlockPerSuperBlock, Trivial,
-        StrangeTrivial, EfficientBitvec<>, RecursiveBitvec<EfficientRankBitvec<>>, VeryRecursive, Strange>;
+        StrangeTrivial, EfficientBitvec<>, RecursiveBitvec<LargeBlockCounts>, VeryRecursive, Strange>;
 
+/// \brief All bitvectors except TrivialBitvec, for which some operations aren't defined
 using NormalBitvecs = ::testing::Types<CacheEfficientRankBitvec, EfficientRankBitvec<>, SmallSuperBlocks,
-        StrangeSuperBlocks, OneBlockPerSuperBlock, LargeBlockCounts, EfficientBitvec<>>;
+        StrangeSuperBlocks, OneBlockPerSuperBlock, LargeBlockCounts, EfficientBitvec<>, Strange>;
 
+/// \brief Some of the faster bitvectors, which can be used for larger tests
 using EfficientBitvecs
         = ::testing::Types<CacheEfficientRankBitvec, EfficientRankBitvec<>, TrivialBitvec<U64>, EfficientBitvec<>, VeryRecursive, Strange>;
 TYPED_TEST_SUITE(AllBitvecsTest, AllBitvecs);
@@ -561,9 +564,10 @@ TYPED_TEST(AllBitvecsTest, InefficientOps) {
     TypeParam bv("1111000111");
     ASSERT_EQ(bv.template inefficientRank<true>(2), 2);
     ASSERT_EQ(bv.template inefficientRank<true>(6), 4);
+    ASSERT_EQ(bv.template inefficientRank<false>(4), 0);
     ASSERT_EQ(bv.template inefficientSelect<true>(1), 1);
     ASSERT_EQ(bv.template inefficientSelect<false>(1), 5);
-    bv = TypeParam(76542, 0x5555'5555'5555'5555ull);
+    bv = TypeParam(65540, 0x5555'5555'5555'5555ull);
     auto select0 = bv.template selectView<false>();
     auto select1 = bv.template selectView<true>();
     auto rank0 = bv.template rankView<false>();
@@ -594,6 +598,26 @@ TYPED_TEST(AllBitvecsTest, InefficientOps) {
     }
 }
 
+template<ADS_BITVEC_CONCEPT Bitvec>
+static ADS_CONSTEVAL Index constexprBitvecTests() noexcept {
+    Bitvec bv("10010");
+    Index res = bv.rankZero(3) - 2;
+    res += bv.selectOne(1) - 3;
+    bv = Bitvec::uninitializedForSize(123);
+    for (Index i = 0; i < bv.size(); ++i) {
+        bv.setBit(i, i % 3 == 0);
+    }
+    bv.buildMetadata();
+    for (Index i = 0; i < bv.size(); ++i) {
+        res += bv.rankOne(i) - (i + 2) / 3;
+    }
+    for (Index i = 0; i < bv.numOnes(); ++i) {
+        res += bv.selectOne(i) - i * 3;
+        res += bv.selectZero(2 * i) - (3 * i + 1);
+        res += bv.selectZero(2 * i + 1) - (3 * i + 2);
+    }
+    return res;
+}
 
 #ifdef ADS_HAS_CPP20
 TYPED_TEST(AllBitvecsTest, Constexpr) {
@@ -604,5 +628,6 @@ TYPED_TEST(AllBitvecsTest, Constexpr) {
     static_assert(TypeParam("10101").rankZero(3) == 1);
     static_assert(TypeParam("10101").selectOne(1) == 2);
     static_assert(TypeParam(3 * 64 - 7, 0xf0f0'f0f0'f0f0'f0f0).selectOne(42) == 86);
+    static_assert(constexprBitvecTests<TypeParam>() == 0);
 }
 #endif

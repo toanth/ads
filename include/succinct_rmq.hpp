@@ -12,6 +12,7 @@ namespace ads {
 /// This file implements the succinct rmq data structure from https://algo2.iti.kit.edu/download/rmq.pdf,
 /// using the range min-max tree from https://arxiv.org/pdf/1601.06939.pdf for solving the excess rmq problem on bitvectors.
 
+// TODO: Flip openParen and closeParen, use SupportedSelects::ONE_ONLY for the bitvector
 constexpr static bool openParen = true;
 constexpr static bool closeParen = false;
 

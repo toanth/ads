@@ -155,7 +155,7 @@ public:
 
     [[nodiscard]] ADS_CPP20_CONSTEXPR Index rankOneUnchecked(Index i) const noexcept {
         if constexpr (Ops == Operations::SELECT_ONLY) {
-            return this->template inefficientRank<true>(i); // there is no fundamentally better solution
+            return this->template rankFallback<true>(i); // there is no fundamentally better solution
         } else {
             return ranks[i];
         }
@@ -171,7 +171,7 @@ public:
 
     [[nodiscard]] ADS_CPP20_CONSTEXPR Index selectZeroUnchecked(Index i) const noexcept {
         if constexpr (Ops == Operations::RANK_ONLY) {
-            return this->template inefficientSelect<false>(i); // there is no fundamentally better solution
+            return this->template selectFallback<false>(i); // there is no fundamentally better solution
         } else {
             return selectAnswers[size() - 1 - i];
         }

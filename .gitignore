@@ -4,3 +4,10 @@ tests/lib/
 dependencies/
 */plots/
 *.json
+*.gbf
+*.prp
+*.dat
+*.bak
+*.gpr
+ads.rep/
+.idea/

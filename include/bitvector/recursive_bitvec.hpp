@@ -6,63 +6,66 @@
 
 namespace ads {
 
-enum class SupportedSelectQueries { ZEROS, ONES, BOTH };
+// ZERO_ONLY isn't implemented as it can be emulated by storing every bit flipped
+enum class SupportedSelects { BOTH, ONE_ONLY };
 
 /// \brief Recursive Bitvector. Most of the later template arguments should not really be changed.
 /// \tparam NestedBitvec The nested bitvector, of which two with approx. size() / BlockSize bits are stored.
-/// \tparam Select Which select operations to support. Not supporting both saves one of two bitvectors storing approx. size()/BlockSize bits.
-// TODO: Implement Space savings when Select is not BOTH?
-/// \tparam BlockSize The number of bits in a block. This determines the BlockCountT type; smaller values use more space but can reduce query times.
+/// \tparam SelectOps Which select operations to support. Not supporting both saves one of two bitvectors, which
+/// stores approx. size()/BlockSize logical bits (its allocated size may be larger, depending on the type NestedBitvec).
+/// \tparam BlockSize The number of bits in a block. This is used to determines the BlockCountT type;
+/// smaller values use more space but can reduce query times.
 /// \tparam BlockCountT The type used to represent block counts, must be able to hold values up to BlockSize - 1.
-template<ADS_BITVEC_CONCEPT NestedBitvec, SupportedSelectQueries Select = SupportedSelectQueries::BOTH,
-        Index BlockSize = 256, typename BlockCountT = IntType<bytesNeededForIndexing(BlockSize)>>
-class RecursiveBitvec : public NormalBitvecBase<RecursiveBitvec<NestedBitvec, Select, BlockSize, BlockCountT>> {
+/// Shouldn't really need to be overwritten.
+template<ADS_BITVEC_CONCEPT NestedBitvec, SupportedSelects SelectOps = SupportedSelects::BOTH, Index BlockSize = 256,
+        typename BlockCountT = IntType<bytesNeededForIndexing(BlockSize)>>
+class RecursiveBitvec : public NormalBitvecBase<RecursiveBitvec<NestedBitvec, SelectOps, BlockSize, BlockCountT>> {
     static_assert(sizeof(BlockCountT) >= bytesNeededForIndexing(BlockSize));
-    static_assert(BlockSize >= 64); // TODO: Support smaller?
+    static_assert(BlockSize >= 64);
 
-    using Base = NormalBitvecBase<RecursiveBitvec<NestedBitvec, Select, BlockSize, BlockCountT>>;
+    using Base = NormalBitvecBase<RecursiveBitvec<NestedBitvec, SelectOps, BlockSize, BlockCountT>>;
     friend Base;
     friend Base::Base;
     using Nested = NestedBitvec;
 
-    /// \brief The nestedZeros Bitvector stores a bit for each block, which is one iff the block contains a zero at
-    /// index i with rankZero(i) % BlockSize == 0. The nestedOnes Bitvector does the same for ones.
+    /// \brief The nestedZeros Bitvector stores a bit for each block b, which is one iff the block contains a zero at
+    /// index i in [b * BlockSize, (b+1) * BlockSize) with rankZero(i) % BlockSize == 0 and rankZero(i) > 0.
+    /// The nestedOnes Bitvector does the same for ones.
     Nested nestedZeros = Nested(); // store zeros bitvector before ones bitvector to keep the ones bitvector closer
     Nested nestedOnes = Nested();  // to the blockRanks array for better data locality on rank / selectOne
-    /// \brief The blockRanks array stores the number of 1 at the end of the respective block, modulo BlockSize
+    /// \brief The blockRanks array stores the number of 1 at the end of the respective block, modulo BlockSize.
     View<BlockCountT> blockRanks = View<BlockCountT>();
     /// \brief The actual bit sequence.
     View<Limb> vec = View<Limb>();
     /// \brief The logical number of bits in the bit sequence. The bitvector may internally allocate, set and access
     /// a greater number of bits that this value.
-    Index numBits;
+    Index numBits = 0;
 
     constexpr static Index limbsInBlock = BlockSize / 64;
 
     constexpr static Index nestedSizeForBits(Index numBits) noexcept {
-        // store a "1" after the actual nested bitvector to avoid a special case in select
-        // also, the extra entry in the blockRanks array is used for numOnes(), in addition to special case avoidance
+        // append a "1" to the nested bitvector to avoid a special case in select
+        // also, the extra entry in the blockRanks array is additionally used for numOnes()
         return roundUpDiv(numBits, BlockSize) + 1;
     }
 
-    ADS_CPP20_CONSTEXPR RecursiveBitvec(UninitializedTag, Index numBits, Limb* mem) noexcept
-        : Base(numBits, mem),
-          nestedZeros(Nested::uninitializedForSize(nestedSizeForBits(numBits), this->allocation.memory())),
-          nestedOnes(Nested::uninitializedForSize(
-                  nestedSizeForBits(numBits), this->allocation.memory() + nestedZeros.allocatedSizeInLimbs())),
-          numBits(numBits) {
-        numBits = roundUpDiv(numBits, BlockSize) * BlockSize; // don't deal with incomplete blocks
+    ADS_CPP20_CONSTEXPR RecursiveBitvec(UninitializedTag, Index numBits, Limb* mem)
+        : Base(numBits, mem), numBits(numBits) {
         Index nestedSize = nestedSizeForBits(numBits); // for the blockRanks array, the last entry can be used for numOnes()
-        ADS_ASSUME(nestedSize == nestedOnes.size());
-        mem = this->allocation.memory() + 2 * nestedZeros.allocatedSizeInLimbs();
-        blockRanks = View<BlockCountT>(mem, nestedSize);
-        vec = View<Limb>(this->allocation.memory() + this->allocation.size() - numBits / 64, numBits / 64);
-        ADS_IF_CONSTEVAL {}
-        else {
-            ADS_ASSUME(std::greater_equal<void*>{}(vec.ptr, blockRanks.ptr + nestedSize));
+        Index offset = 0;
+        if constexpr (SelectOps != SupportedSelects::ONE_ONLY) {
+            nestedZeros = Nested::uninitializedForSize(nestedSize, this->allocation.memory());
+            offset += nestedZeros.allocatedSizeInLimbs();
+            ADS_ASSUME(nestedSize == nestedZeros.size());
         }
+        nestedOnes = Nested::uninitializedForSize(nestedSize, this->allocation.memory() + offset);
+        offset += nestedOnes.allocatedSizeInLimbs();
+        ADS_ASSUME(nestedSize == nestedOnes.size());
+        blockRanks = View<BlockCountT>(this->allocation.memory() + offset, nestedSize);
+        Index numLimbsInBitSequence = roundUpDiv(numBits, BlockSize) * limbsInBlock; // round up to full blocks
+        vec = View<Limb>(this->allocation.memory() + this->allocation.size() - numLimbsInBitSequence, numLimbsInBitSequence);
+        ADS_ASSUME(offset + blockRanks.sizeInLimbs() + vec.sizeInLimbs() == this->allocation.size());
     }
-
 
 
 public:
@@ -88,7 +91,8 @@ public:
 
     [[nodiscard]] static constexpr Index allocatedSizeInLimbsForBits(Index numBits) noexcept {
         Index numBlocks = nestedSizeForBits(numBits);
-        Index nestedSizesInLimbs = Nested::allocatedSizeInLimbsForBits(numBlocks) * 2;
+        const Index factor = (SelectOps == SupportedSelects::BOTH ? 2 : 1);
+        Index nestedSizesInLimbs = Nested::allocatedSizeInLimbsForBits(numBlocks) * factor;
         Index arrSizeInLimbs = roundUpDiv(numBlocks * sizeof(BlockCountT), sizeof(Limb));
         Index bitSequenceSizeInLimbs = roundUpDiv(numBits, BlockSize) * limbsInBlock; // no incomplete blocks
         return nestedSizesInLimbs + arrSizeInLimbs + bitSequenceSizeInLimbs;
@@ -101,7 +105,7 @@ public:
         return roundUpDiv(numBits, 64); // vec.numT rounds up towards full blocks
     }
 
-    [[nodiscard]] ADS_CPP20_CONSTEXPR Index numBlocks() const noexcept { return nestedZeros.size() - 1; }
+    [[nodiscard]] ADS_CPP20_CONSTEXPR Index numBlocks() const noexcept { return nestedOnes.size() - 1; }
 
 private:
     [[nodiscard]] ADS_CPP20_CONSTEXPR const Limb* getLimbArray() const noexcept { return vec.ptr; }
@@ -109,8 +113,8 @@ private:
 
 public:
     ADS_CPP20_CONSTEXPR void buildMetadata() noexcept {
-        Index rankOne = 0;
-        Index rankZero = 0;
+        [[maybe_unused]] Index rankOne = 0;
+        [[maybe_unused]] Index rankZero = 0;
         Index numBlocks = this->numBlocks();
         assert(numBlocks == roundUpDiv(numLimbs(), limbsInBlock));
         if (numLimbs() > 0) [[likely]] {
@@ -127,16 +131,20 @@ public:
             rankOne += rankInBlock(blockPtr);
             nestedOnes.setBit(blockIdx, rankOne / BlockSize > prevRankOne / BlockSize);
             blockRanks.ptr[blockIdx] = rankOne % BlockSize;
-            Index prevRankZero = rankZero;
-            rankZero = (blockIdx + 1) * BlockSize - rankOne;
-            nestedZeros.setBit(blockIdx, rankZero / BlockSize > prevRankZero / BlockSize);
+            if constexpr (SelectOps != SupportedSelects::ONE_ONLY) {
+                Index prevRankZero = rankZero;
+                rankZero = (blockIdx + 1) * BlockSize - rankOne;
+                nestedZeros.setBit(blockIdx, rankZero / BlockSize > prevRankZero / BlockSize);
+            }
         }
         ADS_ASSUME(rankOne <= size());
         blockRanks.ptr[numBlocks] = rankOne % BlockSize; // makes numOnes() simpler and avoids special cases for select(largeVal)
-        nestedZeros.setBit(numBlocks);                   // more special case avoidance
         nestedOnes.setBit(numBlocks);
-        nestedZeros.buildMetadata();
         nestedOnes.buildMetadata();
+        if constexpr (SelectOps != SupportedSelects::ONE_ONLY) {
+            nestedZeros.setBit(numBlocks); // more special case avoidance
+            nestedZeros.buildMetadata();
+        }
     }
 
 
@@ -194,6 +202,15 @@ public:
     }
 
     [[nodiscard]] ADS_CPP20_CONSTEXPR Index selectZeroUnchecked(Index rankZero) const noexcept {
+        if constexpr (SelectOps == SupportedSelects::ONE_ONLY) {
+            return this->template selectFallback<false>(rankZero);
+        } else {
+            return selectZeroUncheckedImpl(rankZero);
+        }
+    }
+
+private:
+    [[nodiscard]] ADS_CPP20_CONSTEXPR Index selectZeroUncheckedImpl(Index rankZero) const noexcept {
         ADS_ASSUME(rankZero >= 0);
         Index nestedSearchRank = rankZero / BlockSize;
         rankZero %= BlockSize;
@@ -207,8 +224,8 @@ public:
             ADS_ASSUME(nestedIdxEnd > nestedIdx);
         }
         // The blockRank array stores rankOne() after the end of the block, modulo BlockSize.
-        // rankZero((i + 1) * BlockSize) % BlockSize is ((i + 1) * BlockSize - blockRank[i]) % BlockSize, which is just
-        // BlockSize - blockRank[i], except when the result would be BlockSize; it should be 0 instead.
+        // rankZero((i + 1) * BlockSize) % BlockSize is ((i + 1) * BlockSize - blockRank[i]) % BlockSize, which is
+        // just BlockSize - blockRank[i], except when the result would be BlockSize; it should be 0 instead.
         auto compareRank = [](Index rankZero, BlockCountT blockRankOne) {
             Index blockRankZero = (BlockSize - blockRankOne) % BlockSize;
             return rankZero < blockRankZero;
@@ -218,9 +235,9 @@ public:
         Index blockIdx = blockPtr - blockRanks.ptr;
         ADS_ASSUME(blockIdx >= nestedIdx);
         ADS_ASSUME(blockIdx < numBlocks());
-        // blockRanks[blockIdx] contains the number of 1s relative to nestedSearchRan * BlockSize or (nestedSearchRank +
-        // 1) * BlockSize, so we need to find the (blockRans[blockIdx] - rankZero mod BlockSize)th bit counting from
-        // the right, 0 indexed
+        // blockRanks[blockIdx] contains the number of 1s relative to nestedSearchRan * BlockSize or
+        // (nestedSearchRank + 1) * BlockSize, so we need to find the (blockRans[blockIdx] - rankZero mod
+        // BlockSize)th bit counting from the right, 0 indexed
         Index rankInBlockFromRight = (2 * BlockSize - blockRanks[blockIdx] - rankZero - 1) % BlockSize;
         if (blockIdx == numBlocks() - 1) [[unlikely]] {
             // TODO: Store complete blocks, make sure all limbs after numLimbs() are 0
@@ -232,7 +249,6 @@ public:
         return selectInBlockFromRight<false>(blockIdx, rankInBlockFromRight);
     }
 
-private:
     template<bool IsOne>
     [[nodiscard]] ADS_CPP20_CONSTEXPR Index selectInBlockFromRight(Index blockIdx, Index rank) const noexcept {
         ADS_ASSUME(blockIdx >= 0);
@@ -282,13 +298,15 @@ private:
 
 
 /// \brief Bitvector optimized for select queries. While TrivialBitvec may be faster, it also needs much more memory.
-template<SupportedSelectQueries Select = SupportedSelectQueries::BOTH, Index BlockSize = 256, typename BlockCountT = IntType<bytesNeededForIndexing(256)>>
+template<SupportedSelects SelectOps = SupportedSelects::BOTH, Index BlockSize = 256, typename BlockCountT = IntType<bytesNeededForIndexing(256)>>
 using EfficientSelectBitvec
-        = RecursiveBitvec<RecursiveBitvec<TrivialBitvec<U32, Operations::SELECT_ONLY>, SupportedSelectQueries::ONES>, Select, BlockSize, BlockCountT>;
+        = RecursiveBitvec<RecursiveBitvec<TrivialBitvec<U32, Operations::SELECT_ONLY>, SupportedSelects::ONE_ONLY>, SelectOps, BlockSize, BlockCountT>;
+
 
 /// \brief The default bitvector type, which offers good performance across all operations. The same as EfficientSelectBitvec.
-template<SupportedSelectQueries Select = SupportedSelectQueries::BOTH, Index BlockSize = 256, typename BlockCountT = IntType<bytesNeededForIndexing(256)>>
-using EfficientBitvec = EfficientSelectBitvec<Select, BlockSize, BlockCountT>;
+template<SupportedSelects SelectOps = SupportedSelects::BOTH, Index BlockSize = 256, typename BlockCountT = IntType<bytesNeededForIndexing(256)>>
+using EfficientBitvec
+        = RecursiveBitvec<RecursiveBitvec<TrivialBitvec<U32>, SupportedSelects::ONE_ONLY>, SelectOps, BlockSize, BlockCountT>;
 
 static_assert(IsNormalBitvec<EfficientBitvec<>>);
 

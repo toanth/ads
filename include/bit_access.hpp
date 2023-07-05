@@ -230,6 +230,8 @@ struct BitView {
         return *this;
     }
 
+    [[nodiscard]] constexpr Index sizeInLimbs() const noexcept { return roundUpDiv(numT * sizeof(T), sizeof(Limb)); }
+
     [[nodiscard]] constexpr Index numBitsPerValue() const noexcept {
         if constexpr (NumBits == -1) {
             return bitAccess.numBits;
