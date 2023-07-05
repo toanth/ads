@@ -61,35 +61,36 @@ class FamilyInfo:
     group: float
     quick: bool
     comp_name: str
+    has_error_data: bool
 
 
 def get_family(benchmark_results: [], family_index: int, comp_name: str) -> FamilyInfo:
     group = float('nan')
     if is_quick_run(benchmark_results):
         if family_index >= len(benchmark_results):
-            return FamilyInfo(None, None, "<error>", group, True, comp_name)
+            return FamilyInfo(None, None, "<error>", group, True, comp_name, False)
         res = [bm for bm in benchmark_results[family_index] if bm['run_type'] == 'iteration']
         assert len(res) > 0
         if "group" in res[0]:
             group = res[0]["group"]
         return FamilyInfo(res, np.array([[bm['cpu_time'] for bm in res], [0] * len(res)]), get_name(res), group, True,
-                          comp_name)
+                          comp_name, False)
     else:
         if family_index not in benchmark_results:
             return FamilyInfo(None, None, "<error>", group, False, comp_name)
         info = benchmark_results[family_index]
         median_data = [bm for bm in info if bm['aggregate_name'] == 'median']
+        max_variation = max([float(bm['cpu_time']) for bm in info if bm['aggregate_name'] == 'cv'])
+        if max_variation > 0.05:
+            print("Warning: High maximum measurement variation of "
+                  + str(max_variation * 100) + " percent for " + get_name(median_data))
         stddevs = np.array([bm['cpu_time'] for bm in info if bm['aggregate_name'] == 'stddev'])
         means = np.array([bm['cpu_time'] for bm in info if bm['aggregate_name'] == 'mean'])
         assert len(median_data) == len(stddevs) == len(means) > 0
         error_bars = np.array([means, stddevs])
-        max_variation = max([float(bm['cpu_time']) for bm in info if bm['aggregate_name'] == 'cv'])
         if "group" in median_data[0]:
             group = median_data[0]["group"]
-        if max_variation > 0.05:
-            print("Warning: High maximum measurement variation of "
-                  + str(max_variation * 100) + " percent for " + get_name(median_data))
-        return FamilyInfo(median_data, error_bars, get_name(median_data), group, False, comp_name)
+        return FamilyInfo(median_data, error_bars, get_name(median_data), group, False, comp_name, max_variation > 0.05)
 
 
 def get_name(runs):
@@ -116,6 +117,7 @@ class FamilyResults:
     repetitions: int
     name: str
     comp_name: str
+    has_errors: bool
 
 
 def get_performance_measurements(family_info: FamilyInfo) -> FamilyResults:
@@ -133,16 +135,18 @@ def get_performance_measurements(family_info: FamilyInfo) -> FamilyResults:
     bits /= input_sizes
     assert (times.shape == bits.shape == errors[0].shape == errors[1].shape == (len(data),))
     return FamilyResults(times, bits, input_sizes, errors, divide_by_n, subtract_n_from_bits, get_repetitions(data),
-                         get_name(data), family_info.comp_name)
+                         get_name(data), family_info.comp_name, family_info.has_error_data)
 
 
 def generate_single_plot(family_infos: [FamilyInfo]):
     family_infos = [f for f in family_infos if f is not None]
     assert len(family_infos) > 0
     results: [FamilyResults] = [get_performance_measurements(family) for family in family_infos]
-    styles = ['b-s', 'g-o', 'r-*', 'y-3', 'k-+', 'm-x']
+    styles = ['b-s', 'g-o', 'r-*', 'y-3', 'm-x', 'c-d', 'k-+', 'tab:orange', 'tab:purple', 'tab:gray',
+              'tab:brown', 'tab:olive', 'tab:pink']
     per_n = all([r.per_n for r in results])
     times = [r.times for r in results]
+    has_errors = [r.has_errors for r in results]
     errors = [np.array(r.errors) for r in results]
     bits = [r.bits for r in results]
     if per_n:
@@ -157,9 +161,9 @@ def generate_single_plot(family_infos: [FamilyInfo]):
         for i in family_infos:
             assert i.median_data[0]['time_unit'] == time_unit
         fig, ax = plt.subplots(ncols=2, figsize=(10, 5), layout='constrained')
-        for res, t, e, style in zip(results, times, errors, styles):
+        for res, t, e, show_e, style in zip(results, times, errors, has_errors, styles):
             ax[0].plot(res.input_sizes, t, style, label=res.comp_name + ' (median)')
-            if res.repetitions > 1:
+            if show_e:
                 ax[0].errorbar(res.input_sizes, e[0], e[1], fmt=style[0] + '.',
                                label=res.comp_name + ' µ ± σ')
             ax[1].plot(res.input_sizes, res.bits, style)
@@ -168,10 +172,17 @@ def generate_single_plot(family_infos: [FamilyInfo]):
         ax[0].set_xscale('log')
         ax[1].set_xlabel('n')
         ax[1].set_xscale('log')
-        ax[1].set_ylabel('number of bits divided by n')
+        if results[0].subtract_n_from_bits:
+            ax[1].set_ylabel('number of additional bits divided by n')
+        else:
+            ax[1].set_ylabel('number of bits divided by n')
         ax[1].set_yscale('log')
-        ax[1].grid()
-        ax[1].set_title("space (divided by n)")
+        ax[1].grid(which='major', alpha=0.7)
+        ax[1].grid(which='minor', alpha=0.2)
+        if results[0].subtract_n_from_bits:
+            ax[1].set_title("additional space (divided by n)")
+        else:
+            ax[1].set_title("space (divided by n)")
         if max([max(res.bits) for res in results]) > 1000:
             ax[1].set_ylim([None, 1000])
         if per_n:
@@ -179,7 +190,8 @@ def generate_single_plot(family_infos: [FamilyInfo]):
         else:
             ax[0].set_ylabel('time in ' + time_unit)
         ax[0].set_yscale('log')
-        ax[0].grid()
+        ax[0].grid(which='major', alpha=0.7)
+        ax[0].grid(which='minor', alpha=0.2)
         title = "time"
         if per_n:
             title += " (divided by n)"
@@ -211,15 +223,16 @@ def generate_single_plot(family_infos: [FamilyInfo]):
                 color_y_axis(rel_space, 'c')
                 rel_space.set_ylabel('relative space in percent')
         names = list(set(r.name for r in results))
-        name = names[0]
+        prefix = commonprefix(names)
+        name = prefix + "\n" + names[0][len(prefix):]
         for n in names[1:]:
-            name += ' vs ' + n
+            name += ' vs ' + n[len(prefix):]
         repetitions = str(results[0].repetitions)
         for i in range(1, len(results)):
             repetitions += ', ' + str(results[i].repetitions)
         plt.suptitle(name + f"\n#repetitions: {repetitions}")
         fig.legend(loc='outside upper right')
-    else:
+    else:  # len results == 1
         res = results[0]
         fig, ax = plt.subplots()
         ax2 = ax.twinx()
@@ -229,7 +242,7 @@ def generate_single_plot(family_infos: [FamilyInfo]):
         ax.plot(res.input_sizes, res.times, 'b-s', label=time_name)
         if res.repetitions > 1:
             ax.errorbar(res.input_sizes, errors[0][0], errors[0][1], fmt=styles[0], label='time µ ± σ')
-        ax2.plot(res.input_sizes, res.bits, styles[1], label='space / n')
+        ax2.plot(res.input_sizes, res.bits, styles[1], label='space')
         color_y_axis(ax, styles[0][0])
         ax.set_xlabel('n')
         ax.set_xscale('log')
@@ -238,9 +251,13 @@ def generate_single_plot(family_infos: [FamilyInfo]):
         else:
             ax.set_ylabel('time in ' + time_unit)
         ax.set_yscale('log')
-        ax.grid()
+        ax.grid(which='major', alpha=0.7)
+        ax.grid(which='minor', alpha=0.2)
         color_y_axis(ax2, styles[1][0])
-        ax2.set_ylabel('number of bits divided by n')
+        if res.subtract_n_from_bits:
+            ax2.set_ylabel('number of additional bits divided by n')
+        else:
+            ax2.set_ylabel('number of bits divided by n')
         ax2.set_yscale('log')
         if max(res.bits) > 1000:
             ax2.set_ylim([None, 1000])
