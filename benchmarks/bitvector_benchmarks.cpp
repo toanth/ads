@@ -4,9 +4,10 @@
 
 using namespace ads;
 
-template<typename = void>
-// using Bitvector = EfficientRankBitvec<>; // TODO: Make benchmarks generic?
-using Bitvector = EfficientBitvec<>;
+// using RankBitvector = EfficientRankBitvec<>;
+using RankBitvector = EfficientBitvec<>; // also use almost the same bitvector for fairer comparisons
+using SelectBitvector = EfficientSelectBitvec<>;
+using DefaultBitvector = SelectBitvector;
 
 
 constexpr Index maxNumBits = maxNumValues * 64 * 2;
@@ -22,11 +23,11 @@ constexpr Index maxNumBits = maxNumValues * 64 * 2;
 
 static void BM_BitvecAllocation(bm::State& state) {
     for (auto _ : state) {
-        Bitvector<> bv = Bitvector<>::uninitializedForSize(state.range());
+        DefaultBitvector bv = DefaultBitvector::uninitializedForSize(state.range());
         bm::DoNotOptimize(bv);
         bm::ClobberMemory();
     }
-    setNumBits(state, Bitvector<>::uninitializedForSize(state.range()).allocatedSizeInBits());
+    setNumBits(state, DefaultBitvector::uninitializedForSize(state.range()).allocatedSizeInBits());
     state.SetComplexityN(state.range());
     divideByNInPlot(state);
     subtractNFromBitCount(state);
@@ -35,11 +36,11 @@ static void BM_BitvecAllocation(bm::State& state) {
 
 static void BM_BitvecFillZero(bm::State& state) {
     for (auto _ : state) {
-        Bitvector<> bv(state.range(), Limb(0));
+        DefaultBitvector bv(state.range(), Limb(0));
         bm::DoNotOptimize(bv);
         bm::ClobberMemory();
     }
-    setNumBits(state, Bitvector<>(state.range(), 0).allocatedSizeInBits());
+    setNumBits(state, DefaultBitvector(state.range(), 0).allocatedSizeInBits());
     state.SetComplexityN(state.range());
     divideByNInPlot(state);
     subtractNFromBitCount(state);
@@ -48,11 +49,11 @@ static void BM_BitvecFillZero(bm::State& state) {
 
 static void BM_BitvecFillOnes(bm::State& state) {
     for (auto _ : state) {
-        Bitvector<> bv(state.range(), Limb(-1));
+        DefaultBitvector bv(state.range(), Limb(-1));
         bm::DoNotOptimize(bv);
         bm::ClobberMemory();
     }
-    setNumBits(state, Bitvector<>(state.range(), Limb(-1)).allocatedSizeInBits());
+    setNumBits(state, DefaultBitvector(state.range(), Limb(-1)).allocatedSizeInBits());
     state.SetComplexityN(state.range());
     divideByNInPlot(state);
     subtractNFromBitCount(state);
@@ -62,7 +63,7 @@ static void BM_BitvecFillOnes(bm::State& state) {
 constexpr Limb alternating = 0xaaaa'aaaa'aaaa'aaaaull;
 
 static void BM_BitvecAlternatingOnesZerosRankTwoThird(bm::State& state) {
-    Bitvector<> bv(state.range(), alternating);
+    RankBitvector bv(state.range(), alternating);
     for (auto _ : state) {
         Index i = bv.rankZeroUnchecked(state.range() * 2 / 3);
         bm::DoNotOptimize(i);
@@ -75,7 +76,7 @@ static void BM_BitvecAlternatingOnesZerosRankTwoThird(bm::State& state) {
 
 static void BM_BitvecAlternatingOnesZerosRankRandom(bm::State& state) {
     Span<const U64> randomQueries = getRandomQueries(state);
-    Bitvector<> bv(state.range(), alternating);
+    RankBitvector bv(state.range(), alternating);
     Index i = 0;
     for (auto _ : state) {
         Index val = bv.rankZeroUnchecked(ADS_GET_RANDVAL(state.range()));
@@ -90,7 +91,7 @@ static void BM_BitvecAlternatingOnesZerosRankRandom(bm::State& state) {
 static void BM_BitvecRandomRank(bm::State& state) {
     Span<const U64> randomQueries = getRandomQueries(state);
     assert(state.range() <= maxNumBits);
-    Bitvector<> bv(getRandomNumbers(roundUpDiv(state.range(), 64)), state.range());
+    RankBitvector bv(getRandomNumbers(roundUpDiv(state.range(), 64)), state.range());
     Index i = 0;
     for (auto _ : state) {
         Index val = bv.rankOneUnchecked(ADS_GET_RANDVAL(state.range()));
@@ -106,7 +107,7 @@ static void BM_BitvecRandomRank(bm::State& state) {
 // ** Select **
 
 static void BM_BitvecAlternatingOnesZerosSelectOneThird(bm::State& state) {
-    Bitvector<> bv(state.range(), alternating);
+    SelectBitvector bv(state.range(), alternating);
     for (auto _ : state) {
         Index i = bv.selectOne(state.range() / 3);
         bm::DoNotOptimize(i);
@@ -119,7 +120,7 @@ static void BM_BitvecAlternatingOnesZerosSelectOneThird(bm::State& state) {
 
 static void BM_BitvecAlternatingOnesZerosSelectRandom(bm::State& state) {
     Span<const U64> randomQueries = getRandomQueries(state);
-    Bitvector<> bv(state.range(), alternating);
+    SelectBitvector bv(state.range(), alternating);
     Index maxRank = bv.numZeros();
     assert(maxRank > 0);
     Index i = 0;
@@ -134,7 +135,7 @@ static void BM_BitvecAlternatingOnesZerosSelectRandom(bm::State& state) {
 }
 
 static void BM_BitvecOnesThenZerosSelectFirstZero(bm::State& state) {
-    Bitvector<> bv = Bitvector<>::uninitializedForSize(state.range());
+    SelectBitvector bv = SelectBitvector::uninitializedForSize(state.range());
     for (Index i = 0; i < bv.sizeInLimbs() / 2; ++i) {
         bv.setLimb(i, Limb(-1));
     }
@@ -154,7 +155,7 @@ static void BM_BitvecOnesThenZerosSelectFirstZero(bm::State& state) {
 
 static void BM_BitvecOnesThenZerosSelectRandom(bm::State& state) {
     Span<const U64> randomQueries = getRandomQueries(state);
-    Bitvector<> bv = Bitvector<>::uninitializedForSize(state.range());
+    SelectBitvector bv = SelectBitvector::uninitializedForSize(state.range());
     for (Index i = 0; i < bv.sizeInLimbs() / 2; ++i) {
         bv.setLimb(i, Limb(-1));
     }
@@ -175,7 +176,7 @@ static void BM_BitvecOnesThenZerosSelectRandom(bm::State& state) {
 }
 
 static void BM_BitvecFirstLastBitOneOthersZeroSelectSecondOne(bm::State& state) {
-    Bitvector<> bv(state.range(), 0);
+    SelectBitvector bv(state.range(), 0);
     ADS_ASSUME(state.range() >= 2);
     bv.setBit(0);
     bv.setBit(bv.size() - 1);
@@ -194,7 +195,7 @@ static void BM_BitvecFirstLastBitOneOthersZeroSelectSecondOne(bm::State& state) 
 
 static void BM_BitvecFirstLastBitOneOthersZeroSelectRandom(bm::State& state) {
     Span<const U64> randomQueries = getRandomQueries(state);
-    Bitvector<> bv(state.range(), 0);
+    SelectBitvector bv(state.range(), 0);
     ADS_ASSUME(state.range() >= 2);
     bv.setBit(0);
     bv.setBit(bv.size() - 1);
@@ -213,7 +214,7 @@ static void BM_BitvecFirstLastBitOneOthersZeroSelectRandom(bm::State& state) {
 
 static void BM_BitvecSelectRandom(bm::State& state) {
     Span<const U64> randomQueries = getRandomQueries(state);
-    Bitvector<> bv(getRandomNumbers(roundUpDiv(state.range(), 64)), state.range());
+    SelectBitvector bv(getRandomNumbers(roundUpDiv(state.range(), 64)), state.range());
     if (bv.numOnes() == 0) {
         bv.setBit(0);
         bv.buildMetadata();

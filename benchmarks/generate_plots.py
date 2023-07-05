@@ -82,8 +82,8 @@ def get_family(benchmark_results: [], family_index: int, comp_name: str) -> Fami
         median_data = [bm for bm in info if bm['aggregate_name'] == 'median']
         max_variation = max([float(bm['cpu_time']) for bm in info if bm['aggregate_name'] == 'cv'])
         if max_variation > 0.05:
-            print("Warning: High maximum measurement variation of "
-                  + str(max_variation * 100) + " percent for " + get_name(median_data))
+            print(f"Warning: High maximum measurement variation of {max_variation * 100:.1f} percent for " + get_name(
+                median_data))
         stddevs = np.array([bm['cpu_time'] for bm in info if bm['aggregate_name'] == 'stddev'])
         means = np.array([bm['cpu_time'] for bm in info if bm['aggregate_name'] == 'mean'])
         assert len(median_data) == len(stddevs) == len(means) > 0
@@ -312,7 +312,7 @@ def generate_plots(data, baseline_data):
 
 def parse_args():
     parser = ArgumentParser(description="create plots from one or two benchmarking runs")
-    parser.add_argument('-i', '--input-file', dest='input_file', default='benchmark_results.json',
+    parser.add_argument('-i', '--input-file', dest='input_file', default='results/benchmark_results.json',
                         type=argparse.FileType('r'),
                         help="The input file from which the benchmarking results are read. Must be a JSON file,"
                              " defaults to 'benchmark_results.json'.")

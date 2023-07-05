@@ -46,7 +46,7 @@ eval set -- "$PARSED"
 
 sudoChanges=0
 quick=0
-outputFile=benchmark_results.json
+outputFile=results/benchmark_results.json
 binPath="../build/Release/benchmarks/benchmarks"
 
 moreThan4Cores=0 # if there are more than 4 logical CPUs, reserve 2 for benchmarking and turn off their SMT siblings

@@ -9,6 +9,7 @@
     <excludeRoots>
       <file path="$PROJECT_DIR$/ads.rep" />
       <file path="$PROJECT_DIR$/benchmarks/plots" />
+      <file path="$PROJECT_DIR$/benchmarks/results" />
       <file path="$PROJECT_DIR$/build" />
       <file path="$PROJECT_DIR$/dependencies/benchmark-build" />
       <file path="$PROJECT_DIR$/dependencies/benchmark-src/.github" />
