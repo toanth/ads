@@ -1,7 +1,7 @@
 #ifndef BITVECTOR_ELIAS_FANO_HPP
 #define BITVECTOR_ELIAS_FANO_HPP
 
-#include "bitvector/efficient_rank_bitvec.hpp" // TODO: Use better bitvector implementation
+#include "bitvector/recursive_bitvec.hpp" // TODO: Use better bitvector implementation
 #include <cmath>
 namespace ads {
 

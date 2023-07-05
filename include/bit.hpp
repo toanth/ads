@@ -99,7 +99,7 @@ template<typename UnsignedInteger>
 
 
 [[nodiscard]] ADS_CPP20_CONSTEXPR Index countTrailingZeros(U64 n) noexcept {
-    assert(n > 0);                                  // undefined otherwise
+    ADS_ASSUME(n > 0);                              // undefined otherwise
 #ifdef ADS_HAS_CPP20
     return static_cast<Index>(std::countr_zero(n)); // TODO: Check if intrinsics are faster since they work in less cases
 #elif defined ADS_HAS_DEFAULT_GCC_INTRINSICS
@@ -195,6 +195,43 @@ constexpr static inline BitSelectTable<> byteSelectTable = precomputeBitSelectTa
     return u64SelectWithTable(value, bitRank);
     //    return countTrailingZeros(u64SelectImpl(value, bitRank));
 }
+
+[[nodiscard]] ADS_CPP20_CONSTEXPR Index u256Select(const U64* valuePtr, Index bitRank) noexcept {
+    ADS_ASSUME(bitRank >= 0);
+    ADS_ASSUME(bitRank < 256);
+    Index count = popcount(valuePtr[0]);
+    if (bitRank < count) {
+        return u64Select(valuePtr[0], bitRank);
+    }
+    bitRank -= count;
+    count = popcount(valuePtr[1]);
+    if (bitRank < count) {
+        return u64Select(valuePtr[1], bitRank);
+    }
+    bitRank -= count;
+    count = popcount(valuePtr[2]);
+    if (bitRank < count) {
+        return u64Select(valuePtr[2], bitRank);
+    }
+    bitRank -= count;
+    ADS_ASSUME(bitRank >= 0);
+    ADS_ASSUME(bitRank < 64);
+    return u64Select(valuePtr[3], bitRank);
+}
+
+[[nodiscard]] ADS_CPP20_CONSTEXPR Index u256SelectZero(const U64* valuePtr, Index bitRank) noexcept {
+    ADS_ASSUME(bitRank >= 0);
+    ADS_ASSUME(bitRank < 256);
+    U64 negated[] = {~valuePtr[0], ~valuePtr[1], ~valuePtr[2], ~valuePtr[3]};
+    return u256Select(negated, bitRank);
+}
+
+[[nodiscard]] ADS_CPP20_CONSTEXPR Index u256Rank(const U64* valuePtr) noexcept {
+    // TODO: Use SSE instructions?
+    return popcount(valuePtr[0]) + popcount(valuePtr[1]) + popcount(valuePtr[2]) + popcount(valuePtr[3]);
+}
+
+
 
 
 

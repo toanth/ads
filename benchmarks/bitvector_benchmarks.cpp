@@ -1,13 +1,15 @@
 #include "benchmarks_common.hpp"
-#include "include/bitvector/efficient_rank_bitvec.hpp"
+#include "include/bitvector/recursive_bitvec.hpp"
+
 
 using namespace ads;
 
 template<typename = void>
-using Bitvector = EfficientRankBitvec<>; // TODO: Make benchmarks generic?
+// using Bitvector = EfficientRankBitvec<>; // TODO: Make benchmarks generic?
+using Bitvector = EfficientSelectBitvec<>;
 
 
-constexpr Index maxNumBits = maxNumValues * 64;
+constexpr Index maxNumBits = maxNumValues * 64 * 2;
 
 // Only used internally, so a macro is fine here.
 // Also, the fact that random numbers aren't perfectly uniformly distributed doesn't matter

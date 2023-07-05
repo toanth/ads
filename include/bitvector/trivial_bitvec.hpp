@@ -6,15 +6,17 @@
 
 namespace ads {
 
+enum class Operations { RANK_ONLY, SELECT_ONLY, BOTH };
+
 /// \brief This class precomputes the answers to all possible rank and select queries and stores them in one large array.
 /// `getBit(i)` is implemented as `rankOne(i+1) - rankOne(i)` for all i (there are size() + 1 rank entries).
-/// For 32 bit rank and select indices, this uses 64 times as much space as the actual bitvector (which isn't stored),
+/// For 32 bit rank and select indices, this uses 64 times as much space as the actual bit sequence (which isn't stored),
 /// so this class is only useful for small Bitvectors, such as in the second recursion level of the recursive bitvector
 // TODO: Implement recursive bitvector
-template<typename Count = std::uint32_t>
-class TrivialBitvec : public BitvecBase<TrivialBitvec<Count>> {
+template<typename Count = std::uint32_t, Operations Ops = Operations::BOTH>
+class TrivialBitvec : public BitvecBase<TrivialBitvec<Count, Ops>> {
 
-    using Base = BitvecBase<TrivialBitvec<Count>>;
+    using Base = BitvecBase<TrivialBitvec<Count, Ops>>;
     friend Base;
 
     View<Count> ranks = View<Count>();
@@ -31,20 +33,42 @@ class TrivialBitvec : public BitvecBase<TrivialBitvec<Count>> {
         for (Limb current : range) {
             for (Index inLimb = 0; inLimb < 64 && bitNum < size(); ++inLimb, ++bitNum) {
                 bool bit = BitwiseAccess<1>::getBits(&current, inLimb);
-                ranks.ptr[bitNum] = previousRank;
-                previousRank += bit;
-                if (bit) {
-                    selectAnswers.ptr[numOnesSoFar++] = bitNum;
+                if constexpr (Ops == Operations::SELECT_ONLY) {
+                    ranks.ptr[0] = numOnesSoFar + bit; // ranks has only 1 entry, which counts the total number of ones
                 } else {
-                    selectAnswers.ptr[size() - ++numZerosSoFar] = bitNum;
+                    ranks.ptr[bitNum] = previousRank;
+                }
+                previousRank += bit;
+                if constexpr (Ops != Operations::RANK_ONLY) {
+                    if (bit) {
+                        selectAnswers.ptr[numOnesSoFar++] = bitNum;
+                    } else {
+                        selectAnswers.ptr[size() - ++numZerosSoFar] = bitNum;
+                    }
                 }
             }
         }
-        ranks.ptr[size()] = previousRank;
+        if constexpr (Ops != Operations::SELECT_ONLY) {
+            ranks.ptr[size()] = previousRank;
+        }
+        buildMetadata();
+    }
+
+    ADS_CPP20_CONSTEXPR static Index numRankEntries(Index numBits) noexcept {
+        if constexpr (Ops == Operations::SELECT_ONLY) {
+            return 1;
+        } else {
+            return numBits + 1;
+        }
     }
 
     ADS_CPP20_CONSTEXPR TrivialBitvec(UninitializedTag, Index numBits, Limb* mem) noexcept
-        : Base(numBits, mem), ranks(this->allocation.memory(), numBits + 1), selectAnswers(ranks.ptr + numBits + 1, numBits) {}
+        : Base(numBits, mem), ranks(this->allocation.memory(), numRankEntries(numBits)),
+          selectAnswers(ranks.ptr + ranks.numT, Ops == Operations::RANK_ONLY ? 0 : numBits) {
+        if constexpr (Ops == Operations::SELECT_ONLY) {
+            ranks.ptr[0] = 0; // special entry that counts the number of ones
+        }
+    }
 
 public:
     constexpr TrivialBitvec() noexcept = default;
@@ -68,24 +92,90 @@ public:
     }
 
     [[nodiscard]] static ADS_CPP20_CONSTEXPR Index allocatedSizeInLimbsForBits(Index numBits) noexcept {
-        return numBits * sizeof(Count) * 2 + 1;
+        const Index factor = (Ops == Operations::BOTH ? 2 : 1);
+        return roundUpDiv((numBits * factor + 1) * sizeof(Count), sizeof(Limb));
     }
 
-    [[nodiscard]] ADS_CPP20_CONSTEXPR Index size() const noexcept { return selectAnswers.numT; }
+    [[nodiscard]] ADS_CPP20_CONSTEXPR Index size() const noexcept {
+        if constexpr (Ops == Operations::RANK_ONLY) {
+            return ranks.numT - 1;
+        } else {
+            return selectAnswers.numT;
+        }
+    }
 
-    [[nodiscard]] ADS_CPP20_CONSTEXPR bool getBit(Index i) const noexcept { return rankOne(i + 1) - rankOne(i); }
+    [[nodiscard]] ADS_CPP20_CONSTEXPR bool getBit(Index i) const noexcept {
+        return rankOneUnchecked(i + 1) - this->rankOne(i);
+    }
+
+    // ** low-level functions **
+
+    /// \brief Set the bit at position i. Assumes that this functions gets called for all bits in ascending order.
+    /// \param i The ith bit will be set to newVal
+    /// \param newVal new value of the ith bit.
+    ADS_CPP20_CONSTEXPR void setBit(Index i, bool newVal = true) const noexcept {
+        [[maybe_unused]] Index rankOfI = -1;
+        if constexpr (Ops == Operations::SELECT_ONLY) { // ranks[0] counts the number of ones
+            if (i == 0) [[unlikely]] { // special case to allow iterating over and setting bits multiple times
+                ranks.ptr[0] = 0;      // reset numZeros() to forget any previous calls to setBit()
+            }
+            rankOfI = ranks.ptr[0];
+            ranks.ptr[0] += newVal;
+        } else {
+            ranks.ptr[i + 1] = ranks[i] + newVal;
+        }
+        if constexpr (Ops == Operations::BOTH) {
+            rankOfI = ranks[i];
+        }
+        if constexpr (Ops != Operations::RANK_ONLY) {
+            if (newVal) {
+                selectAnswers.ptr[rankOfI] = i;
+            } else {
+                Index rankZero = i - rankOfI;
+                selectAnswers.ptr[size() - 1 - rankZero] = i;
+            }
+        }
+    }
 
     ADS_CPP20_CONSTEXPR void buildMetadata() noexcept {
-        // do nothing
+        if constexpr (Ops != Operations::SELECT_ONLY) {
+            ranks.ptr[0] = 0; // may or may not have already been set
+        }
     }
 
-    [[nodiscard]] ADS_CPP20_CONSTEXPR Index numOnes() const noexcept { return rankOne(size()); }
+    // ** bitvector operations **
 
-    [[nodiscard]] ADS_CPP20_CONSTEXPR Index rankOne(Index i) const noexcept { return ranks[i]; }
+    [[nodiscard]] ADS_CPP20_CONSTEXPR Index numOnes() const noexcept {
+        if constexpr (Ops == Operations::SELECT_ONLY) {
+            return ranks[0];
+        } else {
+            return rankOneUnchecked(size());
+        }
+    }
 
-    [[nodiscard]] ADS_CPP20_CONSTEXPR Index selectOne(Index i) const noexcept { return selectAnswers[i]; }
+    [[nodiscard]] ADS_CPP20_CONSTEXPR Index rankOneUnchecked(Index i) const noexcept {
+        if constexpr (Ops == Operations::SELECT_ONLY) {
+            return this->template inefficientRank<true>(i); // there is no fundamentally better solution
+        } else {
+            return ranks[i];
+        }
+    }
 
-    [[nodiscard]] ADS_CPP20_CONSTEXPR Index selectZero(Index i) const noexcept { return selectAnswers[size() - 1 - i]; }
+    [[nodiscard]] ADS_CPP20_CONSTEXPR Index selectOneUnchecked(Index i) const noexcept {
+        if constexpr (Ops == Operations::RANK_ONLY) {
+            return this->template inefficientSelect<true>(i); // there is no fundamentally better solution
+        } else {
+            return selectAnswers[i];
+        }
+    }
+
+    [[nodiscard]] ADS_CPP20_CONSTEXPR Index selectZeroUnchecked(Index i) const noexcept {
+        if constexpr (Ops == Operations::RANK_ONLY) {
+            return this->template inefficientSelect<false>(i); // there is no fundamentally better solution
+        } else {
+            return selectAnswers[size() - 1 - i];
+        }
+    }
 };
 
 

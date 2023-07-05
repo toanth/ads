@@ -11,7 +11,7 @@ namespace ads {
 #ifdef ADS_HAS_CPP20
 
 /// This concept describes a very general bitvector, all implementations except for TrivialBitvec additionally model
-/// IsNormalBitvec.
+/// IsNormalBitvec. Inheriting from BitvecBase provides default implementations for most required methods.
 template<typename T>
 concept IsBitvec = requires(T& t, const T& ct) {
     T();
@@ -25,6 +25,7 @@ concept IsBitvec = requires(T& t, const T& ct) {
     { ct.allocatedSizeInLimbs() } -> std::convertible_to<Index>;
 
     { ct.size() } -> std::convertible_to<Index>;
+    { ct.sizeInBits() } -> std::convertible_to<Index>;
 
     { ct.getBit(Index()) } -> std::convertible_to<bool>;
     t.buildMetadata();
@@ -46,11 +47,26 @@ concept IsBitvec = requires(T& t, const T& ct) {
 };
 
 
-/// This concepts describes a bitvector that stores a sequence of bits, organized as an array of limbs, and metadata for
-/// rank and select queries.
-/// Although all the following methods must be present, inheriting from BitvecBase provides default implementations for most.
+/// This concepts describes a bitvector that stores a sequence of bits, organized as an array of limbs, and possibly
+/// additional metadata in an unspecified format.
+/// Although all the following methods must be present, inheriting from NormalBitvecBase provides default implementations for most.
 template<typename T>
 concept IsNormalBitvec = IsBitvec<T> && requires(T& t, const T& ct) {
+    { T::allocatedSizeInLimbsForLimbs(Index()) } -> std::convertible_to<Index>;
+    { ct.sizeInLimbs() } -> std::convertible_to<Index>;
+    { ct.numLimbs() } -> std::convertible_to<Index>;
+    { ct.getLimb(Index()) } -> std::convertible_to<const U64&>;
+    t.setLimb(Index(), Limb());
+    t.setBit(Index());
+    t.setBit(Index(), bool());
+};
+
+/// This concepts describes a bitvector that stores a sequence of bits, organized as an array of limbs, and additionally
+/// partitions them in blocks and superblocks (where a superblock may consists of only 1 block) of fixed size to answer
+/// rank queries.
+/// Although all the following methods must be present, inheriting from RankBitvecBase provides default implementations for most.
+template<typename T>
+concept IsSuperblockBitvec = IsNormalBitvec<T> && requires(T& t, const T& ct) {
     typename T::BlockRank;
     typename T::SuperblockRank;
     { T::superblockSize() } -> std::convertible_to<Index>;
@@ -62,30 +78,38 @@ concept IsNormalBitvec = IsBitvec<T> && requires(T& t, const T& ct) {
     { T::numBlocksInSuperblock() } -> std::convertible_to<Index>;
     { T::numBlocksForBits(Index()) } -> std::convertible_to<Index>;
     { T::numSuperblocksForBits(Index()) } -> std::convertible_to<Index>;
-    { T::allocatedSizeInLimbsForLimbs(Index()) } -> std::convertible_to<Index>;
-    { ct.sizeInLimbs() } -> std::convertible_to<Index>;
-    { ct.sizeInBits() } -> std::convertible_to<Index>;
-    { ct.size() } -> std::convertible_to<Index>;
-    { ct.getLimb(Index()) } -> std::convertible_to<const U64&>;
+
     { ct.getSuperblockRank(Index()) } -> std::convertible_to<const U64&>;
     t.setSuperblockRank(Index(), Index());
     { ct.getBlockRank(Index()) } -> std::convertible_to<Index>;
     t.setBlockRank(Index(), Index());
     t.setBlockRank_(Index(), Index(), Index());
-    { ct.numLimbs() } -> std::convertible_to<Index>;
     { ct.numBlocks() } -> std::convertible_to<Index>;
     { ct.numSuperblocks() } -> std::convertible_to<Index>;
-    t.setBit(Index());
-    t.setBit(Index(), bool());
 };
+
+
+[[maybe_unused]] constexpr static inline auto getBitFunc = [](const auto& bv, Index i) -> bool { return bv.getBit(i); };
+
+template<bool IsOne>
+[[maybe_unused]] constexpr static inline auto rankFunc
+        = [](const auto& bv, Index i) -> Index { return bv.template rank<IsOne>(i); };
+
+template<bool IsOne>
+[[maybe_unused]] constexpr static inline auto selectFunc
+        = [](const auto& bv, Index i) -> Index { return bv.template select<IsOne>(i); };
+
+
 
 #define ADS_BITVEC_CONCEPT IsBitvec
 #define ADS_NORMAL_BITVEC_CONCEPT IsNormalBitvec
+#define ADS_SUPERBLOCK_BITVEC_CONCEPT IsSuperblockBitvec
 
 #else // ADS_HAS_CPP20
 
 #define ADS_BITVEC_CONCEPT class
 #define ADS_NORMAL_BITVEC_CONCEPT class
+#define ADS_SUPERBLOCK_BITVEC_CONCEPT class
 
 namespace detail {
 
@@ -99,7 +123,13 @@ template<typename T, typename = void>
 struct IsNormalBitvecImpl : std::false_type {};
 
 template<typename T>
-struct IsNormalBitvecImpl<T, std::void_t<decltype(T::numSuperblocksForBits(1))>> : std::true_type {};
+struct IsNormalBitvecImpl<T, std::void_t<decltype(T().getLimb(1))>> : std::true_type {};
+
+template<typename T, typename = void>
+struct IsSuperblockBitvecImpl : std::false_type {};
+
+template<typename T>
+struct IsSuperblockBitvecImpl<T, std::void_t<decltype(T::numSuperblocksForBits(1))>> : std::true_type {};
 
 }; // namespace detail
 
@@ -108,6 +138,9 @@ constexpr static bool IsBitvec = detail::IsNormalBitvecImpl<T>::value;
 
 template<typename Bitvec>
 constexpr static bool IsNormalBitvec = IsBitvec<Bitvec> && detail::IsNormalBitvecImpl<T>::value;
+
+template<typename Bitvec>
+constexpr static bool IsSuperblockBitvec = IsNormalBitvec<Bitvec> && detail::IsSuperblockBitvecImpl<T>::value;
 
 #endif // ADS_HAS_CPP20
 
@@ -182,7 +215,7 @@ public:
     }
 
     [[nodiscard]] ADS_CPP20_CONSTEXPR Index allocatedSizeInLimbs() const noexcept {
-        assert(allocation.size() == Derived::allocatedSizeInLimbsForBits(size()));
+        assert(allocation.size() == Derived::allocatedSizeInLimbsForBits(derived().size()));
         return allocation.size();
     }
 
@@ -194,14 +227,7 @@ public:
 
     [[nodiscard]] ADS_CPP20_CONSTEXPR Index sizeInBits() const noexcept { return derived().size(); }
 
-protected:
-    constexpr static auto getBitFunc = [](const auto& bv, Index i) -> bool { return bv.getBit(i); };
-    template<bool IsOne>
-    constexpr static auto rankFunc = [](const auto& bv, Index i) -> bool { return bv.template rank<IsOne>(i); };
-    template<bool IsOne>
-    constexpr static auto selectFunc = [](const auto& bv, Index i) -> bool { return bv.template select<IsOne>(i); };
 
-public:
     [[nodiscard]] ADS_CPP20_CONSTEXPR Index numOnes() const noexcept {
         return derived().sizeInBits() - derived().numZeros();
     }
@@ -258,21 +284,38 @@ public:
 
     /// Return the position `i` such that `getBit(i)` returns the `rank`th one, counting from 0.
     [[nodiscard]] ADS_CPP20_CONSTEXPR Index selectOne(Index rank) const {
-        return derived().template select<true>(rank);
+        if (rank < 0 || rank >= derived().size()) [[unlikely]] {
+            throw std::invalid_argument("invalid rank for select one query: " + std::to_string(rank));
+        }
+        return derived().selectOneUnchecked(rank);
     }
 
     /// Return the position `i` such that `getBit(i)` returns the `rank`th zero, counting from 0
     [[nodiscard]] ADS_CPP20_CONSTEXPR Index selectZero(Index rank) const {
-        return derived().template select<false>(rank);
+        if (rank < 0 || rank >= derived().size()) [[unlikely]] {
+            throw std::invalid_argument("invalid rank for select zero query: " + std::to_string(rank));
+        }
+        return derived().selectZeroUnchecked(rank);
     }
 
+    /// Return the position `i` such that `getBit(i)` returns the `rank`th one, counting from 0.
+    [[nodiscard]] ADS_CPP20_CONSTEXPR Index selectOneUnchecked(Index rank) const {
+        return derived().template select<true>(rank);
+    }
+
+    /// Return the position `i` such that `getBit(i)` returns the `rank`th zero, counting from 0
+    [[nodiscard]] ADS_CPP20_CONSTEXPR Index selectZeroUnchecked(Index rank) const {
+        return derived().template select<false>(rank);
+    }
     // This implementation is very slow and should be overwritten in a derived class.
     template<bool IsOne>
     [[nodiscard]] constexpr Index select(Index bitRank) const {
-        if (bitRank < 0 || bitRank >= derived().size()) [[unlikely]] {
-            throw std::invalid_argument("invalid rank for select query: " + std::to_string(bitRank));
+        if constexpr (IsOne) {
+            return derived().selectOne(bitRank);
+        } else {
+            return derived().selectZero(bitRank);
         }
-        return derived().template inefficientSelect<IsOne>(bitRank);
+        //        return derived().template inefficientSelect<IsOne>(bitRank);
     }
 
     // ** iterators and views over rank and select. Note that no effort is made to speed up consecutive rank calls etc,
@@ -317,7 +360,7 @@ public:
     template<bool IsOne> // TODO: Test
     [[nodiscard]] ADS_CPP20_CONSTEXPR Index inefficientSelect(Index bitRank) const {
         auto ranks = derived().template rankView<IsOne>();
-        return std::lower_bound(ranks.begin(), ranks.end(), bitRank).index();
+        return std::lower_bound(ranks.begin(), ranks.end(), bitRank + 1).index() - 1;
     }
 
 
@@ -343,14 +386,14 @@ public:
 
 
 
-
 /// \brief CRTP base class of all normal bitvectors. See BitvecBase for a CRTP discussion. Derived classes should
-/// declare both this class and its base class, available under Base alias, as friends. \tparam Derived The actual
+/// declare both this class and its base class, available under the Base alias, as friends. \tparam Derived The actual
 /// bitvector, which inherits from NormalBitvecBase<Derived>. \tparam BlockRankImpl The type used to store block rank
 /// counts. \tparam SuperblockRankImpl The type used to store superblock rank counts.
 // Don't require Derived to model IsBitvec to avoid recursively depending on this implementation
-template<typename Derived, typename BlockRankImpl, typename SuperblockRankImpl = U64>
+template<typename Derived>
 class [[nodiscard]] NormalBitvecBase : public BitvecBase<Derived> {
+protected:
     friend Derived;
 
     using Base = BitvecBase<Derived>;
@@ -358,41 +401,38 @@ class [[nodiscard]] NormalBitvecBase : public BitvecBase<Derived> {
     using Base::Base;
     using Base::derived;
 
-    // ** These aliases can be used unqualified (ie without Derived::) because they should refer to the actual types **
-    using BlockRank = BlockRankImpl;
-    using SuperblockRank = SuperblockRankImpl;
-
 public:
-    ADS_CPP20_CONSTEXPR void fill(Limb value) noexcept {
-        for (Index i = 0; i + 1 < derived().sizeInLimbs(); ++i) {
-            derived().setLimb(i, value);
-        }
-        if (derived().sizeInLimbs() > 0) {
-            Index shift = 64 * derived().sizeInLimbs() - derived().sizeInBits();
-            ADS_ASSUME(shift >= 0);
-            ADS_ASSUME(shift < 64);
-            value = (value << shift) >> shift;
-            derived().setLimb(derived().sizeInLimbs() - 1, value);
-        }
-        derived().buildMetadata();
-    }
+    ADS_CPP20_CONSTEXPR void fill(Limb value) noexcept { copyFrom(repeatView(value, derived().sizeInLimbs())); }
 
-    ADS_CPP20_CONSTEXPR void copyFrom(Span<const Limb> values) noexcept {
+    template<typename LimbRange>
+    ADS_CPP20_CONSTEXPR void copyFrom(const LimbRange& values) noexcept {
         ADS_ASSUME(values.size() == sizeInLimbs());
         for (Index i = 0; i + 1 < derived().sizeInLimbs(); ++i) {
-            derived().setLimb(i, values[i]);
+            derived().setLimb(i, values.begin()[i]);
         }
         if (derived().sizeInLimbs() > 0) {
             Index shift = 64 * derived().sizeInLimbs() - derived().sizeInBits();
             ADS_ASSUME(shift >= 0);
             ADS_ASSUME(shift < 64);
-            Limb value = (values[values.size() - 1] << shift) >> shift;
+            Limb value = (values.begin()[values.size() - 1] << shift) >> shift;
             derived().setLimb(derived().sizeInLimbs() - 1, value);
         }
         derived().buildMetadata();
     }
 
-private:
+protected:
+    ADS_CPP20_CONSTEXPR void initFromStr(std::string_view str, Index base = 2) {
+        assert(derived().sizeInBits() == str.size() * intLog2(base)); // should only be called after allocation
+        auto limbValues = this->limbViewFromStringView(str, base);
+        assert((limbValues.size() - 1) * 64 < derived().size());
+        assert(limbValues.size() * 64 >= derived().size());
+
+        for (Index i = 0; i < derived().numLimbs(); ++i) {
+            derived().setLimb(i, limbValues.begin()[i]);
+        }
+        derived().buildMetadata();
+    }
+
     // *** Default implementations for private Bitvector operations. ***
 
     // ** Operations useful for implementing getters and setters, not called directly in this class.
@@ -403,27 +443,10 @@ private:
 
     [[nodiscard]] static ADS_CPP20_CONSTEXPR Index limbIdxInArray(Index i) noexcept { return i; }
 
-    [[nodiscard]] static ADS_CPP20_CONSTEXPR Index blockRankIdxInArray(Index i) noexcept { return i; }
-
-    [[nodiscard]] static ADS_CPP20_CONSTEXPR Index superblockRankIdxInArray(Index i) noexcept { return i; }
-
     // ** Not implementing either these operations or the getters/setters will cause a stack overflow due to infinite recursion **
     [[nodiscard]] ADS_CPP20_CONSTEXPR const Limb* getLimbArray() const noexcept { return derived().getLimbArray(); }
     [[nodiscard]] ADS_CPP20_CONSTEXPR Limb* getLimbArray() noexcept { return derived().getLimbArray(); }
 
-    [[nodiscard]] ADS_CPP20_CONSTEXPR const View<BlockRank>& getBlockRankArray() const noexcept {
-        return derived().getBlockRankArray();
-    }
-    [[nodiscard]] ADS_CPP20_CONSTEXPR View<BlockRank>& getBlockRankArray() noexcept {
-        return derived().getBlockRankArray();
-    }
-
-    [[nodiscard]] ADS_CPP20_CONSTEXPR const View<SuperblockRank>& getSuperblockRankArray() const noexcept {
-        return derived().getSuperblockRankArray();
-    }
-    [[nodiscard]] ADS_CPP20_CONSTEXPR View<SuperblockRank>& getSuperblockRankArray() noexcept {
-        return derived().getSuperblockRankArray();
-    }
 
     // ** An implementation of this interface could ignore the previous methods and only override the following **
 
@@ -452,6 +475,90 @@ public:
         return derived().getLimbRef(i);
     }
 
+    ADS_CPP20_CONSTEXPR void setLimb(Index i, Limb newVal) noexcept {
+        ADS_ASSUME(i >= 0);
+        ADS_ASSUME(i < derived().sizeInLimbs());
+        derived().getLimbRef(i) = newVal;
+    }
+
+    // ** The following two functions rarely need to be overwritten and should be used even less
+    // in performance critical code **
+    [[nodiscard]] ADS_CPP20_CONSTEXPR bool getBit(Index i) const noexcept {
+        ADS_ASSUME(i >= 0);
+        ADS_ASSUME(i < derived().size());
+        return BitwiseAccess<1>::getBits(&derived().getLimbRef(i / 64), i % 64);
+    }
+    ADS_CPP20_CONSTEXPR void setBit(Index i, bool newVal = true) noexcept {
+        ADS_ASSUME(i >= 0);
+        ADS_ASSUME(i < derived().size());
+        return BitwiseAccess<1>::setBits(&derived().getLimbRef(i / 64), i % 64, newVal);
+    }
+
+
+    // ** Getting the size in limbs. Usually, it's enough to implement size() (from BitvecBase) in the derived class. **
+
+    [[nodiscard]] ADS_CPP20_CONSTEXPR Index sizeInLimbs() const noexcept { return derived().numLimbs(); }
+
+    [[nodiscard]] ADS_CPP20_CONSTEXPR Index numLimbs() const noexcept { return roundUpDiv(derived().size(), 64); }
+
+
+    [[nodiscard]] static constexpr Index allocatedSizeInLimbsForBits(Index numBits) noexcept {
+        return Derived::allocatedSizeInLimbsForLimbs(roundUpDiv(numBits, 64));
+    }
+
+    [[nodiscard]] static constexpr Index allocatedSizeInLimbsForLimbs(Index numLimbs) noexcept {
+        return Derived::allocatedSizeInLimbsForBits(numLimbs * 64);
+    }
+
+
+    using LimbIter = RandAccessIter<Derived, decltype(getLimbFunc)>;
+
+    [[nodiscard]] ADS_CPP20_CONSTEXPR LimbIter limbIter(Index i) const { return LimbIter(derived(), getLimbFunc, i); }
+
+    [[nodiscard]] ADS_CPP20_CONSTEXPR Subrange<LimbIter> limbView() const noexcept {
+        return Subrange<LimbIter>{limbIter(0), limbIter(derived().sizeInLimbs())};
+    }
+};
+
+
+/// \brief CRTP base class of all bitvectors with fixed-sized rank blocks and superblocks. See BitvecBase for a CRTP
+/// discussion. Derived classes should declare both this class and its base classes, available under the Base and
+/// Base::Base alias, as friends. \tparam Derived The actual bitvector, which inherits from RankBitvecBase<Derived>.
+template<typename Derived, typename BlockRankImpl, typename SuperblockRankImpl = U64>
+class [[nodiscard]] RankBitvecBase : public NormalBitvecBase<Derived> {
+    friend Derived;
+
+    using Base = NormalBitvecBase<Derived>;
+    using Base::Base;
+    using Base::derived;
+
+    // ** These aliases can be used unqualified (ie without Derived::) because they should refer to the actual types **
+    using BlockRank = BlockRankImpl;
+    using SuperblockRank = SuperblockRankImpl;
+
+    // ** Default implementations for getters/setters **
+
+    [[nodiscard]] static ADS_CPP20_CONSTEXPR Index blockRankIdxInArray(Index i) noexcept { return i; }
+
+    [[nodiscard]] static ADS_CPP20_CONSTEXPR Index superblockRankIdxInArray(Index i) noexcept { return i; }
+
+    [[nodiscard]] ADS_CPP20_CONSTEXPR const View<BlockRank>& getBlockRankArray() const noexcept {
+        return derived().getBlockRankArray();
+    }
+    [[nodiscard]] ADS_CPP20_CONSTEXPR View<BlockRank>& getBlockRankArray() noexcept {
+        return derived().getBlockRankArray();
+    }
+
+    [[nodiscard]] ADS_CPP20_CONSTEXPR const View<SuperblockRank>& getSuperblockRankArray() const noexcept {
+        return derived().getSuperblockRankArray();
+    }
+    [[nodiscard]] ADS_CPP20_CONSTEXPR View<SuperblockRank>& getSuperblockRankArray() noexcept {
+        return derived().getSuperblockRankArray();
+    }
+
+    // ** An implementation of this interface could ignore the previous methods and only override the following **
+
+public:
     [[nodiscard]] ADS_CPP20_CONSTEXPR BlockRank getBlockRank(Index i) const noexcept {
         ADS_ASSUME(i >= 0);
         ADS_ASSUME(i < derived().numBlocks());
@@ -463,13 +570,6 @@ public:
         // the number of superblock ranks is one larger than the number of superblocks
         ADS_ASSUME(i <= derived().numSuperblocks());
         return derived().getSuperblockRankArray()[derived().superblockRankIdxInArray(i)];
-    }
-
-
-    ADS_CPP20_CONSTEXPR void setLimb(Index i, Limb newVal) noexcept {
-        ADS_ASSUME(i >= 0);
-        ADS_ASSUME(i < derived().sizeInLimbs());
-        derived().getLimbRef(i) = newVal;
     }
 
     ADS_CPP20_CONSTEXPR void setBlockRank(Index i, BlockRank newVal) noexcept {
@@ -492,44 +592,10 @@ public:
         derived().getSuperblockRankArray().setBits(derived().superblockRankIdxInArray(i), newVal);
     }
 
-    // ** The following two functions rarely need to be overwritten and should be used even less
-    // in performance critical code **
-    [[nodiscard]] ADS_CPP20_CONSTEXPR bool getBit(Index i) const noexcept {
-        ADS_ASSUME(i >= 0);
-        ADS_ASSUME(i < derived().size());
-        return BitwiseAccess<1>::getBits(&derived().getLimbRef(i / 64), i % 64);
-    }
-    ADS_CPP20_CONSTEXPR void setBit(Index i, bool newVal = true) noexcept {
-        ADS_ASSUME(i >= 0);
-        ADS_ASSUME(i < derived().size());
-        return BitwiseAccess<1>::setBits(&derived().getLimbRef(i / 64), i % 64, newVal);
-    }
-
-private:
-    ADS_CPP20_CONSTEXPR void initFromStr(std::string_view str, Index base = 2) {
-        assert(derived().sizeInBits() == str.size() * intLog2(base)); // should only be called after allocation
-        auto limbValues = this->limbViewFromStringView(str, base);
-        assert((limbValues.size() - 1) * 64 < derived().size());
-        assert(limbValues.size() * 64 >= derived().size());
-        Index i = 0;
-        for (Index superblock = 0; superblock < derived().numSuperblocks(); ++superblock) {
-            for (Index j = 0; j < derived().numLimbsInSuperblock() && i < limbValues.size(); ++j, ++i) {
-                derived().setLimb(i, limbValues.begin()[i]);
-            }
-            derived().buildRankMetadata(superblock);
-        }
-        derived().finalizeRankMetadata();
-        derived().buildSelectMetadata();
-    }
-
 public:
     // *** Default implementations for (static) getters ***
 
-    // ** Getting the size in limbs/blocks/superblocks. Usually, it's enough to implement size() (from BitvecBase) in the derived class. **
-
-    [[nodiscard]] ADS_CPP20_CONSTEXPR Index sizeInLimbs() const noexcept { return derived().numLimbs(); }
-
-    [[nodiscard]] ADS_CPP20_CONSTEXPR Index numLimbs() const noexcept { return roundUpDiv(derived().size(), 64); }
+    // ** Getting the size in blocks/superblocks. Usually, it's enough to implement size() (from BitvecBase) in the derived class. **
 
     [[nodiscard]] ADS_CPP20_CONSTEXPR Index numBlocks() const noexcept {
         return Derived::numBlocksForBits(derived().size());
@@ -560,14 +626,6 @@ public:
     [[nodiscard]] static constexpr Index bytesPerBlockRank() noexcept { return roundUpLog2(Derived::blockSize()); }
 
 
-    [[nodiscard]] static constexpr Index allocatedSizeInLimbsForBits(Index numBits) noexcept {
-        return Derived::allocatedSizeInLimbsForLimbs(roundUpDiv(numBits, 64));
-    }
-
-    [[nodiscard]] static constexpr Index allocatedSizeInLimbsForLimbs(Index numLimbs) noexcept {
-        return Derived::allocatedSizeInLimbsForBits(numLimbs * 64);
-    }
-
     [[nodiscard]] static constexpr Index numBlocksForBits(Index numBits) noexcept {
         return roundUpDiv(numBits, Derived::blockSize());
     }
@@ -578,14 +636,6 @@ public:
 
     [[nodiscard]] ADS_CPP20_CONSTEXPR Index numOnes() const noexcept {
         return derived().getSuperblockRank(derived().numSuperblocks());
-    }
-
-    using LimbIter = RandAccessIter<Derived, decltype(getLimbFunc)>;
-
-    [[nodiscard]] ADS_CPP20_CONSTEXPR LimbIter limbIter(Index i) const { return LimbIter(derived(), getLimbFunc, i); }
-
-    [[nodiscard]] ADS_CPP20_CONSTEXPR Subrange<LimbIter> limbView() const noexcept {
-        return Subrange<LimbIter>{limbIter(0), limbIter(derived().sizeInLimbs())};
     }
 
     // ** A derived class may change the return type of this function, eg to Subrange<Limb>
@@ -652,7 +702,8 @@ public:
         derived().buildSelectMetadata();
     }
 
-    /// Unlike rankOne(), this dDoesn't check that `pos` is valid, although that gives close to no measurable performance benefits.
+    /// Unlike rankOne(), this doesn't check that `pos` is valid, which gives no measurable performance benefits
+    /// but makes implementations in subclasses slightly simpler as they don't need to perform bounds checking again.
     /// However, the combined ASSUME macros do improve performance by quite a bit (if the compiler couldn't assume that pos >= 0,
     //// performance would actually be significantly lower than with the throwing checks)
     [[nodiscard]] ADS_CPP20_CONSTEXPR Index rankOneUnchecked(Index pos) const noexcept {
@@ -682,7 +733,7 @@ public:
 private:
     // ** internal implementations for the default select. They simply do binary searches, but the
     // constant factor is smaller than for inefficientSelect(). Still, some Bitvector implementations
-    // provide faster select operations ** // TODO: Actuallu implement
+    // provide faster select operations **
     template<bool IsOne>
     [[nodiscard]] constexpr Index selectSuperBlockIdx(Index& bitRank) const {
         constexpr Index linearFallbackSize = 8;
@@ -807,7 +858,7 @@ private:
                 return 64 - popcount(l);
             }
         };
-        for (Index i = first; i < numLimbs(); ++i) {
+        for (Index i = first; i < derived().numLimbs(); ++i) {
             Index rank = rankFunc(i);
             ADS_ASSUME(i - first < derived().numLimbsInBlock());
             ADS_ASSUME(rank >= 0);
@@ -817,7 +868,7 @@ private:
             bitRank -= rank;
             ADS_ASSUME(bitRank >= 0);
         }
-        return numLimbs() - 1;
+        return derived().numLimbs() - 1;
     }
 
     template<bool IsOne>

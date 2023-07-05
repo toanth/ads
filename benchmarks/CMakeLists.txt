@@ -31,11 +31,16 @@ endif ()
 if (MSVC)
     #    TODO
 else ()
-    add_compile_options(-fno-finite-math-only)
+    add_compile_options(-fno-finite-math-only -flto=auto)
+    add_link_options(-flto=auto)
 endif ()
 
-add_executable(benchmarks bitvector_benchmarks.cpp ../include/bit.hpp eliasfano_benchmarks.cpp eliasfano_benchmarks.cpp benchmarks_common.hpp ../include/bitvector/bitvec_base.hpp ../include/bitvector/cache_efficient_rank_bitvec.hpp ../include/bitvector/efficient_rank_bitvec.hpp ../include/bitvector/trivial_bitvec.hpp)
+add_executable(benchmarks bitvector_benchmarks.cpp eliasfano_benchmarks.cpp)
 
 target_link_libraries(benchmarks benchmark::benchmark benchmark::benchmark_main)
 
 target_include_directories(benchmarks PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../)
+
+add_executable(profiling profiling.cpp)
+target_link_libraries(profiling benchmark::benchmark)
+target_include_directories(profiling PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../)

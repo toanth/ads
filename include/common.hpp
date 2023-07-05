@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cassert>
 #include <charconv>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <iostream>
@@ -79,6 +80,7 @@ namespace maybe_ranges = std;
 using Index = std::ptrdiff_t;
 using U64 = std::uint64_t;
 using I64 = std::int64_t;
+using U32 = std::uint32_t;
 // TODO: Instead of a global Elem alias, define per template to allow smaller sizes
 using Elem = U64;
 using Limb = U64;
@@ -330,6 +332,8 @@ struct [[nodiscard]] Subrange {
     [[nodiscard]] constexpr Sentinel end() const noexcept { return last; }
 
     [[nodiscard]] constexpr Index size() const noexcept { return last - first; }
+
+    [[nodiscard]] constexpr auto operator[](Index i) const noexcept -> decltype(begin()[i]) { return begin()[i]; }
 };
 
 

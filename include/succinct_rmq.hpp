@@ -2,7 +2,8 @@
 #ifndef BITVECTOR_SUCCINCT_RMQ_HPP
 #define BITVECTOR_SUCCINCT_RMQ_HPP
 
-#include "bitvector/efficient_rank_bitvec.hpp" // TODO: Use better implementation
+#include "bitvector/efficient_rank_bitvec.hpp"
+#include "bitvector/recursive_bitvec.hpp"
 #include "common.hpp"
 #include <algorithm>
 #include <stack>
@@ -14,7 +15,9 @@ namespace ads {
 constexpr static bool openParen = true;
 constexpr static bool closeParen = false;
 
-template<typename T = Elem, Index BlockSize = 512, typename Bitvec = EfficientSelectBitvec<>> // TODO: Make sure the bitvector allocates cacheline-aligned
+using DefaultBitvec = EfficientSelectBitvec<>;
+
+template<typename T = Elem, Index BlockSize = 512, ADS_NORMAL_BITVEC_CONCEPT Bitvec = DefaultBitvec> // TODO: Make sure the bitvector allocates cacheline-aligned
 struct [[nodiscard]] RangeMinMaxTree {
     static_assert(BlockSize <= std::numeric_limits<T>::max() / 2);
     static_assert(BlockSize % 64 == 0);
@@ -253,7 +256,7 @@ struct [[nodiscard]] RangeMinMaxTree {
 };
 
 
-template<typename Bitvec = EfficientSelectBitvec<>>
+template<typename Bitvec = DefaultBitvec>
 class [[nodiscard]] SuccinctRMQ {
 
     using RmmTree = RangeMinMaxTree<>;
@@ -290,9 +293,7 @@ class [[nodiscard]] SuccinctRMQ {
         }
         assert(bvIdx == 1);
         dfuds.setBit(0, openParen);
-        for (Index i = 0; i < dfuds.numSuperblocks(); ++i) {
-            dfuds.buildRankMetadata(i);
-        }
+        dfuds.buildMetadata();
         return dfuds;
     }
 

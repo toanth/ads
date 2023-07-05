@@ -17,13 +17,14 @@ namespace ads {
 /// if the size of the bitvector in bits is known in advance to fit into a smaller type than Limb.
 template<Index BlockSizeInLimbs = 8, Index SuperblockSizeInLimbs = (1 << 16) / 64, typename SuperblockRankT = Limb>
 class [[nodiscard]] EfficientRankBitvec
-    : public NormalBitvecBase<EfficientRankBitvec<BlockSizeInLimbs, SuperblockSizeInLimbs, SuperblockRankT>,
+    : public RankBitvecBase<EfficientRankBitvec<BlockSizeInLimbs, SuperblockSizeInLimbs, SuperblockRankT>,
               IntType<bytesNeededForIndexing(SuperblockSizeInLimbs * 64)>, SuperblockRankT> {
 
-    using Base = NormalBitvecBase<EfficientRankBitvec<BlockSizeInLimbs, SuperblockSizeInLimbs, SuperblockRankT>,
+    using Base = RankBitvecBase<EfficientRankBitvec<BlockSizeInLimbs, SuperblockSizeInLimbs, SuperblockRankT>,
             IntType<bytesNeededForIndexing(SuperblockSizeInLimbs * 64)>, SuperblockRankT>;
     friend Base;
     friend Base::Base;
+    friend Base::Base::Base; // :D
 
     static_assert(0 < BlockSizeInLimbs && 0 < SuperblockSizeInLimbs && SuperblockSizeInLimbs % BlockSizeInLimbs == 0);
 
@@ -115,9 +116,6 @@ private:
     }
     [[nodiscard]] ADS_CPP20_CONSTEXPR View<SuperblockRank>& getSuperblockRankArray() noexcept { return superblocks; }
 };
-
-template<typename = void>
-using EfficientSelectBitvec = EfficientRankBitvec<>; // TODO: Remove
 
 #ifdef ADS_HAS_CPP20
 static_assert(IsNormalBitvec<EfficientRankBitvec<>>);

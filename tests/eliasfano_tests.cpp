@@ -21,7 +21,7 @@ TEST(EliasFano, ConstructionSmallAscending) {
     ASSERT_EQ(upper.selectOne(0), 1);
     ASSERT_EQ(upper.selectOne(2), 5);
     ASSERT_EQ(ef.getSmallest(), 1);
-    ASSERT_EQ(upper, EfficientRankBitvec<>("010101"));
+    ASSERT_EQ(upper, EfficientBitvec<>("010101"));
     const auto& lower = ef.getLower();
     ASSERT_EQ(lower.bitAccess.numBits, 0);
     for (Index i = 0; i < std::size(arr); ++i) {
@@ -123,7 +123,7 @@ TEST(EliasFano, Select) {
     EliasFano<> ef{0, 3, 3, Elem(-1)};
     ASSERT_EQ(ef.numBitsPerNumber(), 64);
     ASSERT_EQ(ef.numBitsPerNumber() - ef.numLowerBitsPerNumber(), 3);
-    ASSERT_EQ(ef.getUpper(), EfficientRankBitvec<>("011100000001"));
+    ASSERT_EQ(ef.getUpper(), EfficientBitvec<>("011100000001"));
     ASSERT_EQ(ef.get(0), 0);
     ASSERT_EQ(ef.get(1), 3);
     ASSERT_EQ(ef.get(2), 3);
