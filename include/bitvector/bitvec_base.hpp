@@ -317,6 +317,16 @@ public:
         }
     }
 
+    [[nodiscard]] constexpr std::pair<Index, Index> selectOneAndPrevOne(Index rankOfSecond) const noexcept {
+        ADS_ASSUME(rankOfSecond >= 0);
+        ADS_ASSUME(rankOfSecond < derived().numOnes());
+        if (rankOfSecond == 0) [[unlikely]] {
+            return {0, derived().selectOne(rankOfSecond)};
+        }
+        // for arbitrary bitvectors, there is no better implementation
+        return {derived().selectOne(rankOfSecond - 1), derived().selectOne(rankOfSecond)};
+    };
+
     // ** iterators and views over rank and select. Note that no effort is made to speed up consecutive rank calls etc,
     // this simply call rank/select with the current integer value **
 

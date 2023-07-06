@@ -10,6 +10,8 @@ namespace ads {
 enum class SupportedSelects { BOTH, ONE_ONLY };
 
 /// \brief Recursive Bitvector. Most of the later template arguments should not really be changed.
+/// Needs about 4% space overhead (compared to around 3% space overhead for the EfficientRankBitvec) but answers select
+/// queries faster starting at about 10^5 bits.
 /// \tparam NestedBitvec The nested bitvector, of which two with approx. size() / BlockSize bits are stored.
 /// \tparam SelectOps Which select operations to support. Not supporting both saves one of two bitvectors, which
 /// stores approx. size()/BlockSize logical bits (its allocated size may be larger, depending on the type NestedBitvec).
@@ -175,6 +177,46 @@ public:
         return res - popcount(this->getLimb(limbIdx) & mask);
     }
 
+    // Don't iterate over the blockRanks twice and don't call nested selectOne twice unless necessary.
+    // Cf. rankOneUnchecked() below. This function exists because it fits the pattern in which Elias-Fano calls selectOne
+    // and the pattern in which this bitvector calls the nested bitvector's selectOne function, so for a
+    // RecursiveBitvec<RecursiveBitvec<TrivialBitvec>>>, this turns 14 selectOne()s per predecessor into usually
+    // no more than 3 selectOneAndPrev calls overall. // TODO: Make EliasFano use selectOneAndPrevOne instead of selectZero.
+    [[nodiscard]] ADS_CPP20_CONSTEXPR std::pair<Index, Index> selectOneAndPrevOne(Index rankOfSecond) const noexcept {
+        ADS_ASSUME(rankOfSecond >= 0);
+        ADS_ASSUME(rankOfSecond < this->numOnes());
+        if (rankOfSecond == 0) [[unlikely]] {
+            return {0, selectOneUnchecked(rankOfSecond)};
+        }
+        Index nestedSearchRank = rankOfSecond / BlockSize;
+        if ((rankOfSecond - 1) / BlockSize != nestedSearchRank) [[unlikely]] {
+            return {selectOneUnchecked(rankOfSecond - 1), selectOneUnchecked(rankOfSecond)};
+        }
+        Index upperRankInBlock = rankOfSecond % BlockSize;
+        Index lowerRankInBlock = (rankOfSecond - 1) % BlockSize;
+        auto [nestedIdx, nestedEndIdx] = nestedOnes.selectOneAndPrevOne(nestedSearchRank);
+        Index blockIdx = selectBlock<true>(nestedIdx, nestedEndIdx, lowerRankInBlock);
+        ADS_ASSUME(blockRanks[blockIdx] >= upperRankInBlock || blockIdx == nestedEndIdx);
+        if (blockRanks[blockIdx] == upperRankInBlock) [[unlikely]] {
+            // the second one is in a later block *this was the last one in the block), so do binary search again to find it
+            Index upperBlock = selectBlock<true>(blockIdx + 1, nestedEndIdx, upperRankInBlock);
+            Index rankInUpperBlockFromRight = (blockRanks[upperBlock] + BlockSize - upperRankInBlock - 1) % BlockSize;
+            ADS_ASSUME(rankInUpperBlockFromRight >= 0);
+            Index upperRes = selectInBlockFromRight<true>(upperBlock, rankInUpperBlockFromRight);
+
+            [[maybe_unused]] Index rankInLowerBlockFromRight = (blockRanks[blockIdx] + BlockSize - lowerRankInBlock - 1) % BlockSize;
+            ADS_ASSUME(rankInLowerBlockFromRight == 0);
+            Index lowerRes = selectInBlockFromRight<true>(blockIdx, 0);
+            return {lowerRes, upperRes};
+        }
+        ADS_ASSUME(blockIdx >= nestedIdx);
+
+        Index rankInBlockFromRight = (blockRanks[blockIdx] + BlockSize - upperRankInBlock - 1) % BlockSize;
+        ADS_ASSUME(rankInBlockFromRight >= 0);
+        ADS_ASSUME(rankInBlockFromRight < rankInBlock(&this->getLimbRef(blockIdx * limbsInBlock)));
+        return select2InBlockFromRight(blockIdx, rankInBlockFromRight);
+    }
+
 
     [[nodiscard]] ADS_CPP20_CONSTEXPR Index selectOneUnchecked(Index rank) const noexcept {
         ADS_ASSUME(rank >= 0);
@@ -182,16 +224,9 @@ public:
         Index nestedSearchRank = rank / BlockSize;
         rank %= BlockSize;
         ADS_ASSUME(nestedSearchRank < nestedOnes.numOnes());
-        Index nestedIdxEnd = nestedOnes.selectOne(nestedSearchRank);
-        Index nestedIdx;
-        if (nestedSearchRank == 0) [[unlikely]] {
-            nestedIdx = 0; // if nestedIdx == nestedIdxEnd, std::upper_bound returns nestedIdx
-        } else {
-            nestedIdx = nestedOnes.selectOne(nestedSearchRank - 1);
-            ADS_ASSUME(nestedIdxEnd > nestedIdx);
-        }
-        const BlockCountT* blockPtr = std::upper_bound(blockRanks.ptr + nestedIdx, blockRanks.ptr + nestedIdxEnd, rank);
-        Index blockIdx = blockPtr - blockRanks.ptr;
+        auto [nestedIdx, nestedEndIdx] = nestedOnes.selectOneAndPrevOne(nestedSearchRank);
+        ADS_ASSUME(nestedIdx <= nestedEndIdx);
+        Index blockIdx = selectBlock<true>(nestedIdx, nestedEndIdx, rank);
         ADS_ASSUME(blockIdx >= nestedIdx);
         // blockRanks[blockIdx] contains the number of 1s relative to nestedSearchRank * BlockSize or (nestedSearchRank +
         // 1) * BlockSize, so we need to find the (blockRanks[blockIdx] - rank mod BlockSize)th bit counting from the right, 0 indexed
@@ -215,24 +250,8 @@ private:
         Index nestedSearchRank = rankZero / BlockSize;
         rankZero %= BlockSize;
         ADS_ASSUME(nestedSearchRank < nestedZeros.numOnes());
-        Index nestedIdxEnd = nestedZeros.selectOne(nestedSearchRank);
-        Index nestedIdx;
-        if (nestedSearchRank == 0) [[unlikely]] {
-            nestedIdx = 0;
-        } else {
-            nestedIdx = nestedZeros.selectOne(nestedSearchRank - 1); // a 1 represents a 256 * i th 0 with i > 0
-            ADS_ASSUME(nestedIdxEnd > nestedIdx);
-        }
-        // The blockRank array stores rankOne() after the end of the block, modulo BlockSize.
-        // rankZero((i + 1) * BlockSize) % BlockSize is ((i + 1) * BlockSize - blockRank[i]) % BlockSize, which is
-        // just BlockSize - blockRank[i], except when the result would be BlockSize; it should be 0 instead.
-        auto compareRank = [](Index rankZero, BlockCountT blockRankOne) {
-            Index blockRankZero = (BlockSize - blockRankOne) % BlockSize;
-            return rankZero < blockRankZero;
-        };
-        const BlockCountT* blockPtr
-                = std::upper_bound(blockRanks.ptr + nestedIdx, blockRanks.ptr + nestedIdxEnd, rankZero, compareRank);
-        Index blockIdx = blockPtr - blockRanks.ptr;
+        auto [nestedIdx, nestedEndIdx] = nestedZeros.selectOneAndPrevOne(nestedSearchRank);
+        Index blockIdx = selectBlock<false>(nestedIdx, nestedEndIdx, rankZero);
         ADS_ASSUME(blockIdx >= nestedIdx);
         ADS_ASSUME(blockIdx < numBlocks());
         // blockRanks[blockIdx] contains the number of 1s relative to nestedSearchRan * BlockSize or
@@ -244,7 +263,7 @@ private:
             Index numIgnoredZeros = ((limbsInBlock - numLimbs() % limbsInBlock) % limbsInBlock) * 64;
             rankInBlockFromRight -= numIgnoredZeros;
         }
-        ADS_ASSUME(rankInBlockFromRight >= 0); // TODO: Does this hold? explain why
+        ADS_ASSUME(rankInBlockFromRight >= 0);
         ADS_ASSUME(rankInBlockFromRight < BlockSize);
         return selectInBlockFromRight<false>(blockIdx, rankInBlockFromRight);
     }
@@ -277,6 +296,59 @@ private:
         }
         ADS_ASSUME(false);
         return -1;
+    }
+
+    [[nodiscard]] ADS_CPP20_CONSTEXPR std::pair<Index, Index> select2InBlockFromRight(Index blockIdx, Index rankOfRight) const noexcept {
+        ADS_ASSUME(blockIdx >= 0);
+        ADS_ASSUME(rankOfRight >= 0);
+        ADS_ASSUME(rankOfRight + 1 < BlockSize); // the left value's rank must also be in the same block
+        Index blockStart = blockIdx * limbsInBlock;
+        Index blockEnd = std::min((blockIdx + 1) * limbsInBlock, numLimbs());
+        ADS_ASSUME(blockStart < blockEnd);
+        Index rankInBlock = rankOfRight;
+        for (Index i = blockEnd - 1; i >= blockStart; --i) {
+            Limb limb = this->getLimb(i);
+            Index popcnt = popcount(limb);
+            if (rankInBlock < popcnt) {
+                ADS_ASSUME(rankInBlock >= 0);
+                Index rankInLimb = popcnt - rankInBlock - 1;
+                // TODO: Use separate function for computing the rank of two values at the same time?
+                // Should be relatively easy for the table lookup implementation.
+                Index rightRes = i * 64 + u64Select(limb, rankInLimb);
+                if (rankInBlock + 1 < popcnt) [[likely]] {
+                    Index leftRes = i * 64 + u64Select(limb, rankInLimb - 1);
+                    return {leftRes, rightRes};
+                }
+                while (this->getLimb(--i) == 0) {
+                    ADS_ASSUME(i >= blockStart);
+                }
+                limb = this->getLimb(i);
+                ADS_ASSUME(i >= blockStart);
+                return {i * 64 + u64Select(limb, popcount(limb) - 1), rightRes};
+            }
+            rankInBlock -= popcnt;
+        }
+        ADS_ASSUME(false);
+        return {-1, -1};
+    }
+
+
+    template<bool IsOne>
+    [[nodiscard]] ADS_CPP20_CONSTEXPR Index selectBlock(Index lower, Index upper, Index rank) const noexcept {
+        /// TODO: Better implementation
+        // The blockRank array stores rankOne() after the end of the block, modulo BlockSize.
+        // rankZero((i + 1) * BlockSize) % BlockSize is ((i + 1) * BlockSize - blockRank[i]) % BlockSize, which is
+        // just BlockSize - blockRank[i], except when the result would be BlockSize; it should be 0 instead.
+        auto compareRank = [](Index rankZero, BlockCountT blockRankOne) {
+            if constexpr (IsOne) {
+                return rankZero < blockRankOne;
+            } else {
+                Index blockRankZero = (BlockSize - blockRankOne) % BlockSize;
+                return rankZero < blockRankZero;
+            }
+        };
+        const BlockCountT* blockPtr = std::upper_bound(blockRanks.ptr + lower, blockRanks.ptr + upper, rank, compareRank);
+        return blockPtr - blockRanks.ptr;
     }
 
     // TODO: Rename/remove
