@@ -203,6 +203,8 @@ constexpr std::from_chars_result fromChars(const char* first, const char* last, 
 }
 
 
+// inlining this function increases performance in debug mode and helps debugging
+ADS_FORCE_INLINE([[nodiscard]] constexpr Index roundUpDiv(Index dividend, Index divisor) noexcept);
 [[nodiscard]] constexpr Index roundUpDiv(Index dividend, Index divisor) noexcept {
     assert(dividend >= 0 && divisor > 0);
     return (dividend + divisor - 1) / divisor; // hopefully, this function gets inlined and optimized (divisor is usually a power of 2)

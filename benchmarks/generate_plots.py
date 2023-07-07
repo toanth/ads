@@ -267,7 +267,6 @@ def generate_single_plot(family_infos: [FamilyInfo]):
 
 
 def generate_plots(data, baseline_data):
-    num_skipped = 0
     baseline_benchmarks = None
     current_benchmark_results = get_benchmarks(data)
     if not current_benchmark_results:
@@ -279,6 +278,11 @@ def generate_plots(data, baseline_data):
         check_same_config(data, current_benchmark_results, baseline_data, baseline_benchmarks)
 
     group_results = {}
+    baseline_families = {}
+    if baseline_data is not None:
+        for i in range(len(baseline_benchmarks)):
+            tmp = get_family(baseline_benchmarks, i, 'baseline')
+            baseline_families[tmp.name] = tmp
     for i in range(0, num_families):
         current_family = get_family(current_benchmark_results, i, 'current')
         baseline_family = None
@@ -292,11 +296,10 @@ def generate_plots(data, baseline_data):
             if current_family.group != int(current_family.group):
                 group_results[-int(current_family.group)].append(current_family)
         if baseline_data is not None:
-            baseline_family = get_family(baseline_benchmarks, i - num_skipped, 'baseline')
-            if baseline_family.name != name:
+            if name not in baseline_families:
                 print("Warning: No matching baseline results found for " + name)
-                num_skipped = num_skipped + 1
-                baseline_family = None
+            else:
+                baseline_family = baseline_families[name]
         fig = generate_single_plot([current_family, baseline_family])
         yield fig, name
     for group in group_results.values():

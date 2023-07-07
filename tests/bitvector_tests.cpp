@@ -28,6 +28,10 @@ class NormalBitvecsTest : public ::testing::Test {};
 template<ADS_BITVEC_CONCEPT Bitvec>
 class EfficientBitvecsTest : public ::testing::Test {};
 
+template<ADS_BITVEC_CONCEPT Bitvec>
+class EfficientNormalBitvecsTest : public ::testing::Test {};
+
+
 template<typename = void>
 using ReferenceBitvector = CacheEfficientRankBitvec;
 
@@ -42,9 +46,12 @@ using NormalBitvecs = ::testing::Types<CacheEfficientRankBitvec, EfficientRankBi
 /// \brief Some of the faster bitvectors, which can be used for larger tests
 using EfficientBitvecs
         = ::testing::Types<CacheEfficientRankBitvec, EfficientRankBitvec<>, TrivialBitvec<U64>, EfficientBitvec<>, VeryRecursive, Strange>;
+
+using EfficientNormalBitvecs = ::testing::Types<CacheEfficientRankBitvec, EfficientRankBitvec<>, EfficientBitvec<>, VeryRecursive>;
 TYPED_TEST_SUITE(AllBitvecsTest, AllBitvecs);
 TYPED_TEST_SUITE(NormalBitvecsTest, NormalBitvecs);
 TYPED_TEST_SUITE(EfficientBitvecsTest, EfficientBitvecs);
+TYPED_TEST_SUITE(EfficientNormalBitvecsTest, EfficientNormalBitvecs);
 
 TYPED_TEST(AllBitvecsTest, ConstructionSizes) {
     {
@@ -289,7 +296,7 @@ TYPED_TEST(AllBitvecsTest, SetBitsOneByOne) {
     TypeParam bv = TypeParam::uninitializedForSize(size);
     Index numOnes = 0;
     for (Index i = 0; i < size; ++i) {
-        bool bit = (i + 1 / 2) % 2;
+        bool bit = ((i + 1) / 2) % 2;
         bv.setBit(i, bit);
         bv.buildMetadata();
         Index numZeros = i - numOnes;
@@ -405,6 +412,24 @@ TYPED_TEST(AllBitvecsTest, IncreasingRunLengths) {
     ASSERT_EQ(current, bv.size());
     ASSERT_EQ(bv.numOnes(), numOnes);
     ASSERT_EQ(bv.numZeros(), bv.size() - numOnes);
+}
+
+TYPED_TEST(NormalBitvecsTest, ExponentialOneIndices) {
+    TypeParam bv = TypeParam(98765, 0);
+    Index numOnes = intLog2(bv.size());
+    for (Index i = 0; i < numOnes; ++i) {
+        bv.setBit(Elem(1) << i);
+    }
+    bv.buildMetadata();
+    for (Index i = 0; i < numOnes; ++i) {
+        ASSERT_EQ(bv.selectOne(i), Elem(1) << i);
+        ASSERT_LE(bv.selectZero(i), i + 2 + intLog2(i + 1)) << i;
+        ASSERT_EQ(bv.rankOne((Elem(1) << i) + 1), i + 1);
+        if (i > 1) {
+            ASSERT_EQ(bv.rankOne((Elem(1) << i) - 1), i);
+            ASSERT_EQ(bv.rankOne((Elem(1) << i) + (Elem(1) << (i - 1))), i + 1);
+        }
+    }
 }
 
 TYPED_TEST(AllBitvecsTest, EmptyOrOneElem) {
@@ -558,6 +583,30 @@ TYPED_TEST(AllBitvecsTest, RandomLongRuns) {
         if (i < numZeros) {
             ASSERT_EQ(bv.rankZero(bv.selectZero(i)), i) << bv.sizeInBits();
         }
+    }
+}
+
+TYPED_TEST(EfficientNormalBitvecsTest, RandomFewOneClusters) {
+    auto engine = createRandomEngine();
+    auto sizes = std::uniform_int_distribution<Index>(1 << 28, Elem(1) << 31);
+    auto limbs = std::uniform_int_distribution<Limb>();
+    TypeParam bv = TypeParam::uninitializedForSize(sizes(engine));
+    Index prob = sizes(engine) % 1233 + 100;
+    for (Index i = 0; i < bv.sizeInLimbs(); ++i) {
+        Limb limb = limbs(engine);
+        if (limb % prob != 0) [[likely]] {
+            limb = 0;
+        }
+        bv.setLimb(i, limb);
+    }
+    bv.buildMetadata();
+    ASSERT_GE(bv.numZeros(), bv.numOnes()); // vanishingly small chance of failure
+    for (Index i = 0; i < bv.numOnes(); ++i) {
+        ASSERT_EQ(bv.rankOne(bv.selectOne(i)), i);
+        if (i % prob < 10) {
+            ASSERT_EQ(bv.template inefficientSelect<true>(i), bv.selectOne(i));
+        }
+        ASSERT_LE(bv.selectZero(bv.rankOne(i)), i / 10 + 100); // unlikely to fail
     }
 }
 

@@ -9,14 +9,14 @@ namespace ads {
 // ZERO_ONLY isn't implemented as it can be emulated by storing every bit flipped
 enum class SupportedSelects { BOTH, ONE_ONLY };
 
-/// \brief Recursive Bitvector. Most of the later template arguments should not really be changed.
+/// \brief Recursive Bitvector. Most of the later template arguments shouldn't really need to be changed.
 /// Needs about 4% space overhead (compared to around 3% space overhead for the EfficientRankBitvec) but answers select
 /// queries faster starting at about 10^5 bits.
 /// \tparam NestedBitvec The nested bitvector, of which two with approx. size() / BlockSize bits are stored.
 /// \tparam SelectOps Which select operations to support. Not supporting both saves one of two bitvectors, which
 /// stores approx. size()/BlockSize logical bits (its allocated size may be larger, depending on the type NestedBitvec).
 /// \tparam BlockSize The number of bits in a block. This is used to determines the BlockCountT type;
-/// smaller values use more space but can reduce query times.
+/// smaller values use more space but can reduce query times. Must currently be a multiple of 64.
 /// \tparam BlockCountT The type used to represent block counts, must be able to hold values up to BlockSize - 1.
 /// Shouldn't really need to be overwritten.
 template<ADS_BITVEC_CONCEPT NestedBitvec, SupportedSelects SelectOps = SupportedSelects::BOTH, Index BlockSize = 256,
@@ -333,22 +333,115 @@ private:
     }
 
 
+    static constexpr Index linearFallbackSize = 16;
+
+    template<bool IsOne>
+    [[nodiscard]] ADS_CPP20_CONSTEXPR Index getRank(Index i) const noexcept {
+        Index rank = blockRanks[i];
+        ADS_ASSUME(rank >= 0);
+        ADS_ASSUME(rank < BlockSize);
+        if constexpr (IsOne) {
+            return rank;
+        } else {
+            // The blockRank array stores rankOne() after the end of the block, modulo BlockSize.
+            // rankZero((i + 1) * BlockSize) % BlockSize is ((i + 1) * BlockSize - blockRank[i]) % BlockSize, which
+            // is just BlockSize - blockRank[i], except when the result would be BlockSize; it should be 0 instead.
+            return (BlockSize - rank) % BlockSize;
+        }
+    }
+
+    /// \brief The subrange [lower, upper) of block ranks must be in ascending order. Finds the first block in the range
+    /// [lower, upper) where the rank is strictly larger than rank or returns upper if no such block exists.
     template<bool IsOne>
     [[nodiscard]] ADS_CPP20_CONSTEXPR Index selectBlock(Index lower, Index upper, Index rank) const noexcept {
-        /// TODO: Better implementation
-        // The blockRank array stores rankOne() after the end of the block, modulo BlockSize.
-        // rankZero((i + 1) * BlockSize) % BlockSize is ((i + 1) * BlockSize - blockRank[i]) % BlockSize, which is
-        // just BlockSize - blockRank[i], except when the result would be BlockSize; it should be 0 instead.
-        auto compareRank = [](Index rankZero, BlockCountT blockRankOne) {
-            if constexpr (IsOne) {
-                return rankZero < blockRankOne;
+        ADS_ASSUME(rank >= 0);
+        ADS_ASSUME(rank < BlockSize);
+        ADS_ASSUME(lower >= 0);
+        ADS_ASSUME(upper >= lower);
+        ADS_ASSUME(upper <= numBlocks());
+        //        // TODO: Remove this...
+        //        auto compareRank = [](Index rankZero, BlockCountT blockRankOne) {
+        //            if constexpr (IsOne) {
+        //                return rankZero < blockRankOne;
+        //            } else {
+        //                Index blockRankZero = (BlockSize - blockRankOne) % BlockSize;
+        //                return rankZero < blockRankZero;
+        //            }
+        //        };
+        //        return std::upper_bound(blockRanks.ptr + lower, blockRanks.ptr + upper, rank, compareRank) - blockRanks.ptr;
+        //        // TODO: ...until here
+        // [[likely]] because for iid bits with probability p for '1', the expected value of upper - lower is 1 / p, ie 2 for 50% ones
+        if (upper - lower <= linearFallbackSize) [[likely]] {
+            // changing this from <= to < everywhere makes select 20% slower for no discernible reason, which is
+            // especially weird because other choices of linearFallbackSize don't seem to matter much
+            return selectBlockLinearly<IsOne>(lower, upper, rank);
+        }
+        // First, assume that ones are uniformly distributed. This may be completely wrong, in which case binary search
+        // with that assumption could lead to linear running time, so quickly fall back to normal binary search.
+
+        // Not really in danger of overflowing because rank < BlockSize and usually, BlockSize <= 256, upper < 2^48.
+        Index expectedOffset = (upper - lower) * rank / BlockSize;
+        ADS_ASSUME(expectedOffset >= 0);
+        ADS_ASSUME(expectedOffset < upper - lower); // strict because rank < BlockSize, so use range [lower, upper] from now on
+        Index mid = lower + expectedOffset;
+        ADS_ASSUME(mid >= lower);
+        ADS_ASSUME(mid < upper);
+        Index midRank = getRank<IsOne>(mid);
+        if (midRank <= rank) {
+            lower = mid;       // don't add 1 in case mid + 1 == upper
+            upper = upper - 1; // upper is now considered a valid part of the range
+        } else {
+            upper = mid;
+        }
+        ADS_ASSUME(lower <= upper);
+        expectedOffset = (upper - lower) * rank / BlockSize;
+        // get more pessimistic and try to get the expected position into a small interval
+        // (instead of chopping away at only one end of the search interval)
+        mid = lower + (expectedOffset * 3 + (upper - lower) / 2) / 4;
+        ADS_ASSUME(mid >= lower);
+        ADS_ASSUME(mid <= upper);
+        midRank = getRank<IsOne>(mid);
+        if (midRank <= rank) {
+            lower = mid; // don't add 1 in case lower == upper
+        } else {
+            upper = mid;
+        }
+        while (upper - lower > linearFallbackSize) [[unlikely]] {
+            mid = (lower + upper) / 2; // fallback to classical binary search
+            ADS_ASSUME(mid >= lower);
+            ADS_ASSUME(mid < upper);
+            midRank = getRank<IsOne>(mid);
+            if (midRank <= rank) {
+                lower = mid + 1;
             } else {
-                Index blockRankZero = (BlockSize - blockRankOne) % BlockSize;
-                return rankZero < blockRankZero;
+                upper = mid;
             }
-        };
-        const BlockCountT* blockPtr = std::upper_bound(blockRanks.ptr + lower, blockRanks.ptr + upper, rank, compareRank);
-        return blockPtr - blockRanks.ptr;
+        }
+        return selectBlockLinearly<IsOne>(lower, upper + 1, rank);
+    }
+
+    /// \brief The subrange [lower, upper) of block ranks must be in ascending order. Finds the first block in the range
+    /// [lower, upper) where the rank is strictly larger than rank or returns upper if no such block exists.
+    template<bool IsOne>
+    [[nodiscard]] ADS_CPP20_CONSTEXPR Index selectBlockLinearly(Index lower, Index upper, Index rank) const noexcept {
+        ADS_ASSUME(rank >= 0);
+        ADS_ASSUME(rank < BlockSize);
+        ADS_ASSUME(lower >= 0);
+        ADS_ASSUME(upper >= lower);
+        ADS_ASSUME(upper - lower <= linearFallbackSize + 1);
+        ADS_ASSUME(upper <= numBlocks());
+        //        if constexpr (BlockSize <= 128) {
+        //            const U64 mask = 0x8080'8080'8080'8080ull;
+        //            U64 val = 42; // TODO: Load from U8* blockRanks + lower
+        //            val |= mask;
+        //            va -= rank * 0x1010'1010'1010'1010ull;
+        //        }
+        for (Index i = lower; i < upper; ++i) {
+            if (getRank<IsOne>(i) > rank) { // TODO: Iterate over limbs instead of bytes?
+                return i;
+            }
+        }
+        return upper;
     }
 
     // TODO: Rename/remove

@@ -713,15 +713,10 @@ public:
         derived().setSuperblockRank(superblockIdx + 1, derived().getSuperblockRank(superblockIdx) + inSuperblockSoFar);
     }
 
-    ADS_CPP20_CONSTEXPR void finalizeRankMetadata() noexcept {
-        // do nothing
-    }
-
     ADS_CPP20_CONSTEXPR void buildRankMetadata() noexcept {
         for (Index i = 0; i < derived().numSuperblocks(); ++i) {
             derived().buildRankMetadata(i);
         }
-        derived().finalizeRankMetadata();
     }
 
     ADS_CPP20_CONSTEXPR void buildSelectMetadata() noexcept {
@@ -790,7 +785,7 @@ private:
         ADS_ASSUME(l > 0);
         ADS_ASSUME(l <= u);
         if (u - l > linearFallbackSize) {
-            // set u close to the expected location for iid ones with 50% probability, then increase exponentially
+            // set u close to the expected location for iid bit with 50% probability for '1', then increase exponentially
             // until it is an upper bound. Unlike binary search, this starts with a less pessimistic search window and
             // should hopefully be easier on the branch predictor. This improves performance for random values but hurts for especially hard cases.
             u = l;

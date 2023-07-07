@@ -212,6 +212,28 @@ static void BM_BitvecFirstLastBitOneOthersZeroSelectRandom(bm::State& state) {
     setGroup(state, 2.2);
 }
 
+static void BM_BitvecSqrtNRandomOnesSelectRandom(bm::State& state) {
+    Span<const U64> randomQueries = getRandomQueries(state);
+    SelectBitvector bv(state.range(), 0);
+    Index numOnes = std::clamp(Index(1), Index(std::sqrt(state.range())), randomQueries.size());
+    ADS_ASSUME(bv.size() > 0);
+    for (Index i = 0; i < numOnes; ++i) {
+        bv.setBit(randomQueries[i] % bv.size()); // it's ok to set the same bit twice, shouldn't happen too often
+    }
+    ADS_ASSUME(numOnes >= bv.numOnes());
+    numOnes = bv.numOnes();
+    bv.buildMetadata();
+    Index i = 0;
+    for (auto _ : state) {
+        Index val = bv.selectOne(ADS_GET_RANDVAL(2));
+        bm::DoNotOptimize(val);
+    }
+    setNumBits(state, bv.allocatedSizeInBits());
+    state.SetComplexityN(state.range());
+    subtractNFromBitCount(state);
+    setGroup(state, 2.2);
+}
+
 static void BM_BitvecSelectRandom(bm::State& state) {
     Span<const U64> randomQueries = getRandomQueries(state);
     SelectBitvector bv(getRandomNumbers(roundUpDiv(state.range(), 64)), state.range());
@@ -231,22 +253,26 @@ static void BM_BitvecSelectRandom(bm::State& state) {
     setGroup(state, 2.2);
 }
 
+//
+// BENCHMARK(BM_BitvecAllocation)->Range(8, Limb(1) << 34)->Complexity(bm::oN);
+// BENCHMARK(BM_BitvecFillZero)->Range(8, Limb(1) << 34)->Complexity(bm::oN);
+//// BENCHMARK(BM_BitvecFillOnes)->Range(8, Limb(1) << 34)->Complexity(bm::oN);
+//
+//
+// BENCHMARK(BM_BitvecAlternatingOnesZerosRankTwoThird)->RangeMultiplier(5)->Range(5, maxNumBits)->Complexity(bm::o1);
+// BENCHMARK(BM_BitvecAlternatingOnesZerosRankRandom)->RangeMultiplier(5)->Range(5, maxNumBits)->Complexity(bm::o1);
+// BENCHMARK(BM_BitvecRandomRank)->RangeMultiplier(5)->Range(5, maxNumBits)->Complexity(bm::o1);
 
-BENCHMARK(BM_BitvecAllocation)->Range(8, Limb(1) << 34)->Complexity(bm::oN);
-BENCHMARK(BM_BitvecFillZero)->Range(8, Limb(1) << 34)->Complexity(bm::oN);
-// BENCHMARK(BM_BitvecFillOnes)->Range(8, Limb(1) << 34)->Complexity(bm::oN);
 
+// BENCHMARK(BM_BitvecAlternatingOnesZerosSelectOneThird)->RangeMultiplier(5)->Range(5, maxNumBits)->Complexity(bm::o1);
+// BENCHMARK(BM_BitvecAlternatingOnesZerosSelectRandom)->RangeMultiplier(5)->Range(5, maxNumBits)->Complexity(bm::o1);
 
-BENCHMARK(BM_BitvecAlternatingOnesZerosRankTwoThird)->RangeMultiplier(5)->Range(5, maxNumBits)->Complexity(bm::o1);
-BENCHMARK(BM_BitvecAlternatingOnesZerosRankRandom)->RangeMultiplier(5)->Range(5, maxNumBits)->Complexity(bm::o1);
-BENCHMARK(BM_BitvecRandomRank)->RangeMultiplier(5)->Range(5, maxNumBits)->Complexity(bm::o1);
+// BENCHMARK(BM_BitvecOnesThenZerosSelectFirstZero)->RangeMultiplier(5)->Range(5, maxNumBits)->Complexity(bm::o1);
+BENCHMARK(BM_BitvecOnesThenZerosSelectRandom)->RangeMultiplier(5)->Range(5, maxNumBits)->Complexity(bm::o1);
 
-
-BENCHMARK(BM_BitvecAlternatingOnesZerosSelectOneThird)->RangeMultiplier(5)->Range(5, maxNumBits)->Complexity(bm::oLogN);
-BENCHMARK(BM_BitvecAlternatingOnesZerosSelectRandom)->RangeMultiplier(5)->Range(5, maxNumBits)->Complexity(bm::oLogN);
-BENCHMARK(BM_BitvecOnesThenZerosSelectFirstZero)->RangeMultiplier(5)->Range(5, maxNumBits)->Complexity(bm::oLogN);
-BENCHMARK(BM_BitvecOnesThenZerosSelectRandom)->RangeMultiplier(5)->Range(5, maxNumBits)->Complexity(bm::oLogN);
-
-BENCHMARK(BM_BitvecFirstLastBitOneOthersZeroSelectSecondOne)->RangeMultiplier(5)->Range(5, maxNumBits)->Complexity(bm::oLogN);
+// BENCHMARK(BM_BitvecFirstLastBitOneOthersZeroSelectSecondOne)->RangeMultiplier(5)->Range(5, maxNumBits)->Complexity(bm::oLogN);
 BENCHMARK(BM_BitvecFirstLastBitOneOthersZeroSelectRandom)->RangeMultiplier(5)->Range(5, maxNumBits)->Complexity(bm::oLogN);
-BENCHMARK(BM_BitvecSelectRandom)->RangeMultiplier(5)->Range(5, maxNumBits)->Complexity(bm::oLogN);
+
+BENCHMARK(BM_BitvecSqrtNRandomOnesSelectRandom)->RangeMultiplier(5)->Range(5, maxNumBits)->Complexity(bm::oLogN);
+
+BENCHMARK(BM_BitvecSelectRandom)->RangeMultiplier(5)->Range(5, maxNumBits)->Complexity(bm::o1);
