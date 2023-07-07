@@ -1,5 +1,5 @@
-#ifndef BITVECTOR_LINEAR_SPACE_RMQ_HPP
-#define BITVECTOR_LINEAR_SPACE_RMQ_HPP
+#ifndef ADS_LINEAR_SPACE_RMQ_HPP
+#define ADS_LINEAR_SPACE_RMQ_HPP
 
 #include "common.hpp"
 #include "nlogn_rmq.hpp"
@@ -260,11 +260,14 @@ public:
 
     [[nodiscard]] ADS_CPP20_CONSTEXPR Index operator()(Index lower, Index upper) const { return rmq(lower, upper); }
 
-    [[nodiscard]] ADS_CPP20_CONSTEXPR Index sizeInBits() const noexcept { return numAllocatedBits; }
+    [[nodiscard]] ADS_CPP20_CONSTEXPR Index allocatedSizeInBits() const noexcept {
+        ADS_ASSUME(allocation.size() * 8 == numAllocatedBits);
+        return numAllocatedBits;
+    }
 
     [[nodiscard]] ADS_CPP20_CONSTEXPR Index size() const noexcept { return length; }
 };
 
 } // namespace ads
 
-#endif // BITVECTOR_LINEAR_SPACE_RMQ_HPP
+#endif // ADS_LINEAR_SPACE_RMQ_HPP

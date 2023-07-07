@@ -1,5 +1,5 @@
-#ifndef BITVECTOR_NLOGN_RMQ_HPP
-#define BITVECTOR_NLOGN_RMQ_HPP
+#ifndef ADS_NLOGN_RMQ_HPP
+#define ADS_NLOGN_RMQ_HPP
 
 #include "bit.hpp"
 #include "bit_access.hpp"
@@ -75,7 +75,7 @@ public:
 
     [[nodiscard]] ADS_CPP20_CONSTEXPR Index rmq(Index lower, Index upper) const {
         if (!(0 <= lower && lower < upper && upper <= size())) [[unlikely]] {
-            throw std::invalid_argument("Invalid rmq range");
+            throw std::invalid_argument("Invalid rmq range: " + std::to_string(lower) + ", " + std::to_string(upper));
         }
         //        if (lower == upper) { return lower; }
         Index log2Length = intLog2(upper - lower);
@@ -136,6 +136,12 @@ struct [[nodiscard]] NLogNRmq : NLogNRmqOps<NLogNRmq<T, IndexType, Comp>, Comp> 
 
     [[nodiscard]] ADS_CPP20_CONSTEXPR Index sizeInBits() const noexcept { return completeSize(length) * sizeof(T) * 8; }
 
+
+    [[nodiscard]] ADS_CPP20_CONSTEXPR Index allocatedSizeInBits() const noexcept {
+        ADS_ASSUME(allocation.size() * 64 == allocation.size() * sizeof(U64) * 8);
+        return allocation.size() * 64;
+    }
+
     ADS_CPP20_CONSTEXPR const T& operator[](Index i) const noexcept { return getArrayElement(i); }
 
     [[nodiscard]] ADS_CPP20_CONSTEXPR Span<const T> values() const noexcept {
@@ -153,4 +159,4 @@ private:
 
 } // namespace ads
 
-#endif // BITVECTOR_NLOGN_RMQ_HPP
+#endif // ADS_NLOGN_RMQ_HPP

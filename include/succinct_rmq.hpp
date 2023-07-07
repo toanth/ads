@@ -1,6 +1,6 @@
 
-#ifndef BITVECTOR_SUCCINCT_RMQ_HPP
-#define BITVECTOR_SUCCINCT_RMQ_HPP
+#ifndef ADS_SUCCINCT_RMQ_HPP
+#define ADS_SUCCINCT_RMQ_HPP
 
 #include "bitvector/efficient_rank_bitvec.hpp"
 #include "bitvector/recursive_bitvec.hpp"
@@ -16,7 +16,7 @@ namespace ads {
 constexpr static bool openParen = true;
 constexpr static bool closeParen = false;
 
-using DefaultBitvec = EfficientSelectBitvec<>;
+using DefaultBitvec = EfficientBitvec<>;
 
 template<typename T = Elem, Index BlockSize = 512, ADS_NORMAL_BITVEC_CONCEPT Bitvec = DefaultBitvec> // TODO: Make sure the bitvector allocates cacheline-aligned
 struct [[nodiscard]] RangeMinMaxTree {
@@ -359,9 +359,13 @@ public:
         return Index(rmmTree.size * sizeof(typename RmmTree ::value_type) * 8 + rmmTree.getBitvector().sizeInBits());
     }
 
+    [[nodiscard]] ADS_CPP20_CONSTEXPR Index allocatedSizeInBits() const noexcept {
+        return Index(rmmTree.size * sizeof(typename RmmTree ::value_type) * 8 + rmmTree.getBitvector().allocatedSizeInBits());
+    }
+
     [[nodiscard]] ADS_CPP20_CONSTEXPR const RmmTree& getTree() const noexcept { return rmmTree; }
 };
 
 } // namespace ads
 
-#endif // BITVECTOR_SUCCINCT_RMQ_HPP
+#endif // ADS_SUCCINCT_RMQ_HPP

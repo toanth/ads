@@ -227,7 +227,7 @@ public:
 
     /// \brief The total amount of bits allocated on the heap by this class, including its data members.
     /// Note that data members within this class itself, such as pointers to allocated memory, don't count.
-    [[nodiscard]] constexpr Index numAllocatedBits() const noexcept { return allocatedSizeInLimbs * 8 * sizeof(Elem); }
+    [[nodiscard]] constexpr Index numAllocatedBits() const noexcept { return allocatedSizeInLimbs * 8 * sizeof(Limb); }
 
     [[nodiscard]] constexpr const Bitvec& getUpper() const noexcept { return upper; }
 

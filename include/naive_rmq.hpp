@@ -1,5 +1,5 @@
-#ifndef BITVECTOR_NAIVE_RMQ_HPP
-#define BITVECTOR_NAIVE_RMQ_HPP
+#ifndef ADS_NAIVE_RMQ_HPP
+#define ADS_NAIVE_RMQ_HPP
 
 #include "common.hpp"
 #include "rand_access_iter.hpp"
@@ -27,7 +27,7 @@ concept Rmq = requires(const RmqType& r) {
     RmqType(std::initializer_list<ValueType>());
     { RmqType::name } -> std::convertible_to<std::string>;
     { r(Index(), Index()) } -> std::convertible_to<Index>;
-    { r.sizeInBits() } -> std::convertible_to<Index>;
+    { r.allocatedSizeInBits() } -> std::convertible_to<Index>;
 };
 #define ADS_RMQ_CONCEPT Rmq
 #define ADS_RMQ_CONCEPT_FOR(value_type) Rmq<value_type>
@@ -62,7 +62,9 @@ struct [[nodiscard]] SimpleRMQ : std::vector<T> {
 
     [[nodiscard]] ADS_CPP20_CONSTEXPR Span<const T> values() const noexcept { return Span<const T>(*this); }
 
-    [[nodiscard]] ADS_CPP20_CONSTEXPR Index sizeInBits() const noexcept { return this->size() * sizeof(T) * 8; }
+    [[nodiscard]] ADS_CPP20_CONSTEXPR Index allocatedSizeInBits() const noexcept {
+        return this->capacity() * sizeof(T) * 8;
+    }
 };
 
 
@@ -137,7 +139,10 @@ public:
 
     [[nodiscard]] constexpr Index size() const noexcept { return length; }
 
-    [[nodiscard]] constexpr Index sizeInBits() const noexcept { return completeSize(size()) * sizeof(Index) * 8; }
+    [[nodiscard]] constexpr Index allocatedSizeInBits() const noexcept {
+        ADS_ASSUME(completeSize(size()) * sizeof(Index) * 8 == allocation.size() * 64);
+        return allocation.size() * 64;
+    }
 
     constexpr static auto getValue = [](const auto& rmq, Index i) -> Index { return rmq.minIdx(i, i + 1); };
 
@@ -150,4 +155,4 @@ public:
 
 } // namespace ads
 
-#endif // BITVECTOR_NAIVE_RMQ_HPP
+#endif // ADS_NAIVE_RMQ_HPP

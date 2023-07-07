@@ -10,6 +10,6 @@ else ()
     add_link_options(-flto=auto)
 endif ()
 
-add_compile_options(project -DADS_NO_FALLBACKS)
+add_compile_options(-DADS_NO_FALLBACKS)
 
 add_executable(project main.cpp ../include/bitvector/bitvec_base.hpp ../include/bitvector/cache_efficient_rank_bitvec.hpp ../include/bitvector/efficient_rank_bitvec.hpp ../include/bitvector/trivial_bitvec.hpp ../include/bitvector/recursive_bitvec.hpp)
