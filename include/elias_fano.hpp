@@ -5,13 +5,16 @@
 #include <cmath>
 namespace ads {
 
+/// \brief Elias-Fano which also supports predecessor and successor queries. The upper bitvector represents  occurring
+/// values with zeros instead of ones, ie it inverts all bits, which allows using selectOne() instead of selectZero() in
+/// the common case.
+/// \tparam Number The type of numbers stored the Elias-Fano data structure. Currently, this must be a built-in integer.
+/// \tparam Bitvec The bitvector to use for the upper part.
 template<typename Number = std::uint64_t, ADS_BITVEC_CONCEPT Bitvec = EfficientSelectBitvec<>>
 class [[nodiscard]] EliasFano {
-    // TODO: It might make sense to also allow user defined structs like custom n bit integers?
     static_assert(std::is_integral_v<Number>, "Elias fano only works for integers");
 
     Index numInts = 0;
-    //    Index numLowerBitsPerNumber = 0;
     Index lowerBitMask = 0;
     Index allocatedSizeInLimbs = 0;
     Elem smallestNumber = 0;
@@ -34,9 +37,9 @@ class [[nodiscard]] EliasFano {
             Index newBitIdx = upperPart + i + 1;
             Index currentUpperElemIdx = newBitIdx / 64;
             if (currentUpperElemIdx > lastUpperElemIdx) {
-                upper.setLimb(lastUpperElemIdx, currentUpperEntry);
+                upper.setLimb(lastUpperElemIdx, ~currentUpperEntry);
                 for (Index k = lastUpperElemIdx + 1; k < currentUpperElemIdx; ++k) {
-                    upper.setLimb(k, 0);
+                    upper.setLimb(k, Elem(-1));
                 }
                 lastUpperElemIdx = currentUpperElemIdx;
                 currentUpperEntry = 0;
@@ -47,9 +50,9 @@ class [[nodiscard]] EliasFano {
             }
             ++i;
         }
-        upper.setLimb(lastUpperElemIdx, currentUpperEntry);
+        upper.setLimb(lastUpperElemIdx, ~currentUpperEntry);
         for (++lastUpperElemIdx; lastUpperElemIdx < upper.sizeInLimbs(); ++lastUpperElemIdx) {
-            upper.setLimb(lastUpperElemIdx, 0);
+            upper.setLimb(lastUpperElemIdx, Elem(-1));
         }
         upper.buildMetadata();
     }
@@ -57,9 +60,12 @@ class [[nodiscard]] EliasFano {
     [[nodiscard]] ADS_CPP20_CONSTEXPR Elem predecessorImpl(Elem n) const {
         Number upperSearchBits = n >> numLowerBitsPerNumber();
         Number lowerSearchBits = n & lowerBitMask;
-        ADS_ASSUME(upper.numZeros() > upperSearchBits);
-        Index first = upper.selectZero(upperSearchBits) - upperSearchBits;
-        Index last = upper.selectZero(upperSearchBits + 1) - upperSearchBits - 1;
+        ADS_ASSUME(upper.numOnes() > upperSearchBits);
+        //        Index first = upper.selectOne(upperSearchBits) - upperSearchBits;
+        //        Index last = upper.selectOne(upperSearchBits + 1) - upperSearchBits - 1;
+        auto [first, last] = upper.selectOneAndPrevOne(upperSearchBits + 1);
+        first -= upperSearchBits;
+        last -= upperSearchBits + 1;
         if (numLowerBitsPerNumber() == 0) {
             return first == last ? getImpl(first - 1) : getImpl(first);
         }
@@ -88,11 +94,15 @@ class [[nodiscard]] EliasFano {
     [[nodiscard]] ADS_CPP20_CONSTEXPR Elem successorImpl(Elem n) const {
         Number upperSearchBits = n >> numLowerBitsPerNumber();
         Number lowerSearchBits = n & lowerBitMask;
-        Index first = upper.selectZero(upperSearchBits) - upperSearchBits;
+        //        Index first = upper.selectOne(upperSearchBits) - upperSearchBits;
+        auto [first, last] = upper.selectOneAndPrevOne(upperSearchBits + 1);
+        first -= upperSearchBits;
+        last -= upperSearchBits + 2;
         if (numLowerBitsPerNumber() == 0) {
             return getImpl(first);
         }
-        Index last = upper.selectZero(upperSearchBits + 1) - upperSearchBits - 2;
+        //        Index last = upper.selectZero(upperSearchBits + 1) - upperSearchBits - 2;
+        //        Index last = upper.selectOne(upperSearchBits + 1) - upperSearchBits - 2;
         while (last - first > linearFallbackSize) {
             Index mid = (last + first) / 2;
             Number lowerBits = lower.getBits(mid);
@@ -128,7 +138,7 @@ class [[nodiscard]] EliasFano {
     }
 
     /// \brief Use the bitvector to find the upper parts of the ith stored number.
-    [[nodiscard]] constexpr Elem getUpperPart(Index i) const { return upper.selectOne(i) - i - 1; }
+    [[nodiscard]] constexpr Elem getUpperPart(Index i) const { return upper.selectZero(i) - i - 1; }
 
     /// \brief The ith entry in the lower array, which holds the lower bits of the ith stored number.
     [[nodiscard]] constexpr Elem getLowerPart(Index i) const { return lower.getBits(i); }
@@ -152,7 +162,7 @@ public:
         Index lowerBitsPerNumber = bitsPerNumber - upperBitsPerNumber;
         Index lowerSizeInElems = roundUpDiv(lowerBitsPerNumber * numInts, 8 * sizeof(Elem));
         Index maxUpperVal = Index(rangeOfValues >> lowerBitsPerNumber);
-        Index numBitsInUpper = 1 + numInts + maxUpperVal; // +1 because the first bit is always a zero
+        Index numBitsInUpper = 2 + numInts + maxUpperVal; // +2 because the first bit is always a one, and the last bit as well
         Index allocatedUpperSizeInElems = Bitvec::allocatedSizeInLimbsForBits(numBitsInUpper);
         ADS_ASSUME(maxUpperVal < Index(1) << upperBitsPerNumber);
 
@@ -197,7 +207,7 @@ public:
         return Number(predecessorImpl(Elem(n) - smallestNumber) + smallestNumber);
     }
 
-    // TODO: constexpr tests to detect UB
+
     [[nodiscard]] constexpr Number successor(Number n) const {
         // the cast is implementation defined before C++20 (but still does the right thing)
         if (n <= I64(smallestNumber)) {

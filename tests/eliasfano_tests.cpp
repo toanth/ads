@@ -12,16 +12,17 @@ TEST(EliasFano, ConstructionSmallAscending) {
     ASSERT_EQ(ef.numBitsPerNumber(), 3);
     const auto& upper = ef.getUpper();
     ASSERT_LE(upper.sizeInBits(), 12);
-    ASSERT_EQ(upper.getBit(0), false);
+    ASSERT_TRUE(upper.getBit(0));
     for (Index i = 0; i < 3; ++i) {
-        ASSERT_EQ(upper.getBit(2 * i + 1), true) << i;
+        ASSERT_FALSE(upper.getBit(2 * i + 1)) << i;
     }
-    ASSERT_EQ(upper.selectZero(0), 0);
-    ASSERT_EQ(upper.selectZero(1), 2);
-    ASSERT_EQ(upper.selectOne(0), 1);
-    ASSERT_EQ(upper.selectOne(2), 5);
+    ASSERT_EQ(upper.selectOne(0), 0);
+    ASSERT_EQ(upper.selectOne(1), 2);
+    ASSERT_EQ(upper.selectZero(0), 1);
+    ASSERT_EQ(upper.selectZero(2), 5);
     ASSERT_EQ(ef.getSmallest(), 1);
-    ASSERT_EQ(upper, EfficientBitvec<>("010101"));
+    //    ASSERT_EQ(upper, EfficientBitvec<>("010101"));
+    ASSERT_EQ(upper, EfficientBitvec<>("1010101"));
     const auto& lower = ef.getLower();
     ASSERT_EQ(lower.bitAccess.numBits, 0);
     for (Index i = 0; i < std::size(arr); ++i) {
@@ -123,7 +124,8 @@ TEST(EliasFano, Select) {
     EliasFano<> ef{0, 3, 3, Elem(-1)};
     ASSERT_EQ(ef.numBitsPerNumber(), 64);
     ASSERT_EQ(ef.numBitsPerNumber() - ef.numLowerBitsPerNumber(), 3);
-    ASSERT_EQ(ef.getUpper(), EfficientBitvec<>("011100000001"));
+    //    ASSERT_EQ(ef.getUpper(), EfficientBitvec<>("011100000001"));
+    ASSERT_EQ(ef.getUpper(), EfficientBitvec<>("1000111111101"));
     ASSERT_EQ(ef.get(0), 0);
     ASSERT_EQ(ef.get(1), 3);
     ASSERT_EQ(ef.get(2), 3);
@@ -271,6 +273,24 @@ TEST(EliasFano, PredecessorAscending) {
     }
 }
 
+TEST(EliasFano, PredecessorSparseNonexisting) {
+    std::vector<Elem> vec(1'000'000);
+    std::iota(vec.begin(), vec.end(), 65535);
+    for (Index i = 0; i < vec.size(); i += 1 / 100 + i % 4 + 1) {
+        --vec[i];
+    }
+    EliasFano<> ef(vec);
+    ASSERT_LE(ef.numBitsPerNumber(), intLog2(vec.size()) + 1);
+    ASSERT_EQ(ef.numLowerBitsPerNumber(), 0);
+    ASSERT_LE(ef.numAllocatedBits(), 2 * (vec.size() + vec.size() / 10));
+    auto engine = createRandomEngine();
+    std::uniform_int_distribution<Elem> dist(0, vec.back() + vec.back() / 100);
+    for (Index i = 0; i < 10'000; ++i) {
+        Elem searched = dist(engine) + ef.getSmallest();
+        Elem expected = *(std::upper_bound(vec.begin(), vec.end(), searched) - 1);
+        ASSERT_EQ(ef.predecessor(searched), expected);
+    }
+}
 
 TEST(EliasFano, PredecessorRandom) {
     auto engine = createRandomEngine();

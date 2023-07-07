@@ -118,8 +118,8 @@ static void BM_EliasFanoPredecessorAcendingThenLarge(bm::State& state) {
 }
 
 
-// BENCHMARK(BM_EliasFanoCreation)->RangeMultiplier(5)->Range(5, maxNumValues)->Complexity(bm::oN);
-// BENCHMARK(BM_EliasFanoPredecessorInArray)->RangeMultiplier(5)->Range(5, maxNumValues)->Complexity(bm::oN);
-// BENCHMARK(BM_EliasFanoPredecessorRandom)->RangeMultiplier(5)->Range(5, maxNumValues)->Complexity(bm::oN);
-// BENCHMARK(BM_EliasFanoPredecessorAcending)->RangeMultiplier(5)->Range(5, maxNumValues)->Complexity(bm::oN);
-// BENCHMARK(BM_EliasFanoPredecessorAcendingThenLarge)->RangeMultiplier(5)->Range(5, maxNumValues)->Complexity(bm::oN);
+BENCHMARK(BM_EliasFanoCreation)->RangeMultiplier(5)->Range(5, maxNumValues)->Complexity(bm::oN);
+BENCHMARK(BM_EliasFanoPredecessorInArray)->RangeMultiplier(5)->Range(5, maxNumValues)->Complexity(bm::oN);
+BENCHMARK(BM_EliasFanoPredecessorRandom)->RangeMultiplier(5)->Range(5, maxNumValues)->Complexity(bm::oN);
+BENCHMARK(BM_EliasFanoPredecessorAcending)->RangeMultiplier(5)->Range(5, maxNumValues)->Complexity(bm::oN);
+BENCHMARK(BM_EliasFanoPredecessorAcendingThenLarge)->RangeMultiplier(5)->Range(5, maxNumValues)->Complexity(bm::oN);
