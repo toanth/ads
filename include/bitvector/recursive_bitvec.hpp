@@ -465,13 +465,13 @@ private:
 /// \brief Bitvector optimized for select queries. While TrivialBitvec may be faster, it also needs much more memory.
 template<SupportedSelects SelectOps = SupportedSelects::BOTH, Index BlockSize = 256, typename BlockCountT = IntType<bytesNeededForIndexing(256)>>
 using EfficientSelectBitvec
-        = RecursiveBitvec<RecursiveBitvec<TrivialBitvec<U32, Operations::SELECT_ONLY>, SupportedSelects::ONE_ONLY>, SelectOps, BlockSize, BlockCountT>;
+        = RecursiveBitvec<RecursiveBitvec<TrivialBitvec<U32, Operations::SELECT_ONLY>, SupportedSelects::ONE_ONLY, 64>, SelectOps, BlockSize, BlockCountT>;
 
 
 /// \brief The default bitvector type, which offers good performance across all operations. The same as EfficientSelectBitvec.
 template<SupportedSelects SelectOps = SupportedSelects::BOTH, Index BlockSize = 256, typename BlockCountT = IntType<bytesNeededForIndexing(256)>>
 using EfficientBitvec
-        = RecursiveBitvec<RecursiveBitvec<TrivialBitvec<U32>, SupportedSelects::ONE_ONLY>, SelectOps, BlockSize, BlockCountT>;
+        = RecursiveBitvec<RecursiveBitvec<TrivialBitvec<U32>, SupportedSelects::ONE_ONLY, 64>, SelectOps, BlockSize, BlockCountT>;
 
 static_assert(IsNormalBitvec<EfficientBitvec<>>);
 
