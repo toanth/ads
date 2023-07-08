@@ -241,7 +241,7 @@ def generate_single_plot(family_infos: [FamilyInfo]):
             time_name += " / n"
         ax.plot(res.input_sizes, res.times, 'b-s', label=time_name)
         if res.repetitions > 1:
-            ax.errorbar(res.input_sizes, errors[0][0], errors[0][1], fmt=styles[0], label='time µ ± σ')
+            ax.errorbar(res.input_sizes, errors[0][0], errors[0][1], fmt="b.", label='time µ ± σ')
         ax2.plot(res.input_sizes, res.bits, styles[1], label='space')
         color_y_axis(ax, styles[0][0])
         ax.set_xlabel('n')
