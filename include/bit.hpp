@@ -22,6 +22,7 @@ template<typename Integer> // no concepts in C++17 :(
         return intLog2(static_cast<std::make_unsigned_t<Integer>>(n));
     } else {
         static_assert(std::is_unsigned_v<Integer>);
+        ADS_ASSUME(n > 0); // helps to eliminate a check in std::countl_zero; __builtin_clz produces UB in that case
 #ifdef ADS_HAS_CPP20
         return 8 * sizeof(Integer) - std::countl_zero(n) - 1;
 #elif defined ADS_HAS_DEFAULT_GCC_INTRINSICS
@@ -36,21 +37,25 @@ template<typename Integer> // no concepts in C++17 :(
     }
 }
 
-template<typename UnsignedInteger>
-[[nodiscard]] ADS_CPP20_CONSTEXPR Index roundUpLog2(UnsignedInteger n) noexcept {
-    static_assert(std::is_unsigned_v<UnsignedInteger>);
-    assert(n > 0);
+template<typename Integer>
+[[nodiscard]] ADS_CPP20_CONSTEXPR Index roundUpLog2(Integer n) noexcept {
+    if constexpr (std::is_signed_v<Integer>) {
+        return roundUpLog2(static_cast<std::make_unsigned_t<Integer>>(n));
+    } else {
+        static_assert(std::is_unsigned_v<Integer>);
+        assert(n > 0);
 #ifdef ADS_HAS_CPP20
-    if (std::has_single_bit(n)) {
-        return intLog2(n);
-    }
-    return intLog2(n) + 1; // TODO: Test if this is actually faster than the fallback, use for non-c++20 mode as well if faster
+        if (std::has_single_bit(n)) {
+            return intLog2(n);
+        }
+        return intLog2(n) + 1; // TODO: Test if this is actually faster than the fallback, use for non-c++20 mode as well if faster
 #else
-    if (n <= 1) {
-        return 0;
-    }
-    return log2(UnsignedInteger(n - 1)) + 1;
+        if (n <= 1) {
+            return 0;
+        }
+        return intLog2(Integer(n - 1)) + 1;
 #endif
+    }
 }
 
 template<typename T>
@@ -78,6 +83,14 @@ template<typename UnsignedInteger>
 #endif
 }
 
+/// \brief Returns the rank one of pos in val, ie. counts all ones in (pos, lsb]
+template<typename UnsignedInteger>
+[[nodiscard]] ADS_CPP20_CONSTEXPR Index popcountUntil(UnsignedInteger val, Index pos) noexcept {
+    ADS_ASSUME(pos >= 0);
+    ADS_ASSUME(pos < sizeof(UnsignedInteger) * 8);
+    const Index shiftAmount = sizeof(UnsignedInteger) * 8 - pos - 1;
+    return popcount(val << shiftAmount);
+}
 
 template<typename UnsignedInteger>
 [[nodiscard]] constexpr UnsignedInteger reverseBits(UnsignedInteger n) noexcept {
@@ -99,9 +112,9 @@ template<typename UnsignedInteger>
 
 
 [[nodiscard]] ADS_CPP20_CONSTEXPR Index countTrailingZeros(U64 n) noexcept {
-    ADS_ASSUME(n > 0);                              // undefined otherwise
+    ADS_ASSUME(n > 0); // undefined otherwise
 #ifdef ADS_HAS_CPP20
-    return static_cast<Index>(std::countr_zero(n)); // TODO: Check if intrinsics are faster since they work in less cases
+    return static_cast<Index>(std::countr_zero(n));
 #elif defined ADS_HAS_DEFAULT_GCC_INTRINSICS
     return static_cast<Index>(__builtin_ctzll(n));
     return static_cast<Index>(__tzcnt_u64(n));
@@ -118,7 +131,7 @@ template<typename UnsignedInteger>
     //     // TODO: Measure if faster than fallback (in general, but especially) on AMD processors before Zen 3.
     //     // At least on my machine, uncommenting this results in a ridiculously slow (up to 40x slower for small bvs) select
     //     // because the processor advertises BMI2 as supported but implements it in microcode
-    //     // It's surprisingly hard to figure out at compile time whether the target architecure supports BMI2 instructions,
+    //     // It's surprisingly hard to figure out at compile time whether the target architecture supports BMI2 instructions,
     //     // so let the user decide (with the default being the generic fallback) in the MSVC case
     //     return _pdep_u64(1ull << bitRank, n);
     // #else
@@ -149,14 +162,14 @@ template<typename UnsignedInteger>
 }
 
 template<Index BitSize = 8>
-using BitSelectTable = std::array<std::array<unsigned char, BitSize>, (1ull << BitSize)>;
+using BitSelectTable = std::array<std::array<Byte, BitSize>, (1ull << BitSize)>;
 
 template<Index BitSize = 8>
 [[nodiscard]] ADS_CONSTEVAL BitSelectTable<BitSize> precomputeBitSelectTable() noexcept {
     BitSelectTable<BitSize> table{}; // {} needed for constant evaluation
     for (Index bitString = 0; bitString < Index(table.size()); ++bitString) {
         for (Index bitRank = 0; bitRank < BitSize; ++bitRank) {
-            table[bitString][bitRank] = static_cast<unsigned char>(constevalU64Select(bitString, bitRank));
+            table[bitString][bitRank] = static_cast<Byte>(constevalU64Select(bitString, bitRank));
         }
     }
     return table;
@@ -164,7 +177,7 @@ template<Index BitSize = 8>
 
 constexpr static inline BitSelectTable<> byteSelectTable = precomputeBitSelectTable();
 
-[[nodiscard]] constexpr Index byteSelectWithTable(unsigned char byte, Index bitRank) noexcept {
+[[nodiscard]] constexpr Index byteSelectWithTable(Byte byte, Index bitRank) noexcept {
     return byteSelectTable[byte][bitRank];
 }
 
@@ -187,7 +200,7 @@ constexpr static inline BitSelectTable<> byteSelectTable = precomputeBitSelectTa
     bitRank -= Index(((counts << 8) >> numBitsBeforeByte) & 0xff);
     ADS_ASSUME(bitRank >= 0);
     ADS_ASSUME(bitRank < 8);
-    return numBitsBeforeByte + byteSelectWithTable(static_cast<unsigned char>(value >> numBitsBeforeByte), bitRank);
+    return numBitsBeforeByte + byteSelectWithTable(static_cast<Byte>(value >> numBitsBeforeByte), bitRank);
 }
 
 
@@ -196,9 +209,12 @@ constexpr static inline BitSelectTable<> byteSelectTable = precomputeBitSelectTa
     //    return countTrailingZeros(u64SelectImpl(value, bitRank));
 }
 
-[[nodiscard]] ADS_CPP20_CONSTEXPR Index u256Select(const U64* valuePtr, Index bitRank) noexcept {
+
+[[nodiscard]] ADS_CPP20_CONSTEXPR Index u256Select(const U64* valuePtr, Index bitRank) noexcept [[gnu::nonnull]] {
     ADS_ASSUME(bitRank >= 0);
     ADS_ASSUME(bitRank < 256);
+    ADS_ASSUME(valuePtr);
+    ADS_ASSUME_ALIGNED(valuePtr, 32);
     Index count = popcount(valuePtr[0]);
     if (bitRank < count) {
         return u64Select(valuePtr[0], bitRank);
@@ -219,19 +235,33 @@ constexpr static inline BitSelectTable<> byteSelectTable = precomputeBitSelectTa
     return u64Select(valuePtr[3], bitRank);
 }
 
-[[nodiscard]] ADS_CPP20_CONSTEXPR Index u256SelectZero(const U64* valuePtr, Index bitRank) noexcept {
+[[nodiscard]] ADS_CPP20_CONSTEXPR Index u256SelectZero(const U64* valuePtr, Index bitRank) noexcept [[gnu::nonnull]] {
     ADS_ASSUME(bitRank >= 0);
     ADS_ASSUME(bitRank < 256);
+    ADS_ASSUME(valuePtr);
+    ADS_ASSUME_ALIGNED(valuePtr, 32);
     U64 negated[] = {~valuePtr[0], ~valuePtr[1], ~valuePtr[2], ~valuePtr[3]};
     return u256Select(negated, bitRank);
 }
 
-[[nodiscard]] ADS_CPP20_CONSTEXPR Index u256Rank(const U64* valuePtr) noexcept {
+[[nodiscard]] ADS_CPP20_CONSTEXPR Index u256Rank(const U64* valuePtr) noexcept [[gnu::nonnull]] {
+    ADS_ASSUME(valuePtr);
+    ADS_ASSUME_ALIGNED(valuePtr, 32);
     // TODO: Use SSE instructions?
     return popcount(valuePtr[0]) + popcount(valuePtr[1]) + popcount(valuePtr[2]) + popcount(valuePtr[3]);
 }
 
-
+[[nodiscard]] ADS_CPP20_CONSTEXPR Index alignedU256RankUntil(const U64* valuePtr, Index pos) noexcept [[gnu::nonnull]] {
+    ADS_ASSUME(valuePtr);
+    ADS_ASSUME_ALIGNED(valuePtr, 32);
+    ADS_ASSUME(pos >= 0);
+    ADS_ASSUME(pos < 256);
+    Index res = 0;
+    for (Index i = 0; i < pos / 64; ++i) {
+        res += popcount(valuePtr[i]);
+    }
+    return res + popcountUntil(valuePtr[pos / 64], pos % 64);
+}
 
 
 

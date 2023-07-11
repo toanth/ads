@@ -10,6 +10,7 @@
 #include <iostream>
 #include <iterator>
 #include <memory>
+#include <numeric>
 #include <random>
 
 static_assert(__cplusplus >= 201703L, "This library requires at least C++17 (some features require C++20)");
@@ -76,16 +77,6 @@ namespace maybe_ranges = std;
 
 #endif
 
-// TODO: Make unsigned? Makes division, modulo by powers of two more efficient
-using Index = std::ptrdiff_t;
-using U64 = std::uint64_t;
-using I64 = std::int64_t;
-using U32 = std::uint32_t;
-// TODO: Instead of a global Elem alias, define per template to allow smaller sizes
-using Elem = U64;
-using Limb = U64;
-
-
 
 #if __has_cpp_attribute(assume)
 #define ADS_ASSUME_IMPL(x) [[assume(x)]]
@@ -109,11 +100,73 @@ using Limb = U64;
 #define ADS_ASSUME(x) assert(x)
 #endif
 
+#ifdef __cpp_lib_assume_aligned // C++20 feature
+#define ADS_ASSUME_ALIGNED_IMPL(ptr, align) (ptr) = std::assume_aligned<(align)>(ptr);
+#else
+#define ADS_ASSUME_ALIGNED_IMPL(ptr, align) /*nothing*/
+#endif
+
+#if defined __GNUC__ || defined __clang__
+#define ADS_ASSUME_ALIGNED(ptr, align)                                                                                 \
+    do {                                                                                                               \
+        ADS_IF_CONSTEVAL {}                                                                                            \
+        else {                                                                                                         \
+            ADS_ASSUME((std::uintptr_t(ptr) & ((align)-1)) == 0);                                                      \
+        }                                                                                                              \
+        ADS_ASSUME_ALIGNED_IMPL(ptr, align);                                                                           \
+    } while (false)
+#else
+#define ADS_ASSUME_ALIGNED(ptr, align)                                                                                 \
+    do {                                                                                                               \
+        ADS_IF_CONSTEVAL {}                                                                                            \
+        else {                                                                                                         \
+            ADS_ASSUME((std::uintptr_t(ptr) & ((align)-1)) == 0);                                                      \
+        }                                                                                                              \
+        ADS_ASSUME_ALIGNED_IMPL(ptr, align);                                                                           \
+    } while (false)
+#endif
+
 #ifdef _MSC_VER
 #define ADS_FORCE_INLINE(func) __forceinline func
 #elif defined __GNUC__ || defined __clang__
-#define ADS_FORCE_INLINE(func) func __attribute__((always_inline))
+#define ADS_FORCE_INLINE(func) inline func __attribute__((always_inline, artificial))
 #endif
+
+
+using Byte = unsigned char;
+using Index = std::ptrdiff_t;
+using U64 = std::uint64_t;
+using I64 = std::int64_t;
+using U32 = std::uint32_t;
+// TODO: Remove the Elem alias
+using Elem = U64;
+using Limb = U64;
+
+static constexpr Index CACHELINE_SIZE_BYTES = 64;
+static constexpr Index U64_PER_CACHELINE = CACHELINE_SIZE_BYTES / 8;
+
+// Let the compiler assume that accesses are always aligned
+template<Index NumBytes = 32>
+struct alignas(NumBytes) SIMDLimb {
+    constexpr static Index numLimbs = NumBytes / sizeof(Limb);
+    static_assert(NumBytes > 0);
+    static_assert(NumBytes % sizeof(Limb) == 0);
+    static_assert((NumBytes & (NumBytes - 1)) == 0);
+    Limb limbs[numLimbs];
+
+    [[nodiscard]] ADS_CPP20_CONSTEXPR Limb& operator[](Index i) noexcept {
+        ADS_ASSUME(i >= 0);
+        ADS_ASSUME(i < numLimbs);
+        return limbs[i];
+    }
+    [[nodiscard]] ADS_CPP20_CONSTEXPR const Limb& operator[](Index i) const noexcept {
+        ADS_ASSUME(i >= 0);
+        ADS_ASSUME(i < numLimbs);
+        return limbs[i];
+    }
+};
+using CacheLine = SIMDLimb<CACHELINE_SIZE_BYTES>;
+
 
 struct CreateWithSizeTag {};
 
@@ -204,11 +257,23 @@ constexpr std::from_chars_result fromChars(const char* first, const char* last, 
 
 
 // inlining this function increases performance in debug mode and helps debugging
-ADS_FORCE_INLINE([[nodiscard]] constexpr Index roundUpDiv(Index dividend, Index divisor) noexcept);
+[[nodiscard]] ADS_FORCE_INLINE(constexpr Index roundUpDiv(Index dividend, Index divisor) noexcept);
 [[nodiscard]] constexpr Index roundUpDiv(Index dividend, Index divisor) noexcept {
-    assert(dividend >= 0 && divisor > 0);
+    ADS_ASSUME(dividend >= 0 && divisor > 0);
     return (dividend + divisor - 1) / divisor; // hopefully, this function gets inlined and optimized (divisor is usually a power of 2)
 }
+
+// inlining this function increases performance in debug mode and helps debugging
+[[nodiscard]] ADS_FORCE_INLINE(constexpr Index roundUpTo(Index value, Index divisor) noexcept);
+[[nodiscard]] constexpr Index roundUpTo(Index value, Index divisor) noexcept {
+    ADS_ASSUME(value >= 0 && divisor > 0);
+    return roundUpDiv(value, divisor) * divisor; // hopefully, this function gets inlined and optimized (divisor is usually a power of 2)
+}
+//
+//[[nodiscard]] constexpr Index roundUpTo(Index value, Index divisor1, Index divisor2) noexcept {
+//    ADS_ASSUME(value >= 0 && divisor1 > 0 && divisor2 > 0);
+//    return roundUpTo(value, std::max(divisor1, divisor2));
+//}
 
 [[nodiscard]] ADS_CONSTEVAL static Index bytesNeededForIndexing(Index numElements) noexcept {
     // no constexpr std::bit_floor in C++17; using <= instead of < is fine because no entry actually stores this number
@@ -253,10 +318,6 @@ template<typename Iter1, typename Iter2, typename Cmp = std::compare_three_way>
 #endif // ADS_HAS_CPP20
 
 
-static constexpr Index CACHELINE_SIZE_BYTES = 64;
-static constexpr Index U64_PER_CACHELINE = CACHELINE_SIZE_BYTES / 8;
-
-
 // Useful for testing
 [[nodiscard]] inline std::mt19937_64 createRandomEngine() noexcept {
     std::random_device rd;
@@ -264,44 +325,59 @@ static constexpr Index U64_PER_CACHELINE = CACHELINE_SIZE_BYTES / 8;
     return std::mt19937_64(seq);
 }
 
+namespace detail {
+template<Index Val>
+struct ConstIndexImpl : TypeIdentity<std::integral_constant<Index, Val>> {};
+
+template<>
+struct ConstIndexImpl<(-1)> : TypeIdentity<Index> {};
+
+} // namespace detail
+
+template<Index Val>
+using ConstIndex = typename detail::ConstIndexImpl<Val>::Type;
 
 // Simpler version of std::span, which doesn't exist is C++17
-template<typename T>
+template<typename T, Index Size = -1>
 class [[nodiscard]] Span {
-    T* first = nullptr;
-    T* last = nullptr;
+    using SizeType = ConstIndex<Size>;
+    T* first_ = nullptr;
+    SizeType size_ = SizeType();
 
 public:
     using value_type = T;
 
     constexpr Span() noexcept = default;
-    constexpr Span(T* ptr, Index size) noexcept : first(ptr), last(ptr + size) { assert(size >= 0); }
-    constexpr Span(T* first, T* last) noexcept : first(first), last(last) { assert(size() >= 0); }
+    constexpr Span(T* ptr, Index size) noexcept : first_(ptr), size_(size) { assert(size >= 0); }
+    explicit constexpr Span(T* ptr) noexcept : first_(ptr), size_(SizeType{}) { assert(size() >= 0); }
+    template<Index ArrSize>
+    explicit constexpr Span(T (&ptr)[ArrSize]) noexcept : first_(ptr), size_(SizeType{}) {
+        assert(size() >= 0);
+        static_assert(Size <= ArrSize);
+    }
+    constexpr Span(T* first, T* last) noexcept : first_(first), size_(last - first) { assert(size() >= 0); }
 
     template<typename Container, typename = std::enable_if_t<std::is_same_v<typename Container::value_type, std::remove_cv_t<T>>>>
     /*implicit*/ ADS_CPP20_CONSTEXPR Span(Container& c) : Span(c.data(), c.size()) {}
 
-    [[nodiscard]] constexpr Index size() const noexcept {
-        assert(!std::less<>()(last, first));
-        return last - first;
-    }
+    [[nodiscard]] constexpr Index size() const noexcept { return size_; }
 
     [[nodiscard]] constexpr T& operator[](Index i) noexcept {
-        assert(i >= 0 && i < size());
-        return first[i];
+        assert(i >= 0 && i < size_);
+        return first_[i];
     }
     [[nodiscard]] constexpr const T& operator[](Index i) const noexcept {
-        assert(i >= 0 && i < size());
-        return first[i];
+        assert(i >= 0 && i < size_);
+        return first_[i];
     }
     [[nodiscard]] constexpr bool empty() const noexcept { return size() == 0; }
 
-    [[nodiscard]] constexpr T* data() noexcept { return first; }
-    [[nodiscard]] constexpr const T* data() const noexcept { return first; }
-    [[nodiscard]] constexpr T* begin() noexcept { return first; }
-    [[nodiscard]] constexpr const T* begin() const noexcept { return first; }
-    [[nodiscard]] constexpr T* end() noexcept { return last; }
-    [[nodiscard]] constexpr const T* end() const noexcept { return last; }
+    [[nodiscard]] constexpr T* data() noexcept { return first_; }
+    [[nodiscard]] constexpr const T* data() const noexcept { return first_; }
+    [[nodiscard]] constexpr T* begin() noexcept { return first_; }
+    [[nodiscard]] constexpr const T* begin() const noexcept { return first_; }
+    [[nodiscard]] constexpr T* end() noexcept { return first_ + size_; }
+    [[nodiscard]] constexpr const T* end() const noexcept { return first_ + size_; }
 
     friend std::ostream& operator<<(std::ostream& os, Span s) noexcept {
         os << "[";

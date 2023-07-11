@@ -2,7 +2,7 @@
 #define ADS_TRIVIAL_BITVEC_HPP
 
 #include "../common.hpp"
-#include "bitvec_base.hpp"
+#include "base/bitvec.hpp"
 
 namespace ads {
 
@@ -19,8 +19,8 @@ class TrivialBitvec : public BitvecBase<TrivialBitvec<Count, Ops>> {
     using Base = BitvecBase<TrivialBitvec<Count, Ops>>;
     friend Base;
 
-    View<Count> ranks = View<Count>();
-    View<Count> selectAnswers = View<Count>();
+    Array<Count> ranks = Array<Count>();
+    Array<Count> selectAnswers = Array<Count>();
 
     template<typename LimbRange>
     ADS_CPP20_CONSTEXPR void constructFromLimbRange(const LimbRange& range) noexcept {
@@ -62,7 +62,8 @@ class TrivialBitvec : public BitvecBase<TrivialBitvec<Count, Ops>> {
         }
     }
 
-    ADS_CPP20_CONSTEXPR TrivialBitvec(UninitializedTag, Index numBits, Limb* mem) noexcept
+    template<typename Underlying = CacheLine>
+    ADS_CPP20_CONSTEXPR TrivialBitvec(UninitializedTag, Index numBits, Underlying* mem) noexcept
         : Base(numBits, mem), ranks(this->allocation.memory(), numRankEntries(numBits)),
           selectAnswers(ranks.ptr + ranks.numT, Ops == Operations::RANK_ONLY ? 0 : numBits) {
         if constexpr (Ops == Operations::SELECT_ONLY) {
@@ -72,29 +73,31 @@ class TrivialBitvec : public BitvecBase<TrivialBitvec<Count, Ops>> {
 
 public:
     constexpr TrivialBitvec() noexcept = default;
-    ADS_CPP20_CONSTEXPR TrivialBitvec(Index size, Limb fill, Limb* mem = nullptr) noexcept
+    ADS_CPP20_CONSTEXPR TrivialBitvec(Index size, Limb fill, CacheLine* mem = nullptr) noexcept
         : TrivialBitvec(UninitializedTag{}, size, mem) {
         constructFromLimbRange(repeatView(fill, roundUpDiv(size, 64)));
     }
 
-    explicit ADS_CPP20_CONSTEXPR TrivialBitvec(Span<const Limb> limbs, Limb* mem = nullptr) noexcept
+    explicit ADS_CPP20_CONSTEXPR TrivialBitvec(Span<const Limb> limbs, CacheLine* mem = nullptr) noexcept
         : TrivialBitvec(limbs, limbs.size() * 64, mem) {}
 
-    ADS_CPP20_CONSTEXPR TrivialBitvec(Span<const Limb> limbs, Index numBits, Limb* mem = nullptr) noexcept
+    ADS_CPP20_CONSTEXPR TrivialBitvec(Span<const Limb> limbs, Index numBits, CacheLine* mem = nullptr) noexcept
         : TrivialBitvec(UninitializedTag{}, numBits, mem) {
         constructFromLimbRange(limbs);
     }
 
 
-    ADS_CPP20_CONSTEXPR TrivialBitvec(std::string_view str, Index base = 2, Limb* mem = nullptr)
+    ADS_CPP20_CONSTEXPR TrivialBitvec(std::string_view str, Index base = 2, CacheLine* mem = nullptr)
         : TrivialBitvec(UninitializedTag{}, str.size() * intLog2(base), mem) {
         constructFromLimbRange(this->limbViewFromStringView(str, base));
     }
 
-    [[nodiscard]] static ADS_CPP20_CONSTEXPR Index allocatedSizeInLimbsForBits(Index numBits) noexcept {
+    [[nodiscard]] static ADS_CPP20_CONSTEXPR Index allocatedSizeInBytesForBits(Index numBits) noexcept {
         const Index factor = (Ops == Operations::BOTH ? 2 : 1);
-        return roundUpDiv((numBits * factor + 1) * sizeof(Count), sizeof(Limb));
+        return roundUpTo((numBits * factor + 1) * sizeof(Count), CACHELINE_SIZE_BYTES);
     }
+
+    [[nodiscard]] static constexpr Index requiredAlignment() noexcept { return alignof(Count); }
 
     [[nodiscard]] ADS_CPP20_CONSTEXPR Index size() const noexcept {
         if constexpr (Ops == Operations::RANK_ONLY) {

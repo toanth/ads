@@ -137,7 +137,7 @@ TEST(Bit, Constexpr) {
     static_assert(roundUpLog2(42ul) == 6);
     static_assert(popcount(0xabcu) == 2 + 3 + 2);
     static_assert(reverseBits(0x0123u) == (0xc480u << 16));
-    static_assert(countTrailingZeros((unsigned char)14) == 1);
+    static_assert(countTrailingZeros((Byte)14) == 1);
     static_assert(u64Select(0x1234ull, 3) == 9);
     static_assert(constevalU64Select(1243619ull, 12) == u64Select(1243619, 12));
     static_assert(u64SelectWithTable(127ull, 4) == 4);

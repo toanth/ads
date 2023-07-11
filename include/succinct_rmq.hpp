@@ -18,9 +18,9 @@ constexpr static bool closeParen = false;
 
 using DefaultBitvec = EfficientBitvec<>;
 
-template<typename T = Elem, Index BlockSize = 512, ADS_NORMAL_BITVEC_CONCEPT Bitvec = DefaultBitvec> // TODO: Make sure the bitvector allocates cacheline-aligned
+template<typename T = Limb, Index BlockSize = 512, ADS_NORMAL_BITVEC_CONCEPT Bitvec = DefaultBitvec>
 struct [[nodiscard]] RangeMinMaxTree {
-    static_assert(BlockSize <= std::numeric_limits<T>::max() / 2);
+    static_assert(BlockSize * 2 <= std::numeric_limits<T>::max());
     static_assert(BlockSize % 64 == 0);
 
     using value_type = T;
@@ -29,7 +29,7 @@ struct [[nodiscard]] RangeMinMaxTree {
 
     Index numLeaves = 0;
     Index size = 0;
-    View<T> rmmArr = View<T>();
+    Array<T> rmmArr = Array<T>();
     Bitvec bv;
 
     constexpr RangeMinMaxTree() = default;
@@ -46,7 +46,7 @@ struct [[nodiscard]] RangeMinMaxTree {
     }
 
     [[nodiscard]] constexpr static Index numNodesInArray(Index numLeaves) noexcept {
-        return numLeaves + (Elem(1) << roundUpLog2(Elem(numLeaves))); // the missing -1 makes this a 1-indexed heap
+        return numLeaves + (Limb(1) << roundUpLog2(Limb(numLeaves))); // the missing -1 makes this a 1-indexed heap
     }
 
     [[nodiscard]] constexpr Index leafIdxInArr(Index leafNum) const noexcept { return size - numLeaves + leafNum; }
@@ -65,16 +65,17 @@ struct [[nodiscard]] RangeMinMaxTree {
     // faster (for the same block size, this additionally uses 16 bits per leaf, which is roughly 8 bits per node but
     // may cause cache misses)
 
-    explicit ADS_CPP20_CONSTEXPR RangeMinMaxTree(Bitvec&& bitvector, T* rmmArrPtr) noexcept
-        : numLeaves(numLeavesForBits(bitvector.sizeInBits())), size(numNodesInArray(numLeaves)),
-          rmmArr(rmmArrPtr, size), bv(std::move(bitvector)) {
-        numLeaves = numLeavesForBits(bv.sizeInBits());
+    template<typename U>
+    explicit ADS_CPP20_CONSTEXPR RangeMinMaxTree(Bitvec&& bitvector, U* rmmArrPtr) noexcept
+        : numLeaves(numLeavesForBits(bitvector.size())), size(numNodesInArray(numLeaves)), rmmArr(rmmArrPtr, size),
+          bv(std::move(bitvector)) {
+        numLeaves = numLeavesForBits(bv.size());
         assert(numLeaves > 0);
         size = numNodesInArray(numLeaves);
         assert(leafIdxInArr(0) % 2 == 0 || leafIdxInArr(0) == 1);
         Index minExcessInBlock = 1;
         Index excess = 0;
-        for (Index i = 0; i < bv.sizeInBits(); ++i) {
+        for (Index i = 0; i < bv.size(); ++i) {
             if (i > 0 && i % BlockSize == 0) {
                 Index l = leafIdxInArr(i / BlockSize - 1);
                 rmmArr.ptr[l] = minExcessInBlock;
@@ -154,8 +155,8 @@ struct [[nodiscard]] RangeMinMaxTree {
     [[nodiscard]] ADS_CPP20_CONSTEXPR MinRes findMinInBlock(Index lower, Index upper) const noexcept {
         Index blockBegin = lower / BlockSize * BlockSize;
         Index blockEnd = blockBegin + BlockSize;
-        blockEnd = std::min(blockEnd, bv.sizeInBits());
-        upper = std::min(upper, bv.sizeInBits());
+        blockEnd = std::min(blockEnd, bv.size());
+        upper = std::min(upper, bv.size());
         assert(lower <= upper);
         if (upper == lower) {
             return noRes;
@@ -267,15 +268,17 @@ class [[nodiscard]] SuccinctRMQ {
     Index length = 0;
 
     template<typename Container>
-    [[nodiscard]] static ADS_CPP20_CONSTEXPR Index numAllocatedElems(const Container& container) noexcept {
+    [[nodiscard]] static ADS_CPP20_CONSTEXPR Index numAllocatedBytes(const Container& container) noexcept {
         Index numBits = container.size() * 2 + 2;
-        return Bitvec::allocatedSizeInLimbsForBits(numBits) + RmmTree::numNodesInArray(RmmTree::numLeavesForBits(numBits));
+        return Bitvec::template allocatedSizeForBitsIn<Group::CacheLine>(numBits) * CACHELINE_SIZE_BYTES
+               + roundUpTo(sizeof(RmmTree::value_type) * RmmTree::numNodesInArray(RmmTree::numLeavesForBits(numBits)),
+                       CACHELINE_SIZE_BYTES);
     }
 
     template<typename Container, typename Comp>
-    ADS_CPP20_CONSTEXPR static Bitvec createDfuds(const Container& container, Comp comp, Elem* mem) noexcept {
+    ADS_CPP20_CONSTEXPR static Bitvec createDfuds(const Container& container, Comp comp, CacheLine* mem) noexcept {
         Bitvec dfuds = Bitvec::uninitializedForSize(container.size() * 2 + 2, mem);
-        Index bvIdx = dfuds.sizeInBits();
+        Index bvIdx = dfuds.size();
         std::vector<Index> stack;
         for (Index i = container.size() - 1; i + 1 > 0; --i) {
             assert(bvIdx > 1);
@@ -300,8 +303,11 @@ class [[nodiscard]] SuccinctRMQ {
 
     template<typename Container, typename Comp>
     ADS_CPP20_CONSTEXPR RmmTree createRmmTree(const Container& container, Comp comp) const noexcept {
-        Bitvec bv = createDfuds(container, comp, allocation.memory());
-        Elem* ptr = allocation.memory() + bv.allocatedSizeInLimbs();
+        CacheLine* ptr = allocation.memory();
+        ADS_ASSUME_ALIGNED(ptr, CACHELINE_SIZE_BYTES);
+        Bitvec bv = createDfuds(container, comp, ptr);
+        ptr += bv.template allocatedSizeIn<Group::CacheLine>();
+        ADS_ASSUME_ALIGNED(ptr, CACHELINE_SIZE_BYTES);
         return RmmTree(std::move(bv), ptr);
     }
 
@@ -314,13 +320,15 @@ public:
 
     template<typename Container, typename Comp = std::less<typename Container::value_type>>
     ADS_CPP20_CONSTEXPR explicit SuccinctRMQ(const Container& container, Comp comp = Comp())
-        : allocation(numAllocatedElems(container)), rmmTree(createRmmTree(container, comp)), length(container.size()) {}
+        : allocation(numAllocatedBytes(container)), rmmTree(createRmmTree(container, comp)), length(container.size()) {
+        ADS_ASSUME(allocation.isEnd(rmmTree.rmmArr.end()));
+    }
 
     template<typename T>
     ADS_CPP20_CONSTEXPR SuccinctRMQ(std::unique_ptr<T> ptr, Index length)
         : SuccinctRMQ(Span<const T>(ptr.get(), length)) {}
 
-    template<typename T = Elem>
+    template<typename T = Limb>
     ADS_CPP20_CONSTEXPR SuccinctRMQ(std::initializer_list<T> list)
         : SuccinctRMQ(Span<const T>(list.begin(), list.end())) {}
 
@@ -338,10 +346,10 @@ public:
         const Bitvec& dfuds = rmmTree.getBitvector();
         Index x = dfuds.template select<closeParen>(lower);
         Index y = dfuds.template select<closeParen>(upper - 1) + 1;
-        assert(dfuds.getBit(x) == closeParen && dfuds.getBit(y - 1) == closeParen);
+        ADS_ASSUME(dfuds.getBit(x) == closeParen && dfuds.getBit(y - 1) == closeParen);
         Index w = rmmTree.bitvecRmq(x, y);
-        assert(w >= x && w < y);
-        assert(dfuds.getBit(w) == closeParen);
+        ADS_ASSUME(w >= x && w < y);
+        ADS_ASSUME(dfuds.getBit(w) == closeParen);
         // The findOpen call from the paper (https://algo2.iti.kit.edu/download/rmq.pdf, corollary 5.6) is unnecessary:
         // It only handles the case of lca == lower, but in this case, w is equal to x because no descendant of lower can have a smaller excess
         // and lower is the leftmost value with such an excess (see https://doi.org/10.1016/j.jcss.2011.09.002).
@@ -354,10 +362,6 @@ public:
     }
 
     [[nodiscard]] ADS_CPP20_CONSTEXPR Index size() const noexcept { return length; }
-
-    [[nodiscard]] ADS_CPP20_CONSTEXPR Index sizeInBits() const noexcept {
-        return Index(rmmTree.size * sizeof(typename RmmTree ::value_type) * 8 + rmmTree.getBitvector().sizeInBits());
-    }
 
     [[nodiscard]] ADS_CPP20_CONSTEXPR Index allocatedSizeInBits() const noexcept {
         return Index(rmmTree.size * sizeof(typename RmmTree ::value_type) * 8 + rmmTree.getBitvector().allocatedSizeInBits());

@@ -152,23 +152,115 @@ public:
 /// \param n number of elements
 /// \return uninitialized memory, represented as an array of T with n elements
 // although allocation isn't technically noexcept, there's no reason not to crash the program in that case
-template<typename T>
-ADS_CPP20_CONSTEXPR T* allocate(Index n) noexcept {
-    std::allocator<T> alloc;
-    return alloc.allocate(n); // contexpr since C++20
+template<typename T = Limb, Index Alignment = 32>
+[[nodiscard, gnu::returns_nonnull]] ADS_CPP20_CONSTEXPR T* allocateBytes(Index numBytes) noexcept {
+    constexpr std::size_t alignment = std::max({std::size_t(CACHELINE_SIZE_BYTES), std::size_t(Alignment), sizeof(T)});
+    ADS_ASSUME(numBytes % sizeof(T) == 0);
+    ADS_IF_CONSTEVAL {
+        std::allocator<T> alloc;
+        return alloc.allocate(numBytes / sizeof(T)); // contexpr since C++20
+    }
+    else { // for large sizes of numT, the malloc implementation should even give page-aligned pointers.
+           // don't use std::aligned_alloc as that requires size to be a multiple of alignment, which may not be true
+        T* ptr = static_cast<T*>(::operator new(numBytes, std::align_val_t(alignment), std::nothrow));
+        if (!ptr) [[unlikely]] {
+            ptr = static_cast<T*>(::operator new(numBytes, std::align_val_t(std::max(Index(32), Alignment))));
+        }
+        return ptr;
+        // All users of allocateBytes must ensure that their elements satisfy their respective alignment requirements,
+        // eg that a nested bitvector is 32byte aligned.
+    }
 }
 
-/// \brief Deallocate memory previously allocated by allocate()
+/// \brief Deallocate memory previously allocated by allocateBytes()
 /// \tparam T element type
 /// \param ptr allocated array
 /// \param n number of elements
-template<typename T>
-ADS_CPP20_CONSTEXPR void deallocate(T* ptr, Index n) noexcept {
+template<typename T, Index Alignment = 32>
+ADS_CPP20_CONSTEXPR void deallocateBytes(T* ptr, Index numBytes) noexcept {
     std::allocator<T> alloc;
-    if (ptr) {
-        alloc.deallocate(ptr, n); // contexpr since C++20
+    ADS_ASSUME(numBytes % sizeof(T) == 0);
+    ADS_IF_CONSTEVAL {
+        if (ptr) {
+            alloc.deallocate(ptr, numBytes / sizeof(T)); // contexpr since C++20
+        }
+    }
+    else {
+        constexpr std::size_t alignment = std::max({std::size_t(CACHELINE_SIZE_BYTES), std::size_t(Alignment), sizeof(T)});
+        if (ptr) {
+            ::operator delete(ptr, std::align_val_t(alignment));
+        }
     }
 }
+
+/// \brief Owns a pointer to raw memory with the given alignment, or refers to memory held by another instance of
+/// Allocation. \tparam T
+template<typename T = CacheLine, Index Alignment = CACHELINE_SIZE_BYTES>
+class Allocation {
+    T* mem = nullptr;
+    Index numTs = 0;
+
+public:
+    ADS_CPP20_CONSTEXPR Allocation() noexcept = default;
+    template<typename U = T>
+    ADS_CPP20_CONSTEXPR Allocation(Index numBytes, U* ptr = nullptr) noexcept : numTs(numBytes / sizeof(T)) {
+        static_assert(alignof(U) % alignof(T) == 0);
+        ADS_ASSUME_ALIGNED(ptr, Alignment);
+        ADS_ASSUME(numBytes >= 0);
+        ADS_ASSUME(numBytes % sizeof(T) == 0);
+        if (!ptr) {
+            mem = allocateBytes<T, Alignment>(numBytes);
+        } else {
+            ADS_IF_CONSTEVAL {
+                mem = allocateBytes<T, Alignment>(numBytes);
+            }
+            else {
+                mem = reinterpret_cast<T*>(ptr); // unproblematic because this is uninitialized memory
+                numTs = -numTs;
+            }
+        }
+        ADS_ASSUME(mem != nullptr);
+        ADS_ASSUME_ALIGNED(mem, Alignment);
+    }
+
+    ADS_CPP20_CONSTEXPR Allocation(Allocation&& other) noexcept
+        : mem(std::exchange(other.mem, nullptr)), numTs(std::exchange(other.numTs, 0)) {}
+
+    ADS_CPP20_CONSTEXPR ~Allocation() noexcept {
+        if (isOwner()) {
+            deallocateBytes<T, Alignment>(memory(), sizeInBytes());
+        }
+    }
+
+    ADS_CPP20_CONSTEXPR Allocation& operator=(Allocation&& other) noexcept {
+        using std::swap;
+        swap(mem, other.mem);
+        swap(numTs, other.numTs);
+        return *this;
+    }
+
+    [[nodiscard]] constexpr Index sizeInTs() const noexcept { return abs(numTs); }
+    [[nodiscard]] constexpr Index sizeInBytes() const noexcept { return sizeInTs() * sizeof(T); }
+
+    [[nodiscard]] constexpr T* memory() const noexcept { return mem; }
+    [[nodiscard]] constexpr T* endOfMemory() const noexcept { return mem + sizeInTs(); }
+
+    template<typename U>
+    [[nodiscard]] constexpr bool isEnd(U* ptr, Index numAllowedUnusedBytes = sizeof(T) - 1) const noexcept {
+        ADS_IF_CONSTEVAL {
+            return true;
+        }
+        else {
+            T* endPtr = endOfMemory();
+            bool result = std::less_equal{}(static_cast<void*>(ptr), static_cast<void*>(endPtr));
+            result &= reinterpret_cast<std::uintptr_t>(endPtr) - reinterpret_cast<std::uintptr_t>(ptr) < numAllowedUnusedBytes;
+            return result;
+        }
+    }
+
+    [[nodiscard]] constexpr bool isOwner() const noexcept { return numTs > 0; }
+};
+
 
 
 //---- Tying it all together: The BitView template and its variations combine storing an array with accessing bits ----
@@ -179,7 +271,7 @@ ADS_CPP20_CONSTEXPR void deallocate(T* ptr, Index n) noexcept {
 /// integer type.
 /// \tparam NumBits The number of bits per element, doesn't have to be a multiple of 8. -1 is used if the size is only known at runtime.
 /// \tparam T The type of a single array element. Often, NumBits is sizeof(T) * 8, in which case accessing an element is simply an array access.
-template<Index NumBits = 1, typename T = Elem>
+template<Index NumBits = 1, typename T = Limb>
 struct BitView {
     using BitAccess = BitwiseAccess<NumBits, T>;
     T* ADS_RESTRICT ptr = nullptr; // Not a unique_ptr because this may only be one part of an allocation
@@ -191,12 +283,12 @@ struct BitView {
     ADS_CPP20_CONSTEXPR ~BitView() noexcept {
         std::destroy_n(ptr, numT); // should compile to 0 instructions for integer types
         ADS_IF_CONSTEVAL {
-            deallocate(ptr, numT);
+            deallocateBytes<T>(ptr, numT * sizeof(T));
             ptr = nullptr;
         }
     }
 
-    /// \brief Construct the BitView from a pointer to *uninitialized* memory (such as from allocate()) of type Underlying.
+    /// \brief Construct the BitView from a pointer to *uninitialized* memory (such as from allocateBytes()) of type Underlying.
     /// \tparam Underlying A pointer to Underlying must be convertible to a pointer to T.
     /// \param underlyingPtr will be converted to a T* and used as the begin of the BitView.
     /// \param numT the number of array elements of type T in the BitView. Not necessarily the same as the original array's size.
@@ -205,12 +297,13 @@ struct BitView {
         static_assert(alignof(Underlying) % alignof(T) == 0);
         ADS_IF_CONSTEVAL { // reinterpret_cast isn't constexpr until probably C++26
             // always reallocate because else it would get tricky to figure out whether to deallocate in the destructor
-            ptr = allocate<T>(numT); // memory usage or performance isn't a big concern for constant evaluation
+            ptr = allocateBytes<T>(numT * sizeof(T)); // memory usage or performance isn't a big concern for constant evaluation
         }
         else if constexpr (std::is_same_v<Underlying, T>) {
             ptr = underlyingPtr;
         }
         else {
+            // reinterpret_cast is safe here because underlyingPtr points to uninitialized memory
             ptr = reinterpret_cast<T*>(underlyingPtr);
         }
         assert(numT >= 0);
@@ -230,7 +323,11 @@ struct BitView {
         return *this;
     }
 
+    [[nodiscard]] constexpr Index sizeInBytes() const noexcept { return numT * sizeof(T); }
     [[nodiscard]] constexpr Index sizeInLimbs() const noexcept { return roundUpDiv(numT * sizeof(T), sizeof(Limb)); }
+
+    [[nodiscard]] constexpr T* begin() noexcept { return ptr; }
+    [[nodiscard]] constexpr T* end() noexcept { return ptr + numT; }
 
     [[nodiscard]] constexpr Index numBitsPerValue() const noexcept {
         if constexpr (NumBits == -1) {
@@ -241,87 +338,22 @@ struct BitView {
     }
 
     [[nodiscard]] constexpr T getBits(Index i) const noexcept {
-        assert(i >= 0);
-        assert((i + 1) * numBitsPerValue() <= numT * sizeof(T) * 8);
+        ADS_ASSUME(i >= 0);
+        ADS_ASSUME((i + 1) * numBitsPerValue() <= numT * sizeof(T) * 8);
         return bitAccess.getBits(ptr, i);
     }
 
     constexpr void setBits(Index i, T value) noexcept {
-        assert(i >= 0);
-        assert((i + 1) * numBitsPerValue() <= numT * sizeof(T) * 8);
+        ADS_ASSUME(i >= 0);
+        ADS_ASSUME((i + 1) * numBitsPerValue() <= numT * sizeof(T) * 8);
         return bitAccess.setBits(ptr, i, value);
     }
 
-    constexpr T operator[](Index i) const noexcept { return getBits(i); }
+    [[nodiscard]] constexpr T operator[](Index i) const noexcept { return getBits(i); }
 };
 
 template<typename T>
-using View = BitView<sizeof(T) * 8, T>;
-
-template<typename T = Elem>
-class Allocation {
-    T* mem = nullptr;
-    Index numTs = 0;
-
-public:
-    ADS_CPP20_CONSTEXPR Allocation() noexcept = default;
-    ADS_CPP20_CONSTEXPR Allocation(Index n, T* ptr = nullptr) noexcept : numTs(n) {
-        assert(n >= 0);
-        if (!ptr) {
-            mem = allocate<T>(n);
-        } else {
-            mem = ptr;
-            numTs = -numTs;
-        }
-    }
-
-    ADS_CPP20_CONSTEXPR Allocation(Allocation&& other) noexcept
-        : mem(std::exchange(other.mem, nullptr)), numTs(std::exchange(other.numTs, 0)) {}
-
-    ADS_CPP20_CONSTEXPR ~Allocation() noexcept {
-        if (isOwner()) {
-            deallocate(memory(), size());
-        }
-    }
-
-    ADS_CPP20_CONSTEXPR Allocation& operator=(Allocation&& other) noexcept {
-        using std::swap;
-        swap(mem, other.mem);
-        swap(numTs, other.numTs);
-        return *this;
-    }
-
-    [[nodiscard]] constexpr Index size() const noexcept { return abs(numTs); }
-
-    [[nodiscard]] constexpr T* memory() const noexcept { return mem; }
-
-    [[nodiscard]] constexpr bool isOwner() const noexcept { return numTs > 0; }
-};
-
-
-///// Like BitView<T>, but manages (de)allocation of its memory, similar to a combination of Allocation<T> and BitView<T>.
-// template<typename T, Index NumBits = 8 * sizeof(T)>
-// class Array : public BitView<NumBits, T> {
-//     using Base = BitView<NumBits, T>;
-//
-//     constexpr Array(CreateWithSizeTag, Index numTs) : Base(allocate<T>(numTs), numTs) {}
-//
-// public:
-//     constexpr Array() noexcept = default;
-//
-//     explicit constexpr Array(Index n) noexcept : Array(CreateWithSizeTag(), roundUpDiv(n * NumBits, (8 * sizeof(T)))) {}
-//
-//     constexpr Array(Index n, Index bitLen) noexcept
-//         : Array(CreateWithSizeTag(), roundUpDiv(n * bitLen, (8 * sizeof(T)))) {
-//         static_assert(NumBits == dynSize, "Don't use this constructor for fixed-sized bit views");
-//         this->bitAccess.numBitsPerValue = bitLen;
-//     }
-//
-//     ADS_CPP20_CONSTEXPR ~Array() noexcept { deallocate(this->ptr, this->numT); }
-// };
-//
-// template<Index NumBits>
-// using BitStorage = Array<Elem, NumBits>;
+using Array = BitView<sizeof(T) * 8, T>;
 
 } // namespace ads
 

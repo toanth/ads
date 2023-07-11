@@ -13,15 +13,16 @@ struct [[nodiscard]] NLogNBlockRmq : NLogNRmqOps<NLogNBlockRmq<T, BlockSize, InB
     Index length = 0;
     const T* values = nullptr;
     InBlockIdx* minimumInBlock = nullptr;
-    View<BlockNumIdx> minima = View<BlockNumIdx>();
+    Array<BlockNumIdx> minima = Array<BlockNumIdx>();
     //    std::unique_ptr<BlockNumIdx[]> minima = nullptr; // TODO: Use shared allocation? Measure
     constexpr NLogNBlockRmq() = default;
 
-    ADS_CPP20_CONSTEXPR void build(const T* vals, Index len, InBlockIdx* blockMinima, Elem* minimaMemory) noexcept {
+    template<typename Underlying>
+    ADS_CPP20_CONSTEXPR void build(const T* vals, Index len, InBlockIdx* blockMinima, Underlying* minimaMemory) noexcept {
         length = len;
         values = vals;
         minimumInBlock = blockMinima;
-        minima = View<BlockNumIdx>(minimaMemory, minimaSize(length));
+        minima = Array<BlockNumIdx>(minimaMemory, minimaSize(length));
         this->init();
     }
 
@@ -53,23 +54,23 @@ class [[nodiscard]] LinearSpaceRMQ {
     Index length = 0;
     // Holds a pointer (and size) to all allocated memory; the destructor deallocates the memory. Doesn't call dtors.
     // Must come before any Views into the allocated data in the list of data members.
-    Allocation<> allocation = Allocation();
+    Allocation<U64> allocation = Allocation<U64>();
     // Stores the original array of values
     // size() elements; 64 * n bits for default params
-    View<T> values = View<T>();
+    Array<T> values = Array<T>();
     // O(n log n) space bitvecRmq structure over all blocks, which directly answers (sub)queries where lower and upper
     // are multiples of the block size. size() / BlockSize elements (rounded up), each storing a logarithmic number of
     // indices; 32 * k log k (with k = n / 65536) bits by default; 64 * k log k, k = n / 256
     BlockRmq blockRmq = BlockRmq();
     // For each block, stores its mininum relative to the block start. Used by the bock bitvecRmq.
     // size() / BlockSize elements, rounded up; 16 * n / 65636 bits; 8 * n / 256 bits
-    View<InBlockIdx> minimumInBlock = View<InBlockIdx>();
+    Array<InBlockIdx> minimumInBlock = Array<InBlockIdx>();
     // For each sub-block, stores the exclusive prefix sum in its block.
     // size() /  SubBlockSize elements, possibly with up to (size() / BlockSize) additional elements due to rounding; 8 * n / 256 bits; 8 (maybe 4?) * n / 8 bits
-    View<SubBlockIndex> subBlockPrefixMinima = View<SubBlockIndex>();
+    Array<SubBlockIndex> subBlockPrefixMinima = Array<SubBlockIndex>();
     // For each sub-block, stores the exclusive suffix sum in its block.
     // size() /  SubBlockSize elements, possibly with up to (size() / BlockSize) additional elements due to rounding; 8 * n / 256 bits; 8 (maybe 4?) * n / 8 bits
-    View<SubBlockIndex> subBlockSuffixMinima = View<SubBlockIndex>();
+    Array<SubBlockIndex> subBlockSuffixMinima = Array<SubBlockIndex>();
     /// The total allocated size in bits.
     Index numAllocatedBits = 0;
 
@@ -106,18 +107,16 @@ public:
     constexpr static const Index subBlocksPerBlock = roundUpDiv(BlockSize, SubBlockSize);
     constexpr static const char name[] = "linear space RMQ";
 
-    [[nodiscard]] static constexpr Index sizeInElems(Index length) noexcept {
+    [[nodiscard]] static constexpr Index sizeInBytes(Index length) noexcept {
         //        length = roundUpDiv(length, SubBlockSize) * SubBlockSize;
         assert(length % SubBlockSize == 0); // The input array must have been extended by possibly value initialized elements
         const Index numBlocks = roundUpDiv(length, BlockSize);
         Index sizeInBytes = length * sizeof(T) + minimaSize(numBlocks) * sizeof(BlockNumIdx)
                             + numBlocks * sizeof(InBlockIdx) + 2 * subBlocksPerBlock * numBlocks * sizeof(SubBlockIndex);
-        return roundUpDiv(sizeInBytes, sizeof(Elem));
+        return roundUpTo(sizeInBytes, sizeof(U64));
     }
 
-    [[nodiscard]] static constexpr Index lengthInArray(Index length) noexcept {
-        return roundUpDiv(length, BlockSize) * BlockSize;
-    }
+    [[nodiscard]] static constexpr Index lengthInArray(Index length) noexcept { return roundUpTo(length, BlockSize); }
 
     constexpr LinearSpaceRMQ() = default;
 
@@ -136,21 +135,22 @@ public:
         : LinearSpaceRMQ(Span<const T>(inputValues, length)) {}
 
     explicit ADS_CPP20_CONSTEXPR LinearSpaceRMQ(Span<const T> inputValues)
-        : length(lengthInArray(inputValues.size())), allocation(sizeInElems(length)), blockRmq() {
-        assert(size() % SubBlockSize == 0); // The input array must have been extended, eg by value-initialized elements
-        assert(allocation.size() == sizeInElems(length));
-        numAllocatedBits = allocation.size() * sizeof(Elem) * 8;
+        : length(lengthInArray(inputValues.size())), allocation(sizeInBytes(length)), blockRmq() {
+        ADS_ASSUME(size() % SubBlockSize == 0); // The input array must have been extended, eg by value-initialized elements
+        ADS_ASSUME(allocation.sizeInBytes() >= sizeInBytes(length));
+        ADS_ASSUME(allocation.sizeInBytes() == roundUpTo(sizeInBytes(length), sizeof(U64)));
+        numAllocatedBits = allocation.sizeInBytes() * 8;
         const Index numBlocks = roundUpDiv(length, BlockSize);
-        values = View<T>(allocation.memory(), length);
+        values = Array<T>(allocation.memory(), length);
         std::copy(inputValues.begin(), inputValues.end(), values.ptr);
-        Index alreadyAllocated = roundUpDiv(length * sizeof(T), sizeof(Elem));
-        Index newlyAllocated = roundUpDiv(numBlocks * sizeof(InBlockIdx), sizeof(Elem));
-        minimumInBlock = View<SubBlockIndex>(allocation.memory() + alreadyAllocated, numBlocks);
+        Index alreadyAllocated = roundUpDiv(length * sizeof(T), sizeof(U64));
+        Index newlyAllocated = roundUpDiv(numBlocks * sizeof(InBlockIdx), sizeof(U64));
+        minimumInBlock = Array<SubBlockIndex>(allocation.memory() + alreadyAllocated, numBlocks);
         alreadyAllocated += newlyAllocated;
-        newlyAllocated = roundUpDiv(subBlocksPerBlock * numBlocks * sizeof(SubBlockIndex), sizeof(Elem));
-        subBlockPrefixMinima = View<SubBlockIndex>(allocation.memory() + alreadyAllocated, subBlocksPerBlock * numBlocks);
+        newlyAllocated = roundUpDiv(subBlocksPerBlock * numBlocks * sizeof(SubBlockIndex), sizeof(U64));
+        subBlockPrefixMinima = Array<SubBlockIndex>(allocation.memory() + alreadyAllocated, subBlocksPerBlock * numBlocks);
         alreadyAllocated += newlyAllocated;
-        subBlockSuffixMinima = View<SubBlockIndex>(allocation.memory() + alreadyAllocated, subBlocksPerBlock * numBlocks);
+        subBlockSuffixMinima = Array<SubBlockIndex>(allocation.memory() + alreadyAllocated, subBlocksPerBlock * numBlocks);
         alreadyAllocated += newlyAllocated;
         const T *prefixMinSoFar = nullptr, *suffixMinSoFar = nullptr;
         const T *beginOfBlock = nullptr, *endOfBlock = nullptr;
@@ -196,7 +196,7 @@ public:
     }
 
 
-    [[nodiscard]] ADS_CPP20_CONSTEXPR Index rmq(Index lower, Index upper) const {
+    [[nodiscard]] [[using gnu: hot, pure]] ADS_CPP20_CONSTEXPR Index rmq(Index lower, Index upper) const {
         if (lower / BlockSize == (upper - 1) / BlockSize) {
             // TODO: Use information from minimumInBlock and possibly subblockPrefixMinimum / subblockSuffixMinimum
             return std::min_element(values.ptr + lower, values.ptr + upper) - values.ptr;
@@ -261,7 +261,7 @@ public:
     [[nodiscard]] ADS_CPP20_CONSTEXPR Index operator()(Index lower, Index upper) const { return rmq(lower, upper); }
 
     [[nodiscard]] ADS_CPP20_CONSTEXPR Index allocatedSizeInBits() const noexcept {
-        ADS_ASSUME(allocation.size() * 8 == numAllocatedBits);
+        ADS_ASSUME(allocation.sizeInBytes() * 8 == numAllocatedBits);
         return numAllocatedBits;
     }
 

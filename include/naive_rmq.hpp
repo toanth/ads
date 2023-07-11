@@ -74,7 +74,7 @@ struct [[nodiscard]] SimpleRMQ : std::vector<T> {
 template<typename Comparator = std::less<>>
 class [[nodiscard]] NaiveRMQ {
     Allocation<Index> allocation = Allocation<Index>();
-    View<Index> arr = View<Index>();
+    Array<Index> arr = Array<Index>();
     Index length = 0;
     [[no_unique_address]] Comparator comp = Comparator{};
 
@@ -84,8 +84,12 @@ class [[nodiscard]] NaiveRMQ {
         return numValues * (numValues + 1) / 2;
     }
 
+    static ADS_CPP20_CONSTEXPR Index completeSizeInBytes(Index numValues) noexcept {
+        return completeSize(numValues) * sizeof(Index);
+    }
+
     ADS_CPP20_CONSTEXPR NaiveRMQ(Index length, CreateWithSizeTag)
-        : allocation(completeSize(length)), arr(allocation.memory(), allocation.size()), length(length) {}
+        : allocation(completeSizeInBytes(length)), arr(allocation.memory(), allocation.sizeInTs()), length(length) {}
 
     [[nodiscard]] ADS_CPP20_CONSTEXPR Index arrIndex(Index first, Index last) const noexcept {
         assert(0 <= first && first < last && last <= length);
@@ -140,8 +144,8 @@ public:
     [[nodiscard]] constexpr Index size() const noexcept { return length; }
 
     [[nodiscard]] constexpr Index allocatedSizeInBits() const noexcept {
-        ADS_ASSUME(completeSize(size()) * sizeof(Index) * 8 == allocation.size() * 64);
-        return allocation.size() * 64;
+        ADS_ASSUME(completeSizeInBytes(size()) == allocation.sizeInBytes());
+        return allocation.sizeInBytes() * 8;
     }
 
     constexpr static auto getValue = [](const auto& rmq, Index i) -> Index { return rmq.minIdx(i, i + 1); };

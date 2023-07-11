@@ -92,13 +92,13 @@ public:
 };
 
 
-template<typename T = Elem, typename IndexType = Index, typename Comp = std::less<>>
+template<typename T = Limb, typename IndexType = Index, typename Comp = std::less<>>
 struct [[nodiscard]] NLogNRmq : NLogNRmqOps<NLogNRmq<T, IndexType, Comp>, Comp> {
     using Base = NLogNRmqOps<NLogNRmq<T, IndexType, Comp>, Comp>;
     friend Base;
-    Allocation<T> allocation = Allocation<T>(); // must be the first data member so that its destructor is called last
-    View<T> array = View<T>();
-    View<IndexType> minima = View<IndexType>();
+    Allocation<Limb> allocation = Allocation<Limb>(); // must be the first data member so that its destructor is called last
+    Array<T> array = Array<T>();
+    Array<IndexType> minima = Array<IndexType>();
     Index length = 0;
 
     static_assert(alignof(T) % alignof(IndexType) == 0);
@@ -110,10 +110,11 @@ struct [[nodiscard]] NLogNRmq : NLogNRmqOps<NLogNRmq<T, IndexType, Comp>, Comp> 
     ADS_CPP20_CONSTEXPR NLogNRmq(std::initializer_list<T> list) : NLogNRmq(Span<const T>(list.begin(), list.end())) {}
 
     ADS_CPP20_CONSTEXPR NLogNRmq(Index length, CreateWithSizeTag, T* mem = nullptr)
-        : allocation(completeSize(length), mem), length(length) {
+        : allocation(completeSizeInBytes(length), mem), length(length) {
         T* ptr = allocation.memory();
-        array = View<T>(ptr, length);
-        minima = View<IndexType>(ptr + length, completeSize(length) - length);
+        array = Array<T>(ptr, length);
+        minima = Array<IndexType>(ptr + length, minimaSize(length));
+        ADS_ASSUME(allocation.isEnd(minima.end()));
     }
 
     explicit ADS_CPP20_CONSTEXPR NLogNRmq(Span<const T> values, T* mem = nullptr)
@@ -130,16 +131,15 @@ struct [[nodiscard]] NLogNRmq : NLogNRmqOps<NLogNRmq<T, IndexType, Comp>, Comp> 
 
     ADS_CPP20_CONSTEXPR NLogNRmq& operator=(NLogNRmq&&) noexcept = default;
 
-    static ADS_CPP20_CONSTEXPR Index completeSize(Index length) noexcept {
-        return length + roundUpDiv(minimaSize(length) * sizeof(IndexType), sizeof(T));
+    static ADS_CPP20_CONSTEXPR Index completeSizeInBytes(Index length) noexcept {
+        return length * sizeof(T) + minimaSize(length) * sizeof(IndexType);
     }
 
-    [[nodiscard]] ADS_CPP20_CONSTEXPR Index sizeInBits() const noexcept { return completeSize(length) * sizeof(T) * 8; }
+    [[nodiscard]] ADS_CPP20_CONSTEXPR Index sizeInBits() const noexcept { return completeSizeInBytes(length) * 8; }
 
 
     [[nodiscard]] ADS_CPP20_CONSTEXPR Index allocatedSizeInBits() const noexcept {
-        ADS_ASSUME(allocation.size() * 64 == allocation.size() * sizeof(U64) * 8);
-        return allocation.size() * 64;
+        return allocation.sizeInBytes() * 8;
     }
 
     ADS_CPP20_CONSTEXPR const T& operator[](Index i) const noexcept { return getArrayElement(i); }

@@ -16,13 +16,13 @@ class [[nodiscard]] EliasFano {
 
     Index numInts = 0;
     Index lowerBitMask = 0;
-    Index allocatedSizeInLimbs = 0;
+    Index allocatedSizeInBytes = 0;
     Elem smallestNumber = 0;
     Elem largestNumber = 0;
     Index bitsPerNumber = sizeof(Number) * 8; // usually overwritten in the ctor
     Allocation<> allocation = Allocation<>();
     Bitvec upper = Bitvec();
-    BitView<dynSize> lower = BitView<dynSize>(); // TODO: Change to BitView?
+    BitView<dynSize> lower = BitView<dynSize>();
     constexpr static Index linearFallbackSize = 8;
 
     template<typename Range>
@@ -51,7 +51,7 @@ class [[nodiscard]] EliasFano {
             ++i;
         }
         upper.setLimb(lastUpperElemIdx, ~currentUpperEntry);
-        for (++lastUpperElemIdx; lastUpperElemIdx < upper.sizeInLimbs(); ++lastUpperElemIdx) {
+        for (++lastUpperElemIdx; lastUpperElemIdx < upper.numLimbs(); ++lastUpperElemIdx) {
             upper.setLimb(lastUpperElemIdx, Elem(-1));
         }
         upper.buildMetadata();
@@ -61,8 +61,6 @@ class [[nodiscard]] EliasFano {
         Number upperSearchBits = n >> numLowerBitsPerNumber();
         Number lowerSearchBits = n & lowerBitMask;
         ADS_ASSUME(upper.numOnes() > upperSearchBits);
-        //        Index first = upper.selectOne(upperSearchBits) - upperSearchBits;
-        //        Index last = upper.selectOne(upperSearchBits + 1) - upperSearchBits - 1;
         auto [first, last] = upper.selectOneAndPrevOne(upperSearchBits + 1);
         first -= upperSearchBits;
         last -= upperSearchBits + 1;
@@ -94,15 +92,12 @@ class [[nodiscard]] EliasFano {
     [[nodiscard]] ADS_CPP20_CONSTEXPR Elem successorImpl(Elem n) const {
         Number upperSearchBits = n >> numLowerBitsPerNumber();
         Number lowerSearchBits = n & lowerBitMask;
-        //        Index first = upper.selectOne(upperSearchBits) - upperSearchBits;
         auto [first, last] = upper.selectOneAndPrevOne(upperSearchBits + 1);
         first -= upperSearchBits;
         last -= upperSearchBits + 2;
         if (numLowerBitsPerNumber() == 0) {
             return getImpl(first);
         }
-        //        Index last = upper.selectZero(upperSearchBits + 1) - upperSearchBits - 2;
-        //        Index last = upper.selectOne(upperSearchBits + 1) - upperSearchBits - 2;
         while (last - first > linearFallbackSize) {
             Index mid = (last + first) / 2;
             Number lowerBits = lower.getBits(mid);
@@ -160,21 +155,23 @@ public:
         Index upperBitsPerNumber = roundUpLog2(Elem(numInts + 2)); // + 2 to prevent UB for numInts <= 1
         bitsPerNumber = std::max(bitsPerNumber, upperBitsPerNumber);
         Index lowerBitsPerNumber = bitsPerNumber - upperBitsPerNumber;
-        Index lowerSizeInElems = roundUpDiv(lowerBitsPerNumber * numInts, 8 * sizeof(Elem));
+        Index lowerSizeInBytes = roundUpTo(lowerBitsPerNumber * numInts, 8 * CACHELINE_SIZE_BYTES) / 8;
         Index maxUpperVal = Index(rangeOfValues >> lowerBitsPerNumber);
         Index numBitsInUpper = 2 + numInts + maxUpperVal; // +2 because the first bit is always a one, and the last bit as well
-        Index allocatedUpperSizeInElems = Bitvec::allocatedSizeInLimbsForBits(numBitsInUpper);
+        Index allocatedUpperSizeInBytes = Bitvec::allocatedSizeInBytesForBits(numBitsInUpper);
+        ADS_ASSUME(allocatedUpperSizeInBytes % CACHELINE_SIZE_BYTES == 0);
         ADS_ASSUME(maxUpperVal < Index(1) << upperBitsPerNumber);
 
-        allocatedSizeInLimbs = lowerSizeInElems + allocatedUpperSizeInElems;
-        allocation = Allocation<>(allocatedSizeInLimbs);
-        lower = BitView<dynSize>(allocation.memory(), lowerSizeInElems);
+        allocatedSizeInBytes = lowerSizeInBytes + allocatedUpperSizeInBytes;
+        allocation = Allocation<>(allocatedSizeInBytes);
+        auto* memory = allocation.memory();
+        ADS_ASSUME_ALIGNED(memory, 32);
+        upper = Bitvec::uninitializedForSize(numBitsInUpper, memory);
+        ADS_ASSUME(upper.allocatedSizeInBytes() == allocatedUpperSizeInBytes);
+        lower = BitView<dynSize>(upper.alloc().endOfMemory(), lowerSizeInBytes / sizeof(Limb));
         lowerBitMask = (Number(1) << lowerBitsPerNumber) - 1;
         lower.bitAccess.numBits = lowerBitsPerNumber;
-        assert(lowerSizeInElems == lower.numT);
-        upper = Bitvec::uninitializedForSize(numBitsInUpper, allocation.memory() + lowerSizeInElems);
-        assert(upper.allocatedSizeInLimbs() == allocatedUpperSizeInElems);
-
+        ADS_ASSUME(lowerSizeInBytes == lower.numT * sizeof(Limb));
         build(numbers);
     }
 
@@ -199,7 +196,7 @@ public:
 
     constexpr Subrange<NumberIter> numbers() const noexcept { return {numberIter(0), numberIter(size())}; }
 
-    [[nodiscard]] constexpr Number predecessor(Number n) const {
+    [[nodiscard]] [[using gnu: hot, pure]] constexpr Number predecessor(Number n) const {
         // the cast is implementation defined before C++20 (but still does the right thing)
         if (n >= I64(largestNumber)) {
             return Number(largestNumber);
@@ -227,7 +224,10 @@ public:
 
     /// \brief The total amount of bits allocated on the heap by this class, including its data members.
     /// Note that data members within this class itself, such as pointers to allocated memory, don't count.
-    [[nodiscard]] constexpr Index numAllocatedBits() const noexcept { return allocatedSizeInLimbs * 8 * sizeof(Limb); }
+    [[nodiscard]] constexpr Index numAllocatedBits() const noexcept {
+        ADS_ASSUME(allocatedSizeInBytes == upper.allocatedSizeInBytes() + lower.sizeInBytes());
+        return allocatedSizeInBytes * 8;
+    }
 
     [[nodiscard]] constexpr const Bitvec& getUpper() const noexcept { return upper; }
 

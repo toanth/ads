@@ -1,7 +1,7 @@
 #ifndef ADS_RECURSIVE_BITVEC_HPP
 #define ADS_RECURSIVE_BITVEC_HPP
 
-#include "bitvec_base.hpp"
+#include "base/normal_bitvec.hpp"
 #include "trivial_bitvec.hpp"
 
 namespace ads {
@@ -21,11 +21,13 @@ enum class SupportedSelects { BOTH, ONE_ONLY };
 /// Shouldn't really need to be overwritten.
 template<ADS_BITVEC_CONCEPT NestedBitvec, SupportedSelects SelectOps = SupportedSelects::BOTH, Index BlockSize = 256,
         typename BlockCountT = IntType<bytesNeededForIndexing(BlockSize)>>
-class RecursiveBitvec : public NormalBitvecBase<RecursiveBitvec<NestedBitvec, SelectOps, BlockSize, BlockCountT>> {
+class RecursiveBitvec
+    : public NormalBitvecBase<RecursiveBitvec<NestedBitvec, SelectOps, BlockSize, BlockCountT>, BlockSize / 64> {
     static_assert(sizeof(BlockCountT) >= bytesNeededForIndexing(BlockSize));
     static_assert(BlockSize >= 64);
+    static_assert(BlockSize % 64 == 0);
 
-    using Base = NormalBitvecBase<RecursiveBitvec<NestedBitvec, SelectOps, BlockSize, BlockCountT>>;
+    using Base = NormalBitvecBase<RecursiveBitvec<NestedBitvec, SelectOps, BlockSize, BlockCountT>, BlockSize / 64>;
     friend Base;
     friend Base::Base;
     using Nested = NestedBitvec;
@@ -36,12 +38,9 @@ class RecursiveBitvec : public NormalBitvecBase<RecursiveBitvec<NestedBitvec, Se
     Nested nestedZeros = Nested(); // store zeros bitvector before ones bitvector to keep the ones bitvector closer
     Nested nestedOnes = Nested();  // to the blockRanks array for better data locality on rank / selectOne
     /// \brief The blockRanks array stores the number of 1 at the end of the respective block, modulo BlockSize.
-    View<BlockCountT> blockRanks = View<BlockCountT>();
+    Array<BlockCountT> blockRanks = Array<BlockCountT>();
     /// \brief The actual bit sequence.
-    View<Limb> vec = View<Limb>();
-    /// \brief The logical number of bits in the bit sequence. The bitvector may internally allocate, set and access
-    /// a greater number of bits that this value.
-    Index numBits = 0;
+    Array<CacheLine> vec = Array<CacheLine>();
 
     constexpr static Index limbsInBlock = BlockSize / 64;
 
@@ -51,86 +50,92 @@ class RecursiveBitvec : public NormalBitvecBase<RecursiveBitvec<NestedBitvec, Se
         return roundUpDiv(numBits, BlockSize) + 1;
     }
 
-    ADS_CPP20_CONSTEXPR RecursiveBitvec(UninitializedTag, Index numBits, Limb* mem)
-        : Base(numBits, mem), numBits(numBits) {
+    constexpr static Index bitSequenceSizeInCacheLines(Index numBits) noexcept {
+        // round up to full blocks and full cache lines
+        return roundUpDiv(numBits, CACHELINE_SIZE_BYTES * 8);
+    }
+
+    ADS_CPP20_CONSTEXPR RecursiveBitvec(UninitializedTag, Index numBits, CacheLine* mem) : Base(numBits, mem) {
+        mem = this->allocation.memory();
+        Index numCacheLinesInBitSequence = bitSequenceSizeInCacheLines(numBits);
+        vec = Array<CacheLine>(mem, numCacheLinesInBitSequence);
+        ADS_ASSUME_ALIGNED(vec.ptr, CACHELINE_SIZE_BYTES);
+        mem += numCacheLinesInBitSequence;
         Index nestedSize = nestedSizeForBits(numBits); // for the blockRanks array, the last entry can be used for numOnes()
-        Index offset = 0;
         if constexpr (SelectOps != SupportedSelects::ONE_ONLY) {
-            nestedZeros = Nested::uninitializedForSize(nestedSize, this->allocation.memory());
-            offset += nestedZeros.allocatedSizeInLimbs();
+            nestedZeros = Nested::uninitializedForSize(nestedSize, mem);
+            mem += nestedZeros.template allocatedSizeIn<Group::CacheLine>();
             ADS_ASSUME(nestedSize == nestedZeros.size());
         }
-        nestedOnes = Nested::uninitializedForSize(nestedSize, this->allocation.memory() + offset);
-        offset += nestedOnes.allocatedSizeInLimbs();
+        nestedOnes = Nested::uninitializedForSize(nestedSize, mem);
+        mem += nestedOnes.template allocatedSizeIn<Group::CacheLine>(); // TODO: For the TrivialBitvec, it's unnecessary to waste the remaining cache line
+        blockRanks = Array<BlockCountT>(mem, nestedSize);
         ADS_ASSUME(nestedSize == nestedOnes.size());
-        blockRanks = View<BlockCountT>(this->allocation.memory() + offset, nestedSize);
-        Index numLimbsInBitSequence = roundUpDiv(numBits, BlockSize) * limbsInBlock; // round up to full blocks
-        vec = View<Limb>(this->allocation.memory() + this->allocation.size() - numLimbsInBitSequence, numLimbsInBitSequence);
-        ADS_ASSUME(offset + blockRanks.sizeInLimbs() + vec.sizeInLimbs() == this->allocation.size());
+        ADS_ASSUME(mem + roundUpDiv(blockRanks.sizeInBytes(), CACHELINE_SIZE_BYTES)
+                   == this->allocation.memory() + this->allocation.sizeInTs());
     }
 
 
 public:
     constexpr RecursiveBitvec() noexcept = default;
 
-    explicit constexpr RecursiveBitvec(Index numBits, Limb fill, Limb* mem = nullptr)
+    explicit constexpr RecursiveBitvec(Index numBits, Limb fill, CacheLine* mem = nullptr)
         : RecursiveBitvec(UninitializedTag{}, numBits, mem) {
         this->fill(fill);
     }
 
-    explicit ADS_CPP20_CONSTEXPR RecursiveBitvec(Span<const Limb> limbs, Limb* mem = nullptr) noexcept
+    explicit ADS_CPP20_CONSTEXPR RecursiveBitvec(Span<const Limb> limbs, CacheLine* mem = nullptr) noexcept
         : RecursiveBitvec(limbs, limbs.size() * 64, mem) {}
 
-    ADS_CPP20_CONSTEXPR RecursiveBitvec(Span<const Limb> limbs, Index numBits, Limb* mem = nullptr) noexcept
+    ADS_CPP20_CONSTEXPR RecursiveBitvec(Span<const Limb> limbs, Index numBits, CacheLine* mem = nullptr) noexcept
         : RecursiveBitvec(UninitializedTag{}, numBits, mem) {
         this->copyFrom(limbs);
     }
 
-    explicit ADS_CPP20_CONSTEXPR RecursiveBitvec(std::string_view str, Index base = 2, Limb* mem = nullptr) noexcept
+    explicit ADS_CPP20_CONSTEXPR RecursiveBitvec(std::string_view str, Index base = 2, CacheLine* mem = nullptr) noexcept
         : RecursiveBitvec(UninitializedTag{}, str.size() * intLog2(base), mem) {
         this->initFromStr(str, base);
     }
 
-    [[nodiscard]] static constexpr Index allocatedSizeInLimbsForBits(Index numBits) noexcept {
+    [[nodiscard]] static constexpr Index allocatedSizeInBytesForBits(Index numBits) noexcept {
         Index numBlocks = nestedSizeForBits(numBits);
         const Index factor = (SelectOps == SupportedSelects::BOTH ? 2 : 1);
-        Index nestedSizesInLimbs = Nested::allocatedSizeInLimbsForBits(numBlocks) * factor;
-        Index arrSizeInLimbs = roundUpDiv(numBlocks * sizeof(BlockCountT), sizeof(Limb));
-        Index bitSequenceSizeInLimbs = roundUpDiv(numBits, BlockSize) * limbsInBlock; // no incomplete blocks
-        return nestedSizesInLimbs + arrSizeInLimbs + bitSequenceSizeInLimbs;
-    }
-
-    [[nodiscard]] ADS_CPP20_CONSTEXPR Index size() const noexcept { return numBits; }
-
-    [[nodiscard]] constexpr Index numLimbs() const noexcept {
-        ADS_ASSUME(vec.numT >= roundUpDiv(numBits, 64));
-        return roundUpDiv(numBits, 64); // vec.numT rounds up towards full blocks
+        Index nestedSizesInBytes = roundUpTo(Nested::allocatedSizeInBytesForBits(numBlocks), CACHELINE_SIZE_BYTES) * factor;
+        Index arrSizeInBytes = roundUpTo(numBlocks * sizeof(BlockCountT), CACHELINE_SIZE_BYTES);
+        static_assert(RecursiveBitvec::requiredAlignment() % Nested::requiredAlignment() == 0);
+        static_assert(alignof(Limb) % alignof(BlockCountT) == 0);
+        return bitSequenceSizeInCacheLines(numBits) * CACHELINE_SIZE_BYTES + nestedSizesInBytes + arrSizeInBytes;
     }
 
     [[nodiscard]] ADS_CPP20_CONSTEXPR Index numBlocks() const noexcept { return nestedOnes.size() - 1; }
 
+
+    [[nodiscard]] static constexpr Index numLimbsInBlock() noexcept { return BlockSize / 64; }
+
+    [[nodiscard]] static constexpr Index blockSize() noexcept { return BlockSize; }
+
+
+
 private:
-    [[nodiscard]] ADS_CPP20_CONSTEXPR const Limb* getLimbArray() const noexcept { return vec.ptr; }
-    [[nodiscard]] ADS_CPP20_CONSTEXPR Limb* getLimbArray() noexcept { return vec.ptr; }
+    [[nodiscard]] ADS_CPP20_CONSTEXPR Span<const CacheLine> getCacheLineArray() const noexcept {
+        return {vec.ptr, vec.numT};
+    }
+    [[nodiscard]] ADS_CPP20_CONSTEXPR Span<CacheLine> getCacheLineArray() noexcept { return {vec.ptr, vec.numT}; }
+
+    //    ADS_CPP20_CONSTEXPR void completeWithZeros() noexcept { /*do nothing*/
+    //    }
 
 public:
     ADS_CPP20_CONSTEXPR void buildMetadata() noexcept {
         [[maybe_unused]] Index rankOne = 0;
         [[maybe_unused]] Index rankZero = 0;
         Index numBlocks = this->numBlocks();
-        assert(numBlocks == roundUpDiv(numLimbs(), limbsInBlock));
-        if (numLimbs() > 0) [[likely]] {
-            Index numIgnoredBits = (64 - (size() % 64)) % 64;
-            this->setLimb(numLimbs() - 1, (this->getLimb(numLimbs() - 1) << numIgnoredBits) >> numIgnoredBits);
-        }
-        for (Index i = numLimbs(); i < numBlocks * limbsInBlock; ++i) {
-            vec.setBits(i, 0); // can't use setLimb() because that assumed that i < numLimbs()
-        }
+        assert(numBlocks == this->template sizeIn<Group::Block>());
+        this->completeWithZeros();
 
         for (Index blockIdx = 0; blockIdx < numBlocks; ++blockIdx) {
             Index prevRankOne = rankOne;
-            Limb* blockPtr = &this->getLimbRef(blockIdx * limbsInBlock);
-            rankOne += rankInBlock(blockPtr);
+            rankOne += rankInBlock(blockIdx);
             nestedOnes.setBit(blockIdx, rankOne / BlockSize > prevRankOne / BlockSize);
             blockRanks.ptr[blockIdx] = rankOne % BlockSize;
             if constexpr (SelectOps != SupportedSelects::ONE_ONLY) {
@@ -139,7 +144,7 @@ public:
                 nestedZeros.setBit(blockIdx, rankZero / BlockSize > prevRankZero / BlockSize);
             }
         }
-        ADS_ASSUME(rankOne <= size());
+        ADS_ASSUME(rankOne <= this->size());
         blockRanks.ptr[numBlocks] = rankOne % BlockSize; // makes numOnes() simpler and avoids special cases for select(largeVal)
         nestedOnes.setBit(numBlocks);
         nestedOnes.buildMetadata();
@@ -167,10 +172,10 @@ public:
         ADS_ASSUME(limbIdx >= blockIdx * limbsInBlock);
         ADS_ASSUME(limbIdx < limbsInBlock * (blockIdx + 1));
         Index res = rankAfterBlock;
-        Index blockEndIdx = std::min(numLimbs(), (blockIdx + 1) * limbsInBlock);
+        Index blockEndLimbIdx = (blockIdx + 1) * numLimbsInBlock();
         // count the number of 1s between idx and the end of the block. This doesn't require looking at
         // the previous block rank, which helps a lot when blockIdx is 0.
-        for (Index i = blockEndIdx - 1; i > limbIdx; --i) { // TODO: Unroll? SIMD? Implement same for rankZero?
+        for (Index i = blockEndLimbIdx - 1; i > limbIdx; --i) { // TODO: Unroll? SIMD? Implement same for rankZero?
             res -= popcount(this->getLimb(i));
         }
         const Limb mask = (Limb(-1) << (idx % 64));
@@ -178,11 +183,11 @@ public:
     }
 
     // Don't iterate over the blockRanks twice and don't call nested selectOne twice unless necessary.
-    // Cf. rankOneUnchecked() below. This function exists because it fits the pattern in which Elias-Fano calls selectOne
-    // and the pattern in which this bitvector calls the nested bitvector's selectOne function, so for a
-    // RecursiveBitvec<RecursiveBitvec<TrivialBitvec>>>, this turns 14 selectOne()s per predecessor into usually
-    // no more than 3 selectOneAndPrev calls overall. // TODO: Make EliasFano use selectOneAndPrevOne instead of selectZero.
-    [[nodiscard]] ADS_CPP20_CONSTEXPR std::pair<Index, Index> selectOneAndPrevOne(Index rankOfSecond) const noexcept {
+    // Cf. rankOneUnchecked() below. This function exists because it fits the pattern in which Elias-Fano calls
+    // selectOne and the pattern in which this bitvector calls the nested bitvector's selectOne function, so for a RecursiveBitvec<RecursiveBitvec<TrivialBitvec>>>,
+    // this turns 14 selectOne()s per predecessor into usually no more than 3 selectOneAndPrev calls overall.
+    [[nodiscard]] [[using gnu: hot, pure]] ADS_CPP20_CONSTEXPR std::pair<Index, Index> selectOneAndPrevOne(
+            Index rankOfSecond) const noexcept {
         ADS_ASSUME(rankOfSecond >= 0);
         ADS_ASSUME(rankOfSecond < this->numOnes());
         if (rankOfSecond == 0) [[unlikely]] {
@@ -213,7 +218,7 @@ public:
 
         Index rankInBlockFromRight = (blockRanks[blockIdx] + BlockSize - upperRankInBlock - 1) % BlockSize;
         ADS_ASSUME(rankInBlockFromRight >= 0);
-        ADS_ASSUME(rankInBlockFromRight < rankInBlock(&this->getLimbRef(blockIdx * limbsInBlock)));
+        ADS_ASSUME(rankInBlockFromRight < rankInBlock(blockIdx));
         return select2InBlockFromRight(blockIdx, rankInBlockFromRight);
     }
 
@@ -232,7 +237,7 @@ public:
         // 1) * BlockSize, so we need to find the (blockRanks[blockIdx] - rank mod BlockSize)th bit counting from the right, 0 indexed
         Index rankInBlockFromRight = (blockRanks[blockIdx] + BlockSize - rank - 1) % BlockSize;
         ADS_ASSUME(rankInBlockFromRight >= 0);
-        ADS_ASSUME(rankInBlockFromRight < rankInBlock(&this->getLimbRef(blockIdx * limbsInBlock)));
+        ADS_ASSUME(rankInBlockFromRight < rankInBlock(blockIdx));
         return selectInBlockFromRight<true>(blockIdx, rankInBlockFromRight);
     }
 
@@ -258,11 +263,11 @@ private:
         // (nestedSearchRank + 1) * BlockSize, so we need to find the (blockRans[blockIdx] - rankZero mod
         // BlockSize)th bit counting from the right, 0 indexed
         Index rankInBlockFromRight = (2 * BlockSize - blockRanks[blockIdx] - rankZero - 1) % BlockSize;
-        if (blockIdx == numBlocks() - 1) [[unlikely]] {
-            // TODO: Store complete blocks, make sure all limbs after numLimbs() are 0
-            Index numIgnoredZeros = ((limbsInBlock - numLimbs() % limbsInBlock) % limbsInBlock) * 64;
-            rankInBlockFromRight -= numIgnoredZeros;
-        }
+        //        if (blockIdx == numBlocks() - 1) [[unlikely]] {
+        //            // TODO: Store complete blocks, make sure all limbs after numLimbs() are 0
+        //            Index numIgnoredZeros = ((limbsInBlock - numLimbs() % limbsInBlock) % limbsInBlock) * 64;
+        //            rankInBlockFromRight -= numIgnoredZeros;
+        //        }
         ADS_ASSUME(rankInBlockFromRight >= 0);
         ADS_ASSUME(rankInBlockFromRight < BlockSize);
         return selectInBlockFromRight<false>(blockIdx, rankInBlockFromRight);
@@ -274,7 +279,7 @@ private:
         ADS_ASSUME(rank >= 0);
         ADS_ASSUME(rank < BlockSize);
         Index blockStart = blockIdx * limbsInBlock;
-        Index blockEnd = std::min((blockIdx + 1) * limbsInBlock, numLimbs());
+        Index blockEnd = (blockIdx + 1) * limbsInBlock;
         ADS_ASSUME(blockStart < blockEnd);
         Index rankInBlock = rank;
         auto limbValue = [this](Index i) {
@@ -301,9 +306,9 @@ private:
     [[nodiscard]] ADS_CPP20_CONSTEXPR std::pair<Index, Index> select2InBlockFromRight(Index blockIdx, Index rankOfRight) const noexcept {
         ADS_ASSUME(blockIdx >= 0);
         ADS_ASSUME(rankOfRight >= 0);
-        ADS_ASSUME(rankOfRight + 1 < BlockSize); // the left value's rank must also be in the same block
+        ADS_ASSUME(rankOfRight + 1 < BlockSize);        // the left value's rank must also be in the same block
         Index blockStart = blockIdx * limbsInBlock;
-        Index blockEnd = std::min((blockIdx + 1) * limbsInBlock, numLimbs());
+        Index blockEnd = (blockIdx + 1) * limbsInBlock; // this bitvector always stores full blocks
         ADS_ASSUME(blockStart < blockEnd);
         Index rankInBlock = rankOfRight;
         for (Index i = blockEnd - 1; i >= blockStart; --i) {
@@ -350,26 +355,15 @@ private:
         }
     }
 
-    /// \brief The subrange [lower, upper) of block ranks must be in ascending order. Finds the first block in the range
-    /// [lower, upper) where the rank is strictly larger than rank or returns upper if no such block exists.
+    /// \brief The subrange [lower, upper) of block ranks must be in ascending order. Finds the first block in the
+    /// range [lower, upper) where the rank is strictly larger than rank or returns upper if no such block exists.
     template<bool IsOne>
-    [[nodiscard]] ADS_CPP20_CONSTEXPR Index selectBlock(Index lower, Index upper, Index rank) const noexcept {
+    [[nodiscard]] [[using gnu: hot, pure]] ADS_CPP20_CONSTEXPR Index selectBlock(Index lower, Index upper, Index rank) const noexcept {
         ADS_ASSUME(rank >= 0);
         ADS_ASSUME(rank < BlockSize);
         ADS_ASSUME(lower >= 0);
         ADS_ASSUME(upper >= lower);
         ADS_ASSUME(upper <= numBlocks());
-        //        // TODO: Remove this...
-        //        auto compareRank = [](Index rankZero, BlockCountT blockRankOne) {
-        //            if constexpr (IsOne) {
-        //                return rankZero < blockRankOne;
-        //            } else {
-        //                Index blockRankZero = (BlockSize - blockRankOne) % BlockSize;
-        //                return rankZero < blockRankZero;
-        //            }
-        //        };
-        //        return std::upper_bound(blockRanks.ptr + lower, blockRanks.ptr + upper, rank, compareRank) - blockRanks.ptr;
-        //        // TODO: ...until here
         // [[likely]] because for iid bits with probability p for '1', the expected value of upper - lower is 1 / p, ie 2 for 50% ones
         if (upper - lower <= linearFallbackSize) [[likely]] {
             // changing this from <= to < everywhere makes select 20% slower for no discernible reason, which is
@@ -420,16 +414,17 @@ private:
         return selectBlockLinearly<IsOne>(lower, upper + 1, rank);
     }
 
-    /// \brief The subrange [lower, upper) of block ranks must be in ascending order. Finds the first block in the range
-    /// [lower, upper) where the rank is strictly larger than rank or returns upper if no such block exists.
+    /// \brief The subrange [lower, upper) of block ranks must be in ascending order. Finds the first block in the
+    /// range [lower, upper) where the rank is strictly larger than rank or returns upper if no such block exists.
     template<bool IsOne>
-    [[nodiscard]] ADS_CPP20_CONSTEXPR Index selectBlockLinearly(Index lower, Index upper, Index rank) const noexcept {
+    [[nodiscard]] [[using gnu: hot, pure]] ADS_CPP20_CONSTEXPR Index selectBlockLinearly(
+            Index lower, Index upper, Index rank) const noexcept {
         ADS_ASSUME(rank >= 0);
         ADS_ASSUME(rank < BlockSize);
         ADS_ASSUME(lower >= 0);
         ADS_ASSUME(upper >= lower);
         ADS_ASSUME(upper - lower <= linearFallbackSize + 1);
-        ADS_ASSUME(upper <= numBlocks());
+        ADS_ASSUME(upper <= this->numAccessibleBlocks());
         //        if constexpr (BlockSize <= 128) {
         //            const U64 mask = 0x8080'8080'8080'8080ull;
         //            U64 val = 42; // TODO: Load from U8* blockRanks + lower
@@ -444,17 +439,17 @@ private:
         return upper;
     }
 
-    // TODO: Rename/remove
-    [[nodiscard]] ADS_CPP20_CONSTEXPR Index rankInBlock(const Limb* ADS_RESTRICT blockPtr) const noexcept {
-        constexpr Index num256Blocks = BlockSize / 256; // encourage the compiler to unroll the "loop"
+    [[nodiscard]] ADS_CPP20_CONSTEXPR Index rankInBlock(Index blockIdx) const noexcept {
         Index res = 0;
-        for (Index i = 0; i < num256Blocks; ++i) {
-            res += u256Rank(blockPtr + 4 * i);
-        }
-        if constexpr (BlockSize % 256 != 0) {
-            assert(BlockSize % 64 == 0);
-            for (Index i = 0; i < (BlockSize % 256) / 64; ++i) {
-                res += popcount(blockPtr[4 * num256Blocks + i]);
+        static_assert(BlockSize % 64 == 0);
+        if constexpr (BlockSize % 256 == 0) {
+            for (Index i = 0; i < BlockSize / 256; ++i) {
+                res += u256Rank(&this->getLimbRef(blockIdx * this->numLimbsInBlock() + 4 * i));
+            }
+        } else {
+            for (Index i = 0; i < BlockSize / 64; ++i) {
+                Limb limb = this->getLimb(blockIdx * this->numLimbsInBlock() + i);
+                res += popcount(limb);
             }
         }
         return res;

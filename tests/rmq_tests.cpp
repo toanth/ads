@@ -8,6 +8,10 @@
 using namespace ads;
 
 
+constexpr auto noCheck = [](auto...) { return true; };
+using NoCheck = decltype(noCheck);
+
+
 template<ADS_RMQ_CONCEPT RmqType>
 class AllRmqsTest : public ::testing::Test {};
 
@@ -35,13 +39,15 @@ std::vector<Elem> randomValues(Index size, Elem maxVal = std::numeric_limits<Ele
     return res;
 }
 
-template<ADS_RMQ_CONCEPT TestRmq, ADS_RMQ_CONCEPT ReferenceRmq>
-void testQuery(const TestRmq& testRmq, const ReferenceRmq& referenceRmq, Index lower, Index upper) {
+template<ADS_RMQ_CONCEPT TestRmq, ADS_RMQ_CONCEPT ReferenceRmq, typename CheckAnswer = NoCheck>
+void testQuery(const TestRmq& testRmq, const ReferenceRmq& referenceRmq, Index lower, Index upper,
+        CheckAnswer check = CheckAnswer()) {
     Index testeeAnswer = testRmq(lower, upper);
     Index referenceAnswer = referenceRmq(lower, upper);
     ASSERT_EQ(referenceRmq[testeeAnswer], referenceRmq[referenceAnswer])
             << TestRmq::name << ", answers (test/ref) " << testeeAnswer << " " << referenceAnswer << ", interval "
             << lower << " " << upper << ", size " << referenceRmq.size();
+    ASSERT_TRUE(check(lower, upper, testeeAnswer));
 }
 
 template<typename RMQ>
@@ -55,8 +61,8 @@ void testSmallRmq(std::vector<Elem> values) {
     }
 }
 
-template<typename RMQ>
-void testLargeRmq(std::vector<Elem> values) {
+template<typename RMQ, typename CheckAnswer = NoCheck>
+void testLargeRmq(std::vector<Elem> values, CheckAnswer check = CheckAnswer()) {
     RMQ rmq(values);
     NLogNRmq<> reference(values);
     auto engine = createRandomEngine();
@@ -66,6 +72,9 @@ void testLargeRmq(std::vector<Elem> values) {
         std::pair<Index, Index> range = std::minmax(idxDist(engine), idxDist(engine));
         if (range.first == range.second) continue;
         testQuery(rmq, reference, range.first, range.second);
+        if (testing::Test::HasFatalFailure()) {
+            return;
+        }
     }
     for (Index i = 0; i < numIterations / 4; ++i) {
         Index l = idxDist(engine);
@@ -73,7 +82,10 @@ void testLargeRmq(std::vector<Elem> values) {
         if (u >= values.size()) {
             continue;
         }
-        testQuery(rmq, reference, l, u);
+        testQuery(rmq, reference, l, u, check);
+        if (testing::Test::HasFatalFailure()) {
+            return;
+        }
     }
 }
 
@@ -221,13 +233,15 @@ TYPED_TEST(UsefulRmqsTest, PowerOfTwoPlus1) {
 TYPED_TEST(UsefulRmqsTest, LargeAscending) {
     std::vector<Elem> vec((1 << 18) - 7);
     std::iota(vec.begin(), vec.end(), 5);
-    testLargeRmq<TypeParam>(std::move(vec));
+    auto takeLowest = [](Index low, Index, Index answer) { return answer == low; };
+    testLargeRmq<TypeParam>(std::move(vec), takeLowest);
 }
 
 TYPED_TEST(UsefulRmqsTest, LargeDescending) {
     std::vector<Elem> vec((1 << 18) + 23);
     std::iota(vec.rbegin(), vec.rend(), 7);
-    testLargeRmq<TypeParam>(vec);
+    auto takeHighest = [](Index, Index high, Index answer) { return answer == high - 1; };
+    testLargeRmq<TypeParam>(vec, takeHighest);
 }
 
 TYPED_TEST(UsefulRmqsTest, LargeAlmostAscending) {

@@ -1,5 +1,5 @@
+#include "../include/bitvector/recursive_bitvec.hpp"
 #include "benchmarks_common.hpp"
-#include "include/bitvector/recursive_bitvec.hpp"
 
 
 using namespace ads;
@@ -136,10 +136,10 @@ static void BM_BitvecAlternatingOnesZerosSelectRandom(bm::State& state) {
 
 static void BM_BitvecOnesThenZerosSelectFirstZero(bm::State& state) {
     SelectBitvector bv = SelectBitvector::uninitializedForSize(state.range());
-    for (Index i = 0; i < bv.sizeInLimbs() / 2; ++i) {
+    for (Index i = 0; i < bv.numLimbs() / 2; ++i) {
         bv.setLimb(i, Limb(-1));
     }
-    for (Index i = bv.sizeInLimbs() / 2; i < bv.sizeInLimbs(); ++i) {
+    for (Index i = bv.numLimbs() / 2; i < bv.numLimbs(); ++i) {
         bv.setLimb(i, 0);
     }
     bv.buildMetadata();
@@ -156,10 +156,10 @@ static void BM_BitvecOnesThenZerosSelectFirstZero(bm::State& state) {
 static void BM_BitvecOnesThenZerosSelectRandom(bm::State& state) {
     Span<const U64> randomQueries = getRandomQueries(state);
     SelectBitvector bv = SelectBitvector::uninitializedForSize(state.range());
-    for (Index i = 0; i < bv.sizeInLimbs() / 2; ++i) {
+    for (Index i = 0; i < bv.numLimbs() / 2; ++i) {
         bv.setLimb(i, Limb(-1));
     }
-    for (Index i = bv.sizeInLimbs() / 2; i < bv.sizeInLimbs(); ++i) {
+    for (Index i = bv.numLimbs() / 2; i < bv.numLimbs(); ++i) {
         bv.setLimb(i, 0);
     }
     bv.buildMetadata();
