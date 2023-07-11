@@ -60,7 +60,7 @@ class [[nodiscard]] EliasFano {
     [[nodiscard]] ADS_CPP20_CONSTEXPR Elem predecessorImpl(Elem n) const {
         Number upperSearchBits = n >> numLowerBitsPerNumber();
         Number lowerSearchBits = n & lowerBitMask;
-        ADS_ASSUME(upper.numOnes() > upperSearchBits);
+        ADS_ASSUME(upper.numOnes() > Index(upperSearchBits));
         auto [first, last] = upper.selectOneAndPrevOne(upperSearchBits + 1);
         first -= upperSearchBits;
         last -= upperSearchBits + 1;
@@ -171,7 +171,7 @@ public:
         lower = BitView<dynSize>(upper.alloc().endOfMemory(), lowerSizeInBytes / sizeof(Limb));
         lowerBitMask = (Number(1) << lowerBitsPerNumber) - 1;
         lower.bitAccess.numBits = lowerBitsPerNumber;
-        ADS_ASSUME(lowerSizeInBytes == lower.numT * sizeof(Limb));
+        ADS_ASSUME(lowerSizeInBytes == lower.numT * Index(sizeof(Limb)));
         build(numbers);
     }
 

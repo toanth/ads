@@ -37,13 +37,13 @@ endif ()
 
 add_compile_options(benchmarks -DADS_NO_FALLBACKS)
 
-add_executable(benchmarks bitvector_benchmarks.cpp eliasfano_benchmarks.cpp ../include/bitvector/base/concept.hpp ../include/bitvector/base/bitvec.hpp ../include/bitvector/base/normal_bitvec.hpp ../include/bitvector/base/superblock_bitvec.hpp)
+add_executable(benchmarks bitvector_benchmarks.cpp eliasfano_benchmarks.cpp)
 
 target_link_libraries(benchmarks benchmark::benchmark benchmark::benchmark_main)
 
-target_include_directories(benchmarks PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../)
+#target_include_directories(benchmarks PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../)
 
 
-add_executable(profiling profiling.cpp ../include/bitvector/base/concept.hpp ../include/bitvector/base/bitvec.hpp ../include/bitvector/base/normal_bitvec.hpp ../include/bitvector/base/superblock_bitvec.hpp)
-target_link_libraries(profiling benchmark::benchmark)
-target_include_directories(profiling PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../)
+#add_executable(profiling profiling.cpp ../include/bitvector/base/concept.hpp ../include/bitvector/base/bitvec.hpp ../include/bitvector/base/normal_bitvec.hpp ../include/bitvector/base/superblock_bitvec.hpp)
+#target_link_libraries(profiling benchmark::benchmark)
+#target_include_directories(profiling PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../)

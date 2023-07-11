@@ -1,12 +1,13 @@
 #ifndef ADS_RECURSIVE_BITVEC_HPP
 #define ADS_RECURSIVE_BITVEC_HPP
 
+#include "../common.hpp"
 #include "base/normal_bitvec.hpp"
 #include "trivial_bitvec.hpp"
 
 namespace ads {
 
-// ZERO_ONLY isn't implemented as it can be emulated by storing every bit flipped
+// ZERO_ONLY isn't implemented as it can be emulated by storing every bit flipped, as done in EliasFano
 enum class SupportedSelects { BOTH, ONE_ONLY };
 
 /// \brief Recursive Bitvector. Most of the later template arguments shouldn't really need to be changed.

@@ -339,13 +339,13 @@ struct BitView {
 
     [[nodiscard]] constexpr T getBits(Index i) const noexcept {
         ADS_ASSUME(i >= 0);
-        ADS_ASSUME((i + 1) * numBitsPerValue() <= numT * sizeof(T) * 8);
+        ADS_ASSUME((i + 1) * numBitsPerValue() <= numT * Index(sizeof(T)) * 8);
         return bitAccess.getBits(ptr, i);
     }
 
     constexpr void setBits(Index i, T value) noexcept {
         ADS_ASSUME(i >= 0);
-        ADS_ASSUME((i + 1) * numBitsPerValue() <= numT * sizeof(T) * 8);
+        ADS_ASSUME((i + 1) * numBitsPerValue() <= numT * Index(sizeof(T)) * 8);
         return bitAccess.setBits(ptr, i, value);
     }
 

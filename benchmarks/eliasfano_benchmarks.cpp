@@ -100,7 +100,7 @@ static void BM_EliasFanoPredecessorAcendingThenLargeRandomQueries(bm::State& sta
     arr.push_back(Limb(-1));
     std::vector<Limb> predecessorQueries = randomArray<Limb>(size, state.range() + state.range() / 10);
     for (Limb& val : predecessorQueries) {
-        if (val > state.range()) {
+        if (val > Limb(state.range())) {
             val -= state.range();
             val = Limb(-1) * (val / (state.range() / 10));
         }
@@ -142,5 +142,5 @@ BENCHMARK(BM_EliasFanoCreation)->RangeMultiplier(5)->Range(5, maxNumValues)->Com
 BENCHMARK(BM_EliasFanoPredecessorInArray)->RangeMultiplier(5)->Range(5, maxNumValues)->Complexity(bm::oN);
 BENCHMARK(BM_EliasFanoPredecessorRandom)->RangeMultiplier(5)->Range(5, maxNumValues)->Complexity(bm::oN);
 BENCHMARK(BM_EliasFanoPredecessorAcending)->RangeMultiplier(5)->Range(5, maxNumValues)->Complexity(bm::oN);
-BENCHMARK(BM_EliasFanoPredecessorAcendingThenLargeRandomQueries())->RangeMultiplier(5)->Range(5, maxNumValues)->Complexity(bm::oN);
-BENCHMARK(BM_EliasFanoPredecessorAcendingThenLargeInArray())->RangeMultiplier(5)->Range(5, maxNumValues)->Complexity(bm::oN);
+BENCHMARK(BM_EliasFanoPredecessorAcendingThenLargeRandomQueries)->RangeMultiplier(5)->Range(5, maxNumValues)->Complexity(bm::oN);
+BENCHMARK(BM_EliasFanoPredecessorAcendingThenLargeInArray)->RangeMultiplier(5)->Range(5, maxNumValues)->Complexity(bm::oN);

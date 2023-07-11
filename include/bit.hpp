@@ -87,7 +87,7 @@ template<typename UnsignedInteger>
 template<typename UnsignedInteger>
 [[nodiscard]] ADS_CPP20_CONSTEXPR Index popcountUntil(UnsignedInteger val, Index pos) noexcept {
     ADS_ASSUME(pos >= 0);
-    ADS_ASSUME(pos < sizeof(UnsignedInteger) * 8);
+    ADS_ASSUME(pos < Index(sizeof(UnsignedInteger) * 8));
     const Index shiftAmount = sizeof(UnsignedInteger) * 8 - pos - 1;
     return popcount(val << shiftAmount);
 }
@@ -210,7 +210,7 @@ constexpr static inline BitSelectTable<> byteSelectTable = precomputeBitSelectTa
 }
 
 
-[[nodiscard]] ADS_CPP20_CONSTEXPR Index u256Select(const U64* valuePtr, Index bitRank) noexcept [[gnu::nonnull]] {
+[[nodiscard]] ADS_CPP20_CONSTEXPR Index u256Select(const U64* valuePtr, Index bitRank) noexcept {
     ADS_ASSUME(bitRank >= 0);
     ADS_ASSUME(bitRank < 256);
     ADS_ASSUME(valuePtr);
@@ -235,7 +235,7 @@ constexpr static inline BitSelectTable<> byteSelectTable = precomputeBitSelectTa
     return u64Select(valuePtr[3], bitRank);
 }
 
-[[nodiscard]] ADS_CPP20_CONSTEXPR Index u256SelectZero(const U64* valuePtr, Index bitRank) noexcept [[gnu::nonnull]] {
+[[nodiscard]] ADS_CPP20_CONSTEXPR Index u256SelectZero(const U64* valuePtr, Index bitRank) noexcept {
     ADS_ASSUME(bitRank >= 0);
     ADS_ASSUME(bitRank < 256);
     ADS_ASSUME(valuePtr);
@@ -244,14 +244,14 @@ constexpr static inline BitSelectTable<> byteSelectTable = precomputeBitSelectTa
     return u256Select(negated, bitRank);
 }
 
-[[nodiscard]] ADS_CPP20_CONSTEXPR Index u256Rank(const U64* valuePtr) noexcept [[gnu::nonnull]] {
+[[nodiscard]] ADS_CPP20_CONSTEXPR Index u256Rank(const U64* valuePtr) noexcept {
     ADS_ASSUME(valuePtr);
     ADS_ASSUME_ALIGNED(valuePtr, 32);
     // TODO: Use SSE instructions?
     return popcount(valuePtr[0]) + popcount(valuePtr[1]) + popcount(valuePtr[2]) + popcount(valuePtr[3]);
 }
 
-[[nodiscard]] ADS_CPP20_CONSTEXPR Index alignedU256RankUntil(const U64* valuePtr, Index pos) noexcept [[gnu::nonnull]] {
+[[nodiscard]] ADS_CPP20_CONSTEXPR Index alignedU256RankUntil(const U64* valuePtr, Index pos) noexcept {
     ADS_ASSUME(valuePtr);
     ADS_ASSUME_ALIGNED(valuePtr, 32);
     ADS_ASSUME(pos >= 0);

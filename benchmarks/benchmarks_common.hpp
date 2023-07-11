@@ -1,8 +1,8 @@
 #ifndef ADS_BENCHMARKS_COMMON_HPP
 #define ADS_BENCHMARKS_COMMON_HPP
 
+#include "../include/common.hpp"
 #include "benchmark/benchmark.h"
-#include "include/common.hpp"
 #include <unordered_map>
 
 namespace bm = benchmark;
