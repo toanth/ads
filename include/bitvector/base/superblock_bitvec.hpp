@@ -122,10 +122,6 @@ public:
     [[nodiscard]] ADS_CPP20_CONSTEXPR Index rankOneUnchecked(Index pos) const noexcept {
         ADS_ASSUME(0 <= pos);
         ADS_ASSUME(pos < derived().numBits());
-        if (pos <= 0) [[unlikely]] {
-            return 0;
-        }
-        --pos;
         ADS_ASSUME(pos >= 0);
         Index limbIdx = pos / 64;
         Index superblockIdx = limbIdx / derived().numLimbsInSuperblock();
@@ -138,7 +134,7 @@ public:
             ADS_ASSUME(limbIdx - i < derived().numLimbsInBlock());
             res += popcount(derived().getLimb(i));
         }
-        return res + popcountUntil(derived().getLimb(limbIdx), pos % 64);
+        return res + popcountBefore(derived().getLimb(limbIdx), pos % 64);
     }
 
 

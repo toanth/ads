@@ -16,10 +16,10 @@ namespace ads {
 /// \tparam SuperblockRankT The type used to store superblock counts. Some small memory requirement reductions are possible
 /// if the size of the bitvector in bits is known in advance to fit into a smaller type than Limb.
 template<Index BlockSizeInLimbs = 8, Index SuperblockSizeInLimbs = (1 << 16) / 64, typename SuperblockRankT = Limb>
-class [[nodiscard]] EfficientRankBitvec
-    : public SuperblockBitvecBase<EfficientRankBitvec<BlockSizeInLimbs, SuperblockSizeInLimbs, SuperblockRankT>, SuperblockSizeInLimbs, BlockSizeInLimbs, SuperblockRankT> {
+class [[nodiscard]] ClassicalRankBitvec
+    : public SuperblockBitvecBase<ClassicalRankBitvec<BlockSizeInLimbs, SuperblockSizeInLimbs, SuperblockRankT>, SuperblockSizeInLimbs, BlockSizeInLimbs, SuperblockRankT> {
 
-    using Base = SuperblockBitvecBase<EfficientRankBitvec<BlockSizeInLimbs, SuperblockSizeInLimbs, SuperblockRankT>, SuperblockSizeInLimbs, BlockSizeInLimbs, SuperblockRankT>;
+    using Base = SuperblockBitvecBase<ClassicalRankBitvec<BlockSizeInLimbs, SuperblockSizeInLimbs, SuperblockRankT>, SuperblockSizeInLimbs, BlockSizeInLimbs, SuperblockRankT>;
     friend Base;
     friend Base::Base;
     friend Base::Base::Base; // :D
@@ -47,7 +47,7 @@ public:
     BlockRanks blocks = BlockRanks();
 
 private:
-    constexpr EfficientRankBitvec(UninitializedTag, Index numBits, CacheLine* mem = nullptr) : Base(numBits, mem) {
+    constexpr ClassicalRankBitvec(UninitializedTag, Index numBits, CacheLine* mem = nullptr) : Base(numBits, mem) {
         // don't store incomplete blocks or cache lines
         numBits = roundUpTo(numBits, CACHELINE_SIZE_BYTES * 8);
         mem = this->allocation.memory();
@@ -62,24 +62,24 @@ private:
     }
 
 public:
-    EfficientRankBitvec() noexcept = default;
+    ClassicalRankBitvec() noexcept = default;
 
-    explicit constexpr EfficientRankBitvec(Index numBits, Limb fill, CacheLine* mem = nullptr)
-        : EfficientRankBitvec(UninitializedTag{}, numBits, mem) {
+    explicit constexpr ClassicalRankBitvec(Index numBits, Limb fill, CacheLine* mem = nullptr)
+        : ClassicalRankBitvec(UninitializedTag{}, numBits, mem) {
         this->fill(fill);
     }
 
-    explicit ADS_CPP20_CONSTEXPR EfficientRankBitvec(Span<const Limb> limbs, CacheLine* mem = nullptr) noexcept
-        : EfficientRankBitvec(limbs, limbs.size() * 64, mem) {}
+    explicit ADS_CPP20_CONSTEXPR ClassicalRankBitvec(Span<const Limb> limbs, CacheLine* mem = nullptr) noexcept
+        : ClassicalRankBitvec(limbs, limbs.size() * 64, mem) {}
 
-    ADS_CPP20_CONSTEXPR EfficientRankBitvec(Span<const Limb> limbs, Index numBits, CacheLine* mem = nullptr) noexcept
-        : EfficientRankBitvec(UninitializedTag{}, numBits, mem) {
+    ADS_CPP20_CONSTEXPR ClassicalRankBitvec(Span<const Limb> limbs, Index numBits, CacheLine* mem = nullptr) noexcept
+        : ClassicalRankBitvec(UninitializedTag{}, numBits, mem) {
         this->copyFrom(limbs);
     }
 
 
-    explicit ADS_CPP20_CONSTEXPR EfficientRankBitvec(std::string_view str, Index base = 2, CacheLine* mem = nullptr) noexcept
-        : EfficientRankBitvec(UninitializedTag{}, str.size() * intLog2(base), mem) {
+    explicit ADS_CPP20_CONSTEXPR ClassicalRankBitvec(std::string_view str, Index base = 2, CacheLine* mem = nullptr) noexcept
+        : ClassicalRankBitvec(UninitializedTag{}, str.size() * intLog2(base), mem) {
         this->initFromStr(str, base);
     }
 
@@ -129,7 +129,7 @@ public:
 };
 
 #ifdef ADS_HAS_CPP20
-static_assert(IsNormalBitvec<EfficientRankBitvec<>>);
+static_assert(IsNormalBitvec<ClassicalRankBitvec<>>);
 #endif
 
 } // namespace ads

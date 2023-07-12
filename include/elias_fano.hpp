@@ -17,8 +17,8 @@ class [[nodiscard]] EliasFano {
     Index numInts = 0;
     Index lowerBitMask = 0;
     Index allocatedSizeInBytes = 0;
-    Elem smallestNumber = 0;
-    Elem largestNumber = 0;
+    Limb smallestNumber = 0;
+    Limb largestNumber = 0;
     Index bitsPerNumber = sizeof(Number) * 8; // usually overwritten in the ctor
     Allocation<> allocation = Allocation<>();
     Bitvec upper = Bitvec();
@@ -27,11 +27,11 @@ class [[nodiscard]] EliasFano {
 
     template<typename Range>
     ADS_CPP20_CONSTEXPR void build(const Range& range) noexcept {
-        Elem currentUpperEntry = 0;
+        Limb currentUpperEntry = 0;
         Index lastUpperElemIdx = 0;
         Index i = 0;
         for (Number valUnmodified : range) {
-            Elem val = Elem(valUnmodified) - smallestNumber;
+            Limb val = Limb(valUnmodified) - smallestNumber;
             //            ADS_ASSUME(valUnmodified >= smallestNumber);
             Index upperPart = Index(val >> numLowerBitsPerNumber());
             Index newBitIdx = upperPart + i + 1;
@@ -39,25 +39,25 @@ class [[nodiscard]] EliasFano {
             if (currentUpperElemIdx > lastUpperElemIdx) {
                 upper.setLimb(lastUpperElemIdx, ~currentUpperEntry);
                 for (Index k = lastUpperElemIdx + 1; k < currentUpperElemIdx; ++k) {
-                    upper.setLimb(k, Elem(-1));
+                    upper.setLimb(k, Limb(-1));
                 }
                 lastUpperElemIdx = currentUpperElemIdx;
                 currentUpperEntry = 0;
             }
-            currentUpperEntry |= Elem(1) << (newBitIdx % 64); // the order of bits in an element is reversed
+            currentUpperEntry |= Limb(1) << (newBitIdx % 64); // the order of bits in an element is reversed
             if (numLowerBitsPerNumber() > 0) {
-                lower.setBits(i, Elem(val));
+                lower.setBits(i, Limb(val));
             }
             ++i;
         }
         upper.setLimb(lastUpperElemIdx, ~currentUpperEntry);
         for (++lastUpperElemIdx; lastUpperElemIdx < upper.numLimbs(); ++lastUpperElemIdx) {
-            upper.setLimb(lastUpperElemIdx, Elem(-1));
+            upper.setLimb(lastUpperElemIdx, Limb(-1));
         }
         upper.buildMetadata();
     }
 
-    [[nodiscard]] ADS_CPP20_CONSTEXPR Elem predecessorImpl(Elem n) const {
+    [[nodiscard]] ADS_CPP20_CONSTEXPR Limb predecessorImpl(Limb n) const {
         Number upperSearchBits = n >> numLowerBitsPerNumber();
         Number lowerSearchBits = n & lowerBitMask;
         ADS_ASSUME(upper.numOnes() > Index(upperSearchBits));
@@ -89,7 +89,7 @@ class [[nodiscard]] EliasFano {
         return getImpl(first - 1);
     }
 
-    [[nodiscard]] ADS_CPP20_CONSTEXPR Elem successorImpl(Elem n) const {
+    [[nodiscard]] ADS_CPP20_CONSTEXPR Limb successorImpl(Limb n) const {
         Number upperSearchBits = n >> numLowerBitsPerNumber();
         Number lowerSearchBits = n & lowerBitMask;
         auto [first, last] = upper.selectOneAndPrevOne(upperSearchBits + 1);
@@ -120,39 +120,39 @@ class [[nodiscard]] EliasFano {
         return getImpl(last + 1);
     }
 
-    [[nodiscard]] ADS_CPP20_CONSTEXPR Elem getImpl(Index i) const {
+    [[nodiscard]] ADS_CPP20_CONSTEXPR Limb getImpl(Index i) const {
         if (i < 0 || i >= size()) {
             throw std::invalid_argument("EliasFano::get() Index out of range");
         }
-        Elem upperPart = getUpperPart(i);
+        Limb upperPart = getUpperPart(i);
         if (numLowerBitsPerNumber() == 0) {
             return upperPart;
         }
-        Elem lowerPart = getLowerPart(i);
+        Limb lowerPart = getLowerPart(i);
         return lowerPart + (upperPart << numLowerBitsPerNumber());
     }
 
     /// \brief Use the bitvector to find the upper parts of the ith stored number.
-    [[nodiscard]] constexpr Elem getUpperPart(Index i) const { return upper.selectZero(i) - i - 1; }
+    [[nodiscard]] constexpr Limb getUpperPart(Index i) const { return upper.selectZero(i) - i - 1; }
 
     /// \brief The ith entry in the lower array, which holds the lower bits of the ith stored number.
-    [[nodiscard]] constexpr Elem getLowerPart(Index i) const { return lower.getBits(i); }
+    [[nodiscard]] constexpr Limb getLowerPart(Index i) const { return lower.getBits(i); }
 
 public:
     template<typename Range, typename = std::void_t<decltype(maybe_ranges::begin(std::declval<Range&>()))>> // no concepts in C++17
     explicit ADS_CPP20_CONSTEXPR EliasFano(const Range& numbers) {
         numInts = maybe_ranges::size(numbers);
-        Elem rangeOfValues = 0;
+        Limb rangeOfValues = 0;
         if (numInts > 0) [[likely]] {
             auto iter = maybe_ranges::begin(numbers);
-            smallestNumber = Elem(*iter);
+            smallestNumber = Limb(*iter);
             maybe_ranges::advance(iter, numInts - 1);
             largestNumber = *iter;
             rangeOfValues = largestNumber - smallestNumber;
         }
 
-        bitsPerNumber = 1 + intLog2(std::max(rangeOfValues, Elem(1)));
-        Index upperBitsPerNumber = roundUpLog2(Elem(numInts + 2)); // + 2 to prevent UB for numInts <= 1
+        bitsPerNumber = 1 + intLog2(std::max(rangeOfValues, Limb(1)));
+        Index upperBitsPerNumber = roundUpLog2(Limb(numInts + 2)); // + 2 to prevent UB for numInts <= 1
         bitsPerNumber = std::max(bitsPerNumber, upperBitsPerNumber);
         Index lowerBitsPerNumber = bitsPerNumber - upperBitsPerNumber;
         Index lowerSizeInBytes = roundUpTo(lowerBitsPerNumber * numInts, 8 * CACHELINE_SIZE_BYTES) / 8;
@@ -201,7 +201,7 @@ public:
         if (n >= I64(largestNumber)) {
             return Number(largestNumber);
         }
-        return Number(predecessorImpl(Elem(n) - smallestNumber) + smallestNumber);
+        return Number(predecessorImpl(Limb(n) - smallestNumber) + smallestNumber);
     }
 
 
@@ -210,7 +210,7 @@ public:
         if (n <= I64(smallestNumber)) {
             return Number(smallestNumber);
         }
-        return Number(successorImpl(Elem(n) - smallestNumber) + smallestNumber);
+        return Number(successorImpl(Limb(n) - smallestNumber) + smallestNumber);
     }
 
     /// \brief Returns the smallest value, which is the same as `*numbers().begin()` but more efficient

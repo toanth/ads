@@ -172,17 +172,9 @@ public:
     }
 
 
-    [[nodiscard]] ADS_CPP20_CONSTEXPR Limb getLimb(Index i) const noexcept {
-        ADS_ASSUME(i >= 0);
-        ADS_ASSUME(i < derived().numAccessibleLimbs());
-        return derived().getLimbRef(i);
-    }
+    [[nodiscard]] ADS_CPP20_CONSTEXPR Limb getLimb(Index i) const noexcept { return derived().getLimbRef(i); }
 
-    ADS_CPP20_CONSTEXPR void setLimb(Index i, Limb newVal) noexcept {
-        ADS_ASSUME(i >= 0);
-        ADS_ASSUME(i < derived().numAccessibleLimbs());
-        derived().getLimbRef(i) = newVal;
-    }
+    ADS_CPP20_CONSTEXPR void setLimb(Index i, Limb newVal) noexcept { derived().getLimbRef(i) = newVal; }
 
     // ** The following two functions rarely need to be overwritten and should be used even less
     // in performance critical code **
@@ -202,10 +194,13 @@ public:
         return BitwiseAccess<8>::getBits(&limb, 0, idx % 8);
     }
 
-    [[nodiscard]] ADS_CPP20_CONSTEXPR Span<const Limb, NumLimbsInBlock> getBlock(Index idx) const noexcept {
-        Span<const Limb, NumLimbsInCacheLine> cl = getCacheLine(idx / Derived::numBlocksInCacheLine());
-        ADS_ASSUME(NumLimbsInBlock % NumLimbsInCacheLine == 0);
-        return Span<const Limb, NumLimbsInBlock>(cl.data());
+    [[nodiscard]] ADS_CPP20_CONSTEXPR Span<const Limb, NumLimbsInBlock> getBlock(Index blockIdx) const noexcept {
+        Span<const Limb, NumLimbsInCacheLine> cl = getCacheLine(blockIdx / Derived::numBlocksInCacheLine());
+        Index offset = (blockIdx % Derived::numBlocksInCacheLine()) * NumLimbsInBlock;
+        ADS_ASSUME(offset >= 0);
+        ADS_ASSUME(offset < NumLimbsInCacheLine);
+        ADS_ASSUME(NumLimbsInCacheLine % NumLimbsInBlock == 0);
+        return Span<const Limb, NumLimbsInBlock>(cl.data() + offset);
     }
 
     template<Group G>

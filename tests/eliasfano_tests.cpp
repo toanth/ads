@@ -353,6 +353,27 @@ TEST(EliasFano, SuccessorRandom) {
     }
 }
 
+TEST(EliasFano, Clustered) {
+    std::vector<Limb> vec;
+    for (Index i = 0; i < 1000; ++i) {
+        vec.push_back(i);
+    }
+    for (Index i = 250'000; i < 251'000; ++i) {
+        vec.push_back(i);
+    }
+    for (Index i = 500'000'000; i < 500'001'000; ++i) {
+        vec.push_back(i);
+    }
+    for (Index i = 750'000'000'000; i < 750'000'001'000; ++i) {
+        vec.push_back(i);
+    }
+    EliasFano<> ef(vec);
+    for (auto number : vec) {
+        ASSERT_EQ(ef.predecessor(number), number);
+    }
+}
+
+
 #ifdef ADS_HAS_CPP20
 // Constexpr tests implicitly test for UB -- the compiler is required to emit an error in that case
 TEST(EliasFano, Constexpr) {

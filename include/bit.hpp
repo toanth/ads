@@ -7,14 +7,6 @@
 
 namespace ads {
 
-template<typename T = U64>
-[[nodiscard]] constexpr T lastNBitsMask(Index n) noexcept {
-    ADS_ASSUME(n >= 0);
-    ADS_ASSUME(n < sizeof(T) * 8);
-    return (T(1) << n) - 1;
-}
-
-
 template<typename Integer> // no concepts in C++17 :(
 [[nodiscard]] ADS_CPP20_CONSTEXPR Index intLog2(Integer n) noexcept {
     if constexpr (std::is_signed_v<Integer>) {
@@ -85,11 +77,11 @@ template<typename UnsignedInteger>
 
 /// \brief Returns the rank one of pos in val, ie. counts all ones in (pos, lsb]
 template<typename UnsignedInteger>
-[[nodiscard]] ADS_CPP20_CONSTEXPR Index popcountUntil(UnsignedInteger val, Index pos) noexcept {
+[[nodiscard]] ADS_CPP20_CONSTEXPR Index popcountBefore(UnsignedInteger val, Index pos) noexcept {
     ADS_ASSUME(pos >= 0);
     ADS_ASSUME(pos < Index(sizeof(UnsignedInteger) * 8));
     const Index shiftAmount = sizeof(UnsignedInteger) * 8 - pos - 1;
-    return popcount(val << shiftAmount);
+    return popcount((val << shiftAmount) << 1); // two shifts to ignore bit pos without invoking UB
 }
 
 template<typename UnsignedInteger>
@@ -222,17 +214,18 @@ constexpr static inline BitSelectTable<> byteSelectTable = precomputeBitSelectTa
     bitRank -= count;
     count = popcount(valuePtr[1]);
     if (bitRank < count) {
-        return u64Select(valuePtr[1], bitRank);
+        return 64 + u64Select(valuePtr[1], bitRank);
     }
     bitRank -= count;
     count = popcount(valuePtr[2]);
     if (bitRank < count) {
-        return u64Select(valuePtr[2], bitRank);
+        return 128 + u64Select(valuePtr[2], bitRank);
     }
     bitRank -= count;
     ADS_ASSUME(bitRank >= 0);
     ADS_ASSUME(bitRank < 64);
-    return u64Select(valuePtr[3], bitRank);
+    ADS_ASSUME(bitRank < popcount(valuePtr[3]));
+    return 3 * 64 + u64Select(valuePtr[3], bitRank);
 }
 
 [[nodiscard]] ADS_CPP20_CONSTEXPR Index u256SelectZero(const U64* valuePtr, Index bitRank) noexcept {
@@ -240,7 +233,7 @@ constexpr static inline BitSelectTable<> byteSelectTable = precomputeBitSelectTa
     ADS_ASSUME(bitRank < 256);
     ADS_ASSUME(valuePtr);
     ADS_ASSUME_ALIGNED(valuePtr, 32);
-    U64 negated[] = {~valuePtr[0], ~valuePtr[1], ~valuePtr[2], ~valuePtr[3]};
+    alignas(32) U64 negated[] = {~valuePtr[0], ~valuePtr[1], ~valuePtr[2], ~valuePtr[3]};
     return u256Select(negated, bitRank);
 }
 
@@ -251,7 +244,7 @@ constexpr static inline BitSelectTable<> byteSelectTable = precomputeBitSelectTa
     return popcount(valuePtr[0]) + popcount(valuePtr[1]) + popcount(valuePtr[2]) + popcount(valuePtr[3]);
 }
 
-[[nodiscard]] ADS_CPP20_CONSTEXPR Index alignedU256RankUntil(const U64* valuePtr, Index pos) noexcept {
+[[nodiscard]] ADS_CPP20_CONSTEXPR Index u256RankBefore(const U64* valuePtr, Index pos) noexcept {
     ADS_ASSUME(valuePtr);
     ADS_ASSUME_ALIGNED(valuePtr, 32);
     ADS_ASSUME(pos >= 0);
@@ -260,7 +253,7 @@ constexpr static inline BitSelectTable<> byteSelectTable = precomputeBitSelectTa
     for (Index i = 0; i < pos / 64; ++i) {
         res += popcount(valuePtr[i]);
     }
-    return res + popcountUntil(valuePtr[pos / 64], pos % 64);
+    return res + popcountBefore(valuePtr[pos / 64], pos % 64);
 }
 
 

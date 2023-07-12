@@ -4,7 +4,7 @@
 
 using namespace ads;
 
-// using RankBitvector = EfficientRankBitvec<>;
+// using RankBitvector = ClassicalRankBitvec<>;
 using RankBitvector = EfficientBitvec<>; // also use almost the same bitvector for fairer comparisons
 using SelectBitvector = EfficientSelectBitvec<>;
 using DefaultBitvector = SelectBitvector;

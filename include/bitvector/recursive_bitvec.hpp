@@ -11,7 +11,7 @@ namespace ads {
 enum class SupportedSelects { BOTH, ONE_ONLY };
 
 /// \brief Recursive Bitvector. Most of the later template arguments shouldn't really need to be changed.
-/// Needs about 4% space overhead (compared to around 3% space overhead for the EfficientRankBitvec) but answers select
+/// Needs about 4% space overhead (compared to around 3% space overhead for the ClassicalRankBitvec) but answers select
 /// queries faster starting at about 10^5 bits.
 /// \tparam NestedBitvec The nested bitvector, of which two with approx. size() / BlockSize bits are stored.
 /// \tparam SelectOps Which select operations to support. Not supporting both saves one of two bitvectors, which
@@ -136,9 +136,9 @@ public:
 
         for (Index blockIdx = 0; blockIdx < numBlocks; ++blockIdx) {
             Index prevRankOne = rankOne;
-            rankOne += rankInBlock(blockIdx);
+            rankOne += numOnesInBlock(blockIdx);
             nestedOnes.setBit(blockIdx, rankOne / BlockSize > prevRankOne / BlockSize);
-            blockRanks.ptr[blockIdx] = rankOne % BlockSize;
+            blockRanks.ptr[blockIdx] = prevRankOne % BlockSize;
             if constexpr (SelectOps != SupportedSelects::ONE_ONLY) {
                 Index prevRankZero = rankZero;
                 rankZero = (blockIdx + 1) * BlockSize - rankOne;
@@ -161,26 +161,32 @@ public:
         return (nestedOnes.numOnes() - 1) * BlockSize + blockRanks[numBlocks()];
     }
 
+    [[nodiscard]] ADS_CPP20_CONSTEXPR Index rankInBlock(Index blockIdx, Index rank) const noexcept {
+        // blockRanks[blockIdx] contains the number of 1s relative to nestedSearchRank * BlockSize or (nestedSearchRank
+        // + 1) * BlockSize, the mod is necessary in case blockIdx has a 1 in the nested bitvector
+        return (rank + BlockSize - blockRanks[blockIdx]) % BlockSize;
+    }
 
     [[nodiscard]] ADS_CPP20_CONSTEXPR Index rankOneUnchecked(Index idx) const noexcept {
         ADS_ASSUME(idx >= 0);
         Index blockIdx = idx / BlockSize;
         ADS_ASSUME(blockIdx >= 0);
         ADS_ASSUME(blockIdx < numBlocks());
-        Index nestedRank = nestedOnes.rankOne(blockIdx + 1); // + 1 because rankOne doesn't consider the current bit
-        Index rankAfterBlock = blockRanks[blockIdx] + BlockSize * nestedRank;
+        Index nestedRank = nestedOnes.rankOne(blockIdx);
+        Index rankBeforeBlock = blockRanks[blockIdx] + BlockSize * nestedRank;
         Index limbIdx = idx / 64;
         ADS_ASSUME(limbIdx >= blockIdx * limbsInBlock);
         ADS_ASSUME(limbIdx < limbsInBlock * (blockIdx + 1));
-        Index res = rankAfterBlock;
-        Index blockEndLimbIdx = (blockIdx + 1) * numLimbsInBlock();
+        Index res = rankBeforeBlock;
+        Index blockStartLimbIdx = blockIdx * numLimbsInBlock();
+        ADS_ASSUME(limbIdx >= blockStartLimbIdx);
+        ADS_ASSUME(limbIdx < blockStartLimbIdx + limbsInBlock);
         // count the number of 1s between idx and the end of the block. This doesn't require looking at
         // the previous block rank, which helps a lot when blockIdx is 0.
-        for (Index i = blockEndLimbIdx - 1; i > limbIdx; --i) { // TODO: Unroll? SIMD? Implement same for rankZero?
-            res -= popcount(this->getLimb(i));
+        for (Index i = blockStartLimbIdx; i < limbIdx; ++i) { // TODO: Unroll? SIMD? Implement same for rankZero?
+            res += popcount(this->getLimb(i));
         }
-        const Limb mask = (Limb(-1) << (idx % 64));
-        return res - popcount(this->getLimb(limbIdx) & mask);
+        return res + popcountBefore(this->getLimb(limbIdx), idx % 64);
     }
 
     // Don't iterate over the blockRanks twice and don't call nested selectOne twice unless necessary.
@@ -198,29 +204,30 @@ public:
         if ((rankOfSecond - 1) / BlockSize != nestedSearchRank) [[unlikely]] {
             return {selectOneUnchecked(rankOfSecond - 1), selectOneUnchecked(rankOfSecond)};
         }
-        Index upperRankInBlock = rankOfSecond % BlockSize;
-        Index lowerRankInBlock = (rankOfSecond - 1) % BlockSize;
+        Index upperRankModBlockSize = rankOfSecond % BlockSize;
+        Index lowerRankModBlockSize = (rankOfSecond - 1) % BlockSize;
         auto [nestedIdx, nestedEndIdx] = nestedOnes.selectOneAndPrevOne(nestedSearchRank);
-        Index blockIdx = selectBlock<true>(nestedIdx, nestedEndIdx, lowerRankInBlock);
-        ADS_ASSUME(blockRanks[blockIdx] >= upperRankInBlock || blockIdx == nestedEndIdx);
-        if (blockRanks[blockIdx] == upperRankInBlock) [[unlikely]] {
-            // the second one is in a later block *this was the last one in the block), so do binary search again to find it
-            Index upperBlock = selectBlock<true>(blockIdx + 1, nestedEndIdx, upperRankInBlock);
-            Index rankInUpperBlockFromRight = (blockRanks[upperBlock] + BlockSize - upperRankInBlock - 1) % BlockSize;
-            ADS_ASSUME(rankInUpperBlockFromRight >= 0);
-            Index upperRes = selectInBlockFromRight<true>(upperBlock, rankInUpperBlockFromRight);
+        Index blockIdx = selectBlock<true>(nestedIdx, nestedEndIdx, lowerRankModBlockSize);
+        ADS_ASSUME(blockRanks[blockIdx] <= upperRankModBlockSize || blockIdx == nestedIdx);
+        if (blockRanks[blockIdx + 1] == upperRankModBlockSize) [[unlikely]] {
+            // the second one is in a later block (this was the last one in the block), so do binary search again to find it
+            Index upperBlock = selectBlock<true>(blockIdx + 1, nestedEndIdx, upperRankModBlockSize);
+            [[maybe_unused]] Index rankInUpperBlock = rankInBlock(upperBlock, upperRankModBlockSize);
+            ADS_ASSUME(rankInUpperBlock == 0);
+            Index upperRes = selectInBlock<true>(upperBlock, 0);
 
-            [[maybe_unused]] Index rankInLowerBlockFromRight = (blockRanks[blockIdx] + BlockSize - lowerRankInBlock - 1) % BlockSize;
-            ADS_ASSUME(rankInLowerBlockFromRight == 0);
-            Index lowerRes = selectInBlockFromRight<true>(blockIdx, 0);
+            Index rankInLowerBlock = rankInBlock(blockIdx, lowerRankModBlockSize);
+            ADS_ASSUME(rankInUpperBlock >= 0);
+            ADS_ASSUME(rankInUpperBlock < BlockSize);
+            Index lowerRes = selectInBlock<true>(blockIdx, rankInLowerBlock);
             return {lowerRes, upperRes};
         }
         ADS_ASSUME(blockIdx >= nestedIdx);
 
-        Index rankInBlockFromRight = (blockRanks[blockIdx] + BlockSize - upperRankInBlock - 1) % BlockSize;
-        ADS_ASSUME(rankInBlockFromRight >= 0);
-        ADS_ASSUME(rankInBlockFromRight < rankInBlock(blockIdx));
-        return select2InBlockFromRight(blockIdx, rankInBlockFromRight);
+        Index lowerRankInBlock = rankInBlock(blockIdx, lowerRankModBlockSize);
+        ADS_ASSUME(lowerRankInBlock >= 0);
+        ADS_ASSUME(lowerRankInBlock < numOnesInBlock(blockIdx));
+        return select2InBlock(blockIdx, lowerRankInBlock);
     }
 
 
@@ -234,12 +241,10 @@ public:
         ADS_ASSUME(nestedIdx <= nestedEndIdx);
         Index blockIdx = selectBlock<true>(nestedIdx, nestedEndIdx, rank);
         ADS_ASSUME(blockIdx >= nestedIdx);
-        // blockRanks[blockIdx] contains the number of 1s relative to nestedSearchRank * BlockSize or (nestedSearchRank +
-        // 1) * BlockSize, so we need to find the (blockRanks[blockIdx] - rank mod BlockSize)th bit counting from the right, 0 indexed
-        Index rankInBlockFromRight = (blockRanks[blockIdx] + BlockSize - rank - 1) % BlockSize;
-        ADS_ASSUME(rankInBlockFromRight >= 0);
-        ADS_ASSUME(rankInBlockFromRight < rankInBlock(blockIdx));
-        return selectInBlockFromRight<true>(blockIdx, rankInBlockFromRight);
+        Index rankInsideBlock = rankInBlock(blockIdx, rank);
+        ADS_ASSUME(rankInsideBlock >= 0);
+        ADS_ASSUME(rankInsideBlock < numOnesInBlock(blockIdx));
+        return selectInBlock<true>(blockIdx, rankInsideBlock);
     }
 
     [[nodiscard]] ADS_CPP20_CONSTEXPR Index selectZeroUnchecked(Index rankZero) const noexcept {
@@ -260,90 +265,95 @@ private:
         Index blockIdx = selectBlock<false>(nestedIdx, nestedEndIdx, rankZero);
         ADS_ASSUME(blockIdx >= nestedIdx);
         ADS_ASSUME(blockIdx < numBlocks());
-        // blockRanks[blockIdx] contains the number of 1s relative to nestedSearchRan * BlockSize or
-        // (nestedSearchRank + 1) * BlockSize, so we need to find the (blockRans[blockIdx] - rankZero mod
-        // BlockSize)th bit counting from the right, 0 indexed
-        Index rankInBlockFromRight = (2 * BlockSize - blockRanks[blockIdx] - rankZero - 1) % BlockSize;
-        //        if (blockIdx == numBlocks() - 1) [[unlikely]] {
-        //            // TODO: Store complete blocks, make sure all limbs after numLimbs() are 0
-        //            Index numIgnoredZeros = ((limbsInBlock - numLimbs() % limbsInBlock) % limbsInBlock) * 64;
-        //            rankInBlockFromRight -= numIgnoredZeros;
-        //        }
-        ADS_ASSUME(rankInBlockFromRight >= 0);
-        ADS_ASSUME(rankInBlockFromRight < BlockSize);
-        return selectInBlockFromRight<false>(blockIdx, rankInBlockFromRight);
+        // blockRanks[blockIdx+1] contains the number of 1s relative to nestedSearchRan * BlockSize or
+        // (nestedSearchRank + 1) * BlockSize
+        Index rankInBlock = (rankZero + blockRanks[blockIdx]) % BlockSize;
+        ADS_ASSUME(rankInBlock >= 0);
+        ADS_ASSUME(rankInBlock < BlockSize);
+        return selectInBlock<false>(blockIdx, rankInBlock);
     }
 
     template<bool IsOne>
-    [[nodiscard]] ADS_CPP20_CONSTEXPR Index selectInBlockFromRight(Index blockIdx, Index rank) const noexcept {
+    [[nodiscard]] ADS_CPP20_CONSTEXPR Index selectInBlock(Index blockIdx, Index rank) const noexcept {
         ADS_ASSUME(blockIdx >= 0);
         ADS_ASSUME(rank >= 0);
         ADS_ASSUME(rank < BlockSize);
-        Index blockStart = blockIdx * limbsInBlock;
-        Index blockEnd = (blockIdx + 1) * limbsInBlock;
-        ADS_ASSUME(blockStart < blockEnd);
-        Index rankInBlock = rank;
-        auto limbValue = [this](Index i) {
+        if constexpr (BlockSize == 256) {
             if constexpr (IsOne) {
-                return this->getLimb(i);
+                return blockIdx * BlockSize + u256Select(this->getBlock(blockIdx).data(), rank);
             } else {
-                return ~this->getLimb(i);
+                return blockIdx * BlockSize + u256SelectZero(this->getBlock(blockIdx).data(), rank);
             }
-        };
-        for (Index i = blockEnd - 1; i >= blockStart; --i) {
-            Limb limb = limbValue(i);
-            Index popcnt = popcount(limb);
-            if (rankInBlock < popcnt) {
-                ADS_ASSUME(rankInBlock >= 0);
-                Index bitIdxFromRight = popcnt - rankInBlock - 1;
-                return i * 64 + u64Select(limb, bitIdxFromRight);
+        } else {
+            Index blockStart = blockIdx * limbsInBlock;
+            Index blockEnd = (blockIdx + 1) * limbsInBlock;
+            ADS_ASSUME(blockStart < blockEnd);
+            Index rankInBlock = rank;
+            auto limbValue = [this](Index i) {
+                if constexpr (IsOne) {
+                    return this->getLimb(i);
+                } else {
+                    return ~this->getLimb(i);
+                }
+            };
+            for (Index i = blockStart; i + 1 < blockEnd; ++i) {
+                Limb limb = limbValue(i);
+                Index popcnt = popcount(limb);
+                if (rankInBlock < popcnt) {
+                    ADS_ASSUME(rankInBlock >= 0);
+                    return i * 64 + u64Select(limb, rankInBlock);
+                }
+                rankInBlock -= popcnt;
             }
-            rankInBlock -= popcnt;
+            Limb limb = limbValue(blockEnd - 1);
+            ADS_ASSUME(rankInBlock >= 0);
+            ADS_ASSUME(rankInBlock < popcount(limb));
+            return (blockEnd - 1) * 64 + u64Select(limb, rankInBlock);
         }
-        ADS_ASSUME(false);
-        return -1;
     }
 
-    [[nodiscard]] ADS_CPP20_CONSTEXPR std::pair<Index, Index> select2InBlockFromRight(Index blockIdx, Index rankOfRight) const noexcept {
+    [[nodiscard]] ADS_CPP20_CONSTEXPR std::pair<Index, Index> select2InBlock(Index blockIdx, Index rankOfLeft) const noexcept {
         ADS_ASSUME(blockIdx >= 0);
-        ADS_ASSUME(rankOfRight >= 0);
-        ADS_ASSUME(rankOfRight + 1 < BlockSize);        // the left value's rank must also be in the same block
+        ADS_ASSUME(rankOfLeft >= 0);
+        ADS_ASSUME(rankOfLeft + 1 < BlockSize);         // the right value's rank must also be in the same block
         Index blockStart = blockIdx * limbsInBlock;
         Index blockEnd = (blockIdx + 1) * limbsInBlock; // this bitvector always stores full blocks
         ADS_ASSUME(blockStart < blockEnd);
-        Index rankInBlock = rankOfRight;
-        for (Index i = blockEnd - 1; i >= blockStart; --i) {
+        Index remainingRank = rankOfLeft;
+        for (Index i = blockStart; i < blockEnd - 1; ++i) {
             Limb limb = this->getLimb(i);
             Index popcnt = popcount(limb);
-            if (rankInBlock < popcnt) {
-                ADS_ASSUME(rankInBlock >= 0);
-                Index rankInLimb = popcnt - rankInBlock - 1;
+            if (remainingRank < popcnt) {
+                ADS_ASSUME(remainingRank >= 0);
                 // TODO: Use separate function for computing the rank of two values at the same time?
                 // Should be relatively easy for the table lookup implementation.
-                Index rightRes = i * 64 + u64Select(limb, rankInLimb);
-                if (rankInBlock + 1 < popcnt) [[likely]] {
-                    Index leftRes = i * 64 + u64Select(limb, rankInLimb - 1);
+                Index leftRes = i * 64 + u64Select(limb, remainingRank);
+                if (remainingRank + 1 < popcnt) [[likely]] {
+                    Index rightRes = i * 64 + u64Select(limb, remainingRank + 1);
                     return {leftRes, rightRes};
                 }
-                while (this->getLimb(--i) == 0) {
-                    ADS_ASSUME(i >= blockStart);
+                while (this->getLimb(++i) == 0) [[unlikely]] {
+                    ADS_ASSUME(i < blockEnd);
                 }
                 limb = this->getLimb(i);
                 ADS_ASSUME(i >= blockStart);
-                return {i * 64 + u64Select(limb, popcount(limb) - 1), rightRes};
+                return {leftRes, i * 64 + u64Select(limb, 0)};
             }
-            rankInBlock -= popcnt;
+            remainingRank -= popcnt;
         }
-        ADS_ASSUME(false);
-        return {-1, -1};
+        ADS_ASSUME(remainingRank >= 0);
+        Limb limb = this->getLimb(blockEnd - 1);
+        ADS_ASSUME(remainingRank + 1 < popcount(limb));
+        Index offset = 64 * (blockEnd - 1);
+        return {offset + u64Select(limb, remainingRank), offset + u64Select(limb, remainingRank + 1)};
     }
 
 
     static constexpr Index linearFallbackSize = 16;
 
     template<bool IsOne>
-    [[nodiscard]] ADS_CPP20_CONSTEXPR Index getRank(Index i) const noexcept {
-        Index rank = blockRanks[i];
+    [[nodiscard]] ADS_CPP20_CONSTEXPR Index getRankModBlockSize(Index blockIdx) const noexcept {
+        Index rank = blockRanks[blockIdx];
         ADS_ASSUME(rank >= 0);
         ADS_ASSUME(rank < BlockSize);
         if constexpr (IsOne) {
@@ -373,31 +383,33 @@ private:
         }
         // First, assume that ones are uniformly distributed. This may be completely wrong, in which case binary search
         // with that assumption could lead to linear running time, so quickly fall back to normal binary search.
-
+        ++lower; // blockRanks[lower] may be larger than blockRanks[lower + 1], so ignore it
+        if (getRankModBlockSize<IsOne>(lower) > rank) {
+            return lower - 1;
+        }
         // Not really in danger of overflowing because rank < BlockSize and usually, BlockSize <= 256, upper < 2^48.
         Index expectedOffset = (upper - lower) * rank / BlockSize;
         ADS_ASSUME(expectedOffset >= 0);
-        ADS_ASSUME(expectedOffset < upper - lower); // strict because rank < BlockSize, so use range [lower, upper] from now on
+        ADS_ASSUME(expectedOffset < upper - lower); // strict because rank < BlockSize
         Index mid = lower + expectedOffset;
         ADS_ASSUME(mid >= lower);
         ADS_ASSUME(mid < upper);
-        Index midRank = getRank<IsOne>(mid);
+        Index midRank = getRankModBlockSize<IsOne>(mid);
         if (midRank <= rank) {
-            lower = mid;       // don't add 1 in case mid + 1 == upper
-            upper = upper - 1; // upper is now considered a valid part of the range
+            lower = mid;
         } else {
             upper = mid;
         }
-        ADS_ASSUME(lower <= upper);
+        ADS_ASSUME(lower < upper);
         expectedOffset = (upper - lower) * rank / BlockSize;
         // get more pessimistic and try to get the expected position into a small interval
         // (instead of chopping away at only one end of the search interval)
         mid = lower + (expectedOffset * 3 + (upper - lower) / 2) / 4;
         ADS_ASSUME(mid >= lower);
-        ADS_ASSUME(mid <= upper);
-        midRank = getRank<IsOne>(mid);
+        ADS_ASSUME(mid < upper);
+        midRank = getRankModBlockSize<IsOne>(mid);
         if (midRank <= rank) {
-            lower = mid; // don't add 1 in case lower == upper
+            lower = mid;
         } else {
             upper = mid;
         }
@@ -405,14 +417,14 @@ private:
             mid = (lower + upper) / 2; // fallback to classical binary search
             ADS_ASSUME(mid >= lower);
             ADS_ASSUME(mid < upper);
-            midRank = getRank<IsOne>(mid);
+            midRank = getRankModBlockSize<IsOne>(mid);
             if (midRank <= rank) {
-                lower = mid + 1;
+                lower = mid;
             } else {
                 upper = mid;
             }
         }
-        return selectBlockLinearly<IsOne>(lower, upper + 1, rank);
+        return selectBlockLinearly<IsOne>(lower, upper, rank);
     }
 
     /// \brief The subrange [lower, upper) of block ranks must be in ascending order. Finds the first block in the
@@ -424,7 +436,7 @@ private:
         ADS_ASSUME(rank < BlockSize);
         ADS_ASSUME(lower >= 0);
         ADS_ASSUME(upper >= lower);
-        ADS_ASSUME(upper - lower <= linearFallbackSize + 1);
+        ADS_ASSUME(upper - lower <= linearFallbackSize);
         ADS_ASSUME(upper <= this->numAccessibleBlocks());
         //        if constexpr (BlockSize <= 128) {
         //            const U64 mask = 0x8080'8080'8080'8080ull;
@@ -432,24 +444,26 @@ private:
         //            val |= mask;
         //            va -= rank * 0x1010'1010'1010'1010ull;
         //        }
-        for (Index i = lower; i < upper; ++i) {
-            if (getRank<IsOne>(i) > rank) { // TODO: Iterate over limbs instead of bytes?
-                return i;
+        //        ADS_ASSUME(getRankModBlockSize<IsOne>(lower) <= rank);
+        for (Index i = lower + 1; i <= upper; ++i) {
+            if (getRankModBlockSize<IsOne>(i) > rank) { // TODO: Iterate over limbs instead of bytes?
+                return i - 1;
             }
         }
         return upper;
     }
 
-    [[nodiscard]] ADS_CPP20_CONSTEXPR Index rankInBlock(Index blockIdx) const noexcept {
+    [[nodiscard]] ADS_CPP20_CONSTEXPR Index numOnesInBlock(Index blockIdx) const noexcept {
         Index res = 0;
         static_assert(BlockSize % 64 == 0);
         if constexpr (BlockSize % 256 == 0) {
             for (Index i = 0; i < BlockSize / 256; ++i) {
-                res += u256Rank(&this->getLimbRef(blockIdx * this->numLimbsInBlock() + 4 * i));
+                ADS_ASSUME(&this->getLimbRef(blockIdx * numLimbsInBlock() + 4 * i) == this->getBlock(blockIdx).data() + 4 * i);
+                res += u256Rank(&this->getLimbRef(blockIdx * numLimbsInBlock() + 4 * i));
             }
         } else {
-            for (Index i = 0; i < BlockSize / 64; ++i) {
-                Limb limb = this->getLimb(blockIdx * this->numLimbsInBlock() + i);
+            for (Index i = 0; i < numLimbsInBlock(); ++i) {
+                Limb limb = this->getLimb(blockIdx * numLimbsInBlock() + i);
                 res += popcount(limb);
             }
         }
