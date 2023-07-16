@@ -133,6 +133,6 @@ int main(int argc, char** argv) {
         printUsage();
         return 2;
     }
-    std::cout << "RESULT algo=md nametobias_theuer time=" << time << " space=" << spaceInBits << std::endl;
+    std::cout << "RESULT algo=rmq name=tobias_theuer time=" << time << " space=" << spaceInBits << std::endl;
     return 0;
 }

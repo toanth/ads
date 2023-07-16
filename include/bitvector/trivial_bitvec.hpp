@@ -11,8 +11,8 @@ enum class Operations { RANK_ONLY, SELECT_ONLY, BOTH };
 /// \brief This class precomputes the answers to all possible rank and select queries and stores them in one large array.
 /// `getBit(i)` is implemented as `rankOne(i+1) - rankOne(i)` for all i (there are size() + 1 rank entries).
 /// For 32 bit rank and select indices, this uses 64 times as much space as the actual bit sequence (which isn't stored),
-/// so this class is only useful for small Bitvectors, such as in the second recursion level of the recursive bitvector
-// TODO: Implement recursive bitvector
+/// so this class is only useful for small Bitvectors, such as in the second recursion level of the recursive bitvector.
+/// For RANK_ONLY or SELECT_ONLY, using 32 bit indices requires 32 times as much space as the actual bit sequence.
 template<typename Count = std::uint32_t, Operations Ops = Operations::BOTH>
 class TrivialBitvec : public BitvecBase<TrivialBitvec<Count, Ops>> {
 
@@ -118,10 +118,10 @@ public:
     /// \param newVal new value of the ith bit.
     ADS_CPP20_CONSTEXPR void setBit(Index i, bool newVal = true) const noexcept {
         [[maybe_unused]] Index rankOfI = -1;
+        if (i == 0) [[unlikely]] { // special case to allow iterating over and setting bits multiple times
+            ranks.ptr[0] = 0;      // reset numZeros() to forget any previous calls to setBit()
+        }
         if constexpr (Ops == Operations::SELECT_ONLY) { // ranks[0] counts the number of ones
-            if (i == 0) [[unlikely]] { // special case to allow iterating over and setting bits multiple times
-                ranks.ptr[0] = 0;      // reset numZeros() to forget any previous calls to setBit()
-            }
             rankOfI = ranks.ptr[0];
             ranks.ptr[0] += newVal;
         } else {

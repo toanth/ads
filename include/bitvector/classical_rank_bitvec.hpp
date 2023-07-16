@@ -1,5 +1,5 @@
-#ifndef ADS_EFFICIENT_RANK_BITVEC_HPP
-#define ADS_EFFICIENT_RANK_BITVEC_HPP
+#ifndef ADS_CLASSICAL_RANK_BITVEC_HPP
+#define ADS_CLASSICAL_RANK_BITVEC_HPP
 
 #include "../bit_access.hpp"
 #include "../common.hpp"
@@ -15,11 +15,12 @@ namespace ads {
 /// parameter shouldn't be chosen too large. Must be a multiple of BlockSize.
 /// \tparam SuperblockRankT The type used to store superblock counts. Some small memory requirement reductions are possible
 /// if the size of the bitvector in bits is known in advance to fit into a smaller type than Limb.
-template<Index BlockSizeInLimbs = 8, Index SuperblockSizeInLimbs = (1 << 16) / 64, typename SuperblockRankT = Limb>
-class [[nodiscard]] ClassicalRankBitvec
-    : public SuperblockBitvecBase<ClassicalRankBitvec<BlockSizeInLimbs, SuperblockSizeInLimbs, SuperblockRankT>, SuperblockSizeInLimbs, BlockSizeInLimbs, SuperblockRankT> {
-
-    using Base = SuperblockBitvecBase<ClassicalRankBitvec<BlockSizeInLimbs, SuperblockSizeInLimbs, SuperblockRankT>, SuperblockSizeInLimbs, BlockSizeInLimbs, SuperblockRankT>;
+template<typename Derived, Index BlockSizeInLimbs = 8, Index SuperblockSizeInLimbs = (1 << 16) / 64, typename SuperblockRankT = Limb>
+class [[nodiscard]] ClassicalRankBitvecImpl
+    : public SuperblockBitvecBase<Derived, SuperblockSizeInLimbs, BlockSizeInLimbs, SuperblockRankT> {
+protected:
+    using Base = SuperblockBitvecBase<Derived, SuperblockSizeInLimbs, BlockSizeInLimbs, SuperblockRankT>;
+    friend Derived;
     friend Base;
     friend Base::Base;
     friend Base::Base::Base; // :D
@@ -47,39 +48,52 @@ public:
     BlockRanks blocks = BlockRanks();
 
 private:
-    constexpr ClassicalRankBitvec(UninitializedTag, Index numBits, CacheLine* mem = nullptr) : Base(numBits, mem) {
+    [[nodiscard]] ADS_CPP20_CONSTEXPR const BlockRank* endOfMemory() const noexcept { return blocks.end(); }
+    [[nodiscard]] ADS_CPP20_CONSTEXPR BlockRank* endOfMemory() noexcept { return blocks.end(); }
+
+
+    // ctor is private but the direct base class is a friend, so an indirectly derived class can't call this.
+    constexpr ClassicalRankBitvecImpl(UninitializedTag, Index numBits, CacheLine* mem = nullptr) noexcept
+        : Base(numBits, mem) {
         // don't store incomplete blocks or cache lines
         numBits = roundUpTo(numBits, CACHELINE_SIZE_BYTES * 8);
         mem = this->allocation.memory();
         ADS_ASSUME_ALIGNED(mem, CACHELINE_SIZE_BYTES);
         Index numCacheLines = numBits / (CACHELINE_SIZE_BYTES * 8);
         ADS_ASSUME(numCacheLines * CACHELINE_SIZE_BYTES * 8 == numBits);
-        vec = Array<CacheLine>(this->allocation.memory(), numCacheLines);
+        vec = Array<CacheLine>(mem, numCacheLines);
         mem += numCacheLines;
         superblocks = SuperblockRanks(mem, this->numSuperblocksForBits(numBits) + 1);
         blocks = BlockRanks(superblocks.end(), numBits / Base::blockSize());
-        ADS_ASSUME(this->allocation.isEnd(blocks.end()));
+        ADS_ASSUME(this->allocation.sizeInBytes() >= this->derived().allocatedSizeInBytesForBits(numBits));
+        ADS_IF_CONSTEVAL {}
+        else {
+            ADS_ASSUME((const char*)endOfMemory() - (const char*)this->allocation.memory() <= allocatedSizeInBytesForBits(numBits));
+            ADS_ASSUME(allocatedSizeInBytesForBits(numBits)
+                               - ((const char*)endOfMemory() - (const char*)this->allocation.memory())
+                       <= CACHELINE_SIZE_BYTES);
+        }
     }
 
 public:
-    ClassicalRankBitvec() noexcept = default;
+    ClassicalRankBitvecImpl() noexcept = default;
 
-    explicit constexpr ClassicalRankBitvec(Index numBits, Limb fill, CacheLine* mem = nullptr)
-        : ClassicalRankBitvec(UninitializedTag{}, numBits, mem) {
+    explicit constexpr ClassicalRankBitvecImpl(Index numBits, Limb fill, CacheLine* mem = nullptr)
+        : ClassicalRankBitvecImpl(UninitializedTag{}, numBits, mem) {
         this->fill(fill);
     }
 
-    explicit ADS_CPP20_CONSTEXPR ClassicalRankBitvec(Span<const Limb> limbs, CacheLine* mem = nullptr) noexcept
-        : ClassicalRankBitvec(limbs, limbs.size() * 64, mem) {}
+    explicit ADS_CPP20_CONSTEXPR ClassicalRankBitvecImpl(Span<const Limb> limbs, CacheLine* mem = nullptr) noexcept
+        : ClassicalRankBitvecImpl(limbs, limbs.size() * 64, mem) {}
 
-    ADS_CPP20_CONSTEXPR ClassicalRankBitvec(Span<const Limb> limbs, Index numBits, CacheLine* mem = nullptr) noexcept
-        : ClassicalRankBitvec(UninitializedTag{}, numBits, mem) {
+    ADS_CPP20_CONSTEXPR ClassicalRankBitvecImpl(Span<const Limb> limbs, Index numBits, CacheLine* mem = nullptr) noexcept
+        : ClassicalRankBitvecImpl(UninitializedTag{}, numBits, mem) {
         this->copyFrom(limbs);
     }
 
 
-    explicit ADS_CPP20_CONSTEXPR ClassicalRankBitvec(std::string_view str, Index base = 2, CacheLine* mem = nullptr) noexcept
-        : ClassicalRankBitvec(UninitializedTag{}, str.size() * intLog2(base), mem) {
+    explicit ADS_CPP20_CONSTEXPR ClassicalRankBitvecImpl(std::string_view str, Index base = 2, CacheLine* mem = nullptr) noexcept
+        : ClassicalRankBitvecImpl(UninitializedTag{}, str.size() * intLog2(base), mem) {
         this->initFromStr(str, base);
     }
 
@@ -128,10 +142,24 @@ public:
     }
 };
 
+
+template<Index BlockSizeInLimbs = 8, Index SuperblockSizeInLimbs = (1 << 16) / 64, typename SuperblockRankT = Limb>
+class [[nodiscard]] ClassicalRankBitvec
+    : public ClassicalRankBitvecImpl<ClassicalRankBitvec<BlockSizeInLimbs, SuperblockSizeInLimbs, SuperblockRankT>, BlockSizeInLimbs, SuperblockSizeInLimbs, SuperblockRankT> {
+public:
+    using Base = ClassicalRankBitvecImpl<ClassicalRankBitvec<BlockSizeInLimbs, SuperblockSizeInLimbs, SuperblockRankT>,
+            BlockSizeInLimbs, SuperblockSizeInLimbs, SuperblockRankT>;
+    using Base::Base;
+    friend Base;
+
+    constexpr ClassicalRankBitvec(UninitializedTag, Index numBits, CacheLine* mem = nullptr) noexcept
+        : Base(UninitializedTag{}, numBits, mem) {}
+};
+
 #ifdef ADS_HAS_CPP20
 static_assert(IsNormalBitvec<ClassicalRankBitvec<>>);
 #endif
 
 } // namespace ads
 
-#endif // ADS_EFFICIENT_RANK_BITVEC_HPP
+#endif // ADS_CLASSICAL_RANK_BITVEC_HPP

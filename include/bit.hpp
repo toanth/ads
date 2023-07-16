@@ -62,7 +62,7 @@ template<typename T>
 }
 
 template<typename UnsignedInteger>
-[[nodiscard]] ADS_CPP20_CONSTEXPR Index popcount(UnsignedInteger n) noexcept {
+[[nodiscard]] [[using gnu: hot, const]] ADS_CPP20_CONSTEXPR Index popcount(UnsignedInteger n) noexcept {
     static_assert(std::is_unsigned_v<UnsignedInteger>);
 #ifdef ADS_HAS_CPP20
     return std::popcount(n);
@@ -117,23 +117,29 @@ template<typename UnsignedInteger>
 #endif
 }
 
-[[nodiscard]] ADS_CPP20_CONSTEXPR U64 u64SelectImpl(U64 n, Index bitRank) noexcept {
-    // #if defined ADS_HAS_GCC_BMI2 || (defined ADS_HAS_MSVC_INTRINSICS && defined ADS_USE_BMI2_INTRINSICS)
-    //     // see https://stackoverflow.com/questions/7669057/find-nth-set-bit-in-an-int/27453505#27453505
-    //     // TODO: Measure if faster than fallback (in general, but especially) on AMD processors before Zen 3.
-    //     // At least on my machine, uncommenting this results in a ridiculously slow (up to 40x slower for small bvs) select
-    //     // because the processor advertises BMI2 as supported but implements it in microcode
-    //     // It's surprisingly hard to figure out at compile time whether the target architecture supports BMI2 instructions,
-    //     // so let the user decide (with the default being the generic fallback) in the MSVC case
-    //     return _pdep_u64(1ull << bitRank, n);
-    // #else
-    //  TODO: Use lookup table? Measure!
+[[nodiscard]] constexpr U64 u64SelectImplFallback(U64 n, Index bitRank) noexcept {
     //  see https://stackoverflow.com/questions/7669057/find-nth-set-bit-in-an-int/7669326#7669326
+    // or https://graphics.stanford.edu/~seander/bithacks.html#CountBitsSetParallel
     for (Index i = 0; i < bitRank; ++i) {
         n &= n - 1;
     }
     return n & ~(n - 1);
-    // #endif
+}
+
+[[nodiscard]] ADS_CPP20_CONSTEXPR U64 u64SelectImpl(U64 n, Index bitRank) noexcept {
+#if (defined ADS_HAS_GCC_BMI2 || defined ADS_HAS_MSVC_INTRINSICS) && defined ADS_USE_BMI2_INTRINSICS
+    ADS_IF_CONSTEVAL {
+        return u64SelectImplFallback(n, bitRank);
+    }
+    // see https://stackoverflow.com/questions/7669057/find-nth-set-bit-in-an-int/27453505#27453505
+    // TODO: Measure if faster than fallback (in general, but especially) on AMD processors before Zen 3.
+    // At least on my machine, uncommenting this results in a ridiculously slow (up to 40x slower for small bitvectors)
+    // select because the processor advertises BMI2 as supported but implements it in inefficient microcode.
+    // It's surprisingly hard to figure out at compile time whether the target architecture supports BMI2 instructions,
+    // so let the user decide (with the default being the generic fallback)
+    return _pdep_u64(1ull << bitRank, n);
+#endif
+    return u64SelectImplFallback(n, bitRank);
 }
 
 
@@ -202,7 +208,7 @@ constexpr static inline BitSelectTable<> byteSelectTable = precomputeBitSelectTa
 }
 
 
-[[nodiscard]] ADS_CPP20_CONSTEXPR Index u256Select(const U64* valuePtr, Index bitRank) noexcept {
+[[nodiscard]] [[using gnu: hot, pure]] ADS_CPP20_CONSTEXPR Index u256Select(const U64* ADS_RESTRICT valuePtr, Index bitRank) noexcept {
     ADS_ASSUME(bitRank >= 0);
     ADS_ASSUME(bitRank < 256);
     ADS_ASSUME(valuePtr);
@@ -228,7 +234,7 @@ constexpr static inline BitSelectTable<> byteSelectTable = precomputeBitSelectTa
     return 3 * 64 + u64Select(valuePtr[3], bitRank);
 }
 
-[[nodiscard]] ADS_CPP20_CONSTEXPR Index u256SelectZero(const U64* valuePtr, Index bitRank) noexcept {
+[[nodiscard]] ADS_CPP20_CONSTEXPR Index u256SelectZero(const U64* ADS_RESTRICT valuePtr, Index bitRank) noexcept {
     ADS_ASSUME(bitRank >= 0);
     ADS_ASSUME(bitRank < 256);
     ADS_ASSUME(valuePtr);
@@ -237,14 +243,14 @@ constexpr static inline BitSelectTable<> byteSelectTable = precomputeBitSelectTa
     return u256Select(negated, bitRank);
 }
 
-[[nodiscard]] ADS_CPP20_CONSTEXPR Index u256Rank(const U64* valuePtr) noexcept {
+[[nodiscard]] ADS_CPP20_CONSTEXPR Index u256Rank(const U64* ADS_RESTRICT valuePtr) noexcept {
     ADS_ASSUME(valuePtr);
     ADS_ASSUME_ALIGNED(valuePtr, 32);
     // TODO: Use SSE instructions?
     return popcount(valuePtr[0]) + popcount(valuePtr[1]) + popcount(valuePtr[2]) + popcount(valuePtr[3]);
 }
 
-[[nodiscard]] ADS_CPP20_CONSTEXPR Index u256RankBefore(const U64* valuePtr, Index pos) noexcept {
+[[nodiscard]] ADS_CPP20_CONSTEXPR Index u256RankBefore(const U64* ADS_RESTRICT valuePtr, Index pos) noexcept {
     ADS_ASSUME(valuePtr);
     ADS_ASSUME_ALIGNED(valuePtr, 32);
     ADS_ASSUME(pos >= 0);

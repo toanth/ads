@@ -49,16 +49,16 @@ TEST(RmmTree, Small) {
 TEST(RmmTree, 1BlockDescending) {
     Index blockSize = RangeMinMaxTree<>::blockSize;
     std::string str(blockSize, '1');
-    for (Index i = str.size() / 2; i < str.size(); ++i) {
+    for (Index i = ssize(str) / 2; i < ssize(str); ++i) {
         str[i] = '0';
     }
-    Allocation allocation(DefaultBitvec::allocatedSizeInBytesForBits(str.size()));
+    Allocation allocation(DefaultBitvec::allocatedSizeInBytesForBits(ssize(str)));
     RangeMinMaxTree<> tree((DefaultBitvec(str)), allocation.memory());
     ASSERT_EQ(tree.size, 2);
     ASSERT_EQ(tree.rmmArr[tree.leafIdxInArr(0)], 0);
     ASSERT_EQ(tree.findMinInTree(0, 1).minExcess, tree.findMinInBlock(0, blockSize).minExcess);
-    for (Index i = 0; i < str.size(); ++i) {
-        for (Index j = i + 1; j < str.size(); ++j) {
+    for (Index i = 0; i < ssize(str); ++i) {
+        for (Index j = i + 1; j < ssize(str); ++j) {
             Index e = tree.findMinInBlock(i, j).minExcess;
             if (j <= blockSize / 2) {
                 ASSERT_EQ(e, i + 1) << i << " " << j;
@@ -69,7 +69,7 @@ TEST(RmmTree, 1BlockDescending) {
             }
         }
     }
-    for (Index j = 0; j < str.size() / 2 - 1; ++j) {
+    for (Index j = 0; j < ssize(str) / 2 - 1; ++j) {
         for (Index i = 0; i < j; ++i) {
             ASSERT_EQ(tree.bitvecRmq(i, j), i);
         }
@@ -98,19 +98,19 @@ TEST(RmmTree, 1Block2BitsRandom) {
 TEST(RmmTree, 2Blocks) {
     Index blockSize = RangeMinMaxTree<>::blockSize;
     std::string str(blockSize + 10, '1');
-    for (Index i = str.size() / 2; i < str.size(); ++i) {
+    for (Index i = ssize(str) / 2; i < ssize(str); ++i) {
         str[i] = '0';
     }
-    Allocation allocation(DefaultBitvec::allocatedSizeInBytesForBits(str.size()));
+    Allocation allocation(DefaultBitvec::allocatedSizeInBytesForBits(ssize(str)));
     RangeMinMaxTree<> tree((DefaultBitvec(str)), allocation.memory());
-    ASSERT_EQ(tree.bitvecRmq(blockSize - 4, str.size()), str.size() - 1);
+    ASSERT_EQ(tree.bitvecRmq(blockSize - 4, ssize(str)), ssize(str) - 1);
     testRmmTree(tree);
     str = std::string(blockSize * 2, '1');
-    for (Index i = 2; i < str.size(); i += 2) {
+    for (Index i = 2; i < ssize(str); i += 2) {
         str[i] = '0';
     }
     str.back() = '0';
-    allocation = Allocation(DefaultBitvec::allocatedSizeInBytesForBits(str.size()));
+    allocation = Allocation(DefaultBitvec::allocatedSizeInBytesForBits(ssize(str)));
     tree = RangeMinMaxTree<>((DefaultBitvec(str)), allocation.memory());
     ASSERT_EQ(tree.bitvecRmq(0, blockSize), 0);
     ASSERT_EQ(tree.bitvecRmq(blockSize - 1, 2 * blockSize - 1), blockSize);
@@ -124,10 +124,10 @@ TEST(RmmTree, 2Blocks) {
 TEST(RmmTree, 10BlocksAscending) {
     Index blockSize = RangeMinMaxTree<>::blockSize;
     std::string str(blockSize * 10, '1');
-    for (Index i = str.size() / 2; i < str.size(); ++i) {
+    for (Index i = ssize(str) / 2; i < ssize(str); ++i) {
         str[i] = '0';
     }
-    Allocation allocation(DefaultBitvec::allocatedSizeInBytesForBits(str.size()));
+    Allocation allocation(DefaultBitvec::allocatedSizeInBytesForBits(ssize(str)));
     RangeMinMaxTree<> tree((DefaultBitvec(str)), allocation.memory());
     ASSERT_EQ(tree.bv.getBit(5 * blockSize - 1), openParen);
     ASSERT_EQ(tree.bv.getBit(5 * blockSize), closeParen);
@@ -149,7 +149,7 @@ TEST(RmmTree, 10BlocksAscending) {
     ASSERT_EQ(tree.rmmArr[tree.leafIdxInArr(9) / 8], 0);
     ASSERT_EQ(tree.rmmArr[tree.leafIdxInArr(9) / 16], 0);
     ASSERT_EQ(tree.bitvecRmq(blockSize, 5 * blockSize), blockSize);
-    ASSERT_EQ(tree.bitvecRmq(blockSize, str.size()), str.size() - 1);
+    ASSERT_EQ(tree.bitvecRmq(blockSize, ssize(str)), ssize(str) - 1);
     ASSERT_EQ(tree.bitvecRmq(0, blockSize), 0);
     ASSERT_EQ(tree.bitvecRmq(5 * blockSize - 6, 5 * blockSize + 4), 5 * blockSize - 6);
     ASSERT_EQ(tree.bitvecRmq(5 * blockSize - 4, 5 * blockSize + 6), 5 * blockSize + 5);
@@ -161,10 +161,10 @@ TEST(RmmTree, 9BlocksAscending) {
     Index mid = 4 * blockSize + blockSize / 2;
     assert(blockSize % 2 == 0);
     std::string str(blockSize * 9, '1');
-    for (Index i = str.size() / 2; i < str.size(); ++i) {
+    for (Index i = ssize(str) / 2; i < ssize(str); ++i) {
         str[i] = '0';
     }
-    Allocation allocation(DefaultBitvec::allocatedSizeInBytesForBits(str.size()));
+    Allocation allocation(DefaultBitvec::allocatedSizeInBytesForBits(ssize(str)));
     RangeMinMaxTree<> tree((DefaultBitvec(str)), allocation.memory());
     ASSERT_EQ(tree.bv.getBit(5 * blockSize), closeParen);
     ASSERT_EQ(tree.bv.getBit(4 * blockSize), openParen);
@@ -193,7 +193,7 @@ TEST(RmmTree, 9BlocksAscending) {
     ASSERT_EQ(tree.rmmArr[tree.leafIdxInArr(8) / 8], 0);
     ASSERT_EQ(tree.rmmArr[tree.leafIdxInArr(9) / 16], 0);
     ASSERT_EQ(tree.bitvecRmq(blockSize, 5 * blockSize), blockSize);
-    ASSERT_EQ(tree.bitvecRmq(blockSize, str.size()), str.size() - 1);
+    ASSERT_EQ(tree.bitvecRmq(blockSize, ssize(str)), ssize(str) - 1);
     ASSERT_EQ(tree.bitvecRmq(blockSize * 4, blockSize * 5), blockSize * 5 - 1);
     ASSERT_EQ(tree.bitvecRmq(0, blockSize), 0);
     ASSERT_EQ(tree.bitvecRmq(mid - 6, mid + 4), mid - 6);
@@ -211,7 +211,7 @@ TEST(RmmTree, 10BlocksAlternating) {
         str[i + 8 * blockSize] = '0';
         str[i + 9 * blockSize] = '0';
     }
-    Allocation allocation(DefaultBitvec::allocatedSizeInBytesForBits(str.size()));
+    Allocation allocation(DefaultBitvec::allocatedSizeInBytesForBits(ssize(str)));
     RangeMinMaxTree<> tree((DefaultBitvec(str)), allocation.memory());
     ASSERT_EQ(tree.rmqImpl(blockSize, 5 * blockSize).minExcess, blockSize);
     ASSERT_EQ(tree.rmqImpl(blockSize - 1, blockSize + 3).minExcess, blockSize);
@@ -221,7 +221,7 @@ TEST(RmmTree, 10BlocksAlternating) {
     ASSERT_EQ(tree.rmqImpl(7 * blockSize + 2, 7 * blockSize + 7).minExcess, blockSize + 3);
     ASSERT_EQ(tree.bitvecRmq(blockSize, 2 * blockSize), blockSize);
     ASSERT_EQ(tree.bitvecRmq(2 * blockSize, 3 * blockSize), 3 * blockSize - 1);
-    ASSERT_EQ(tree.bitvecRmq(blockSize, str.size()), str.size() - 1);
+    ASSERT_EQ(tree.bitvecRmq(blockSize, ssize(str)), ssize(str) - 1);
     ASSERT_EQ(tree.bitvecRmq(0, blockSize), 0);
     ASSERT_EQ(tree.bitvecRmq(7 * blockSize - 6, 7 * blockSize + 4), 7 * blockSize - 1);
     ASSERT_EQ(tree.bitvecRmq(7 * blockSize - 4, 7 * blockSize + 6), 7 * blockSize - 1);

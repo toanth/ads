@@ -74,18 +74,18 @@ TEST(EliasFano, OneElement) {
 
 void testElems(const std::vector<Elem>& arr, const EliasFano<>& ef, std::string_view name) {
     assert(std::is_sorted(arr.begin(), arr.end()));
-    ASSERT_EQ(ef.size(), arr.size()) << name;
+    ASSERT_EQ(ef.size(), ssize(arr)) << name;
     Index numLowerBits = ef.numLowerBitsPerNumber();
     ASSERT_LE(numLowerBits, 64 - std::ceil(std::log2(ef.size() + 2)));
     ASSERT_GE(numLowerBits, 0);
     ASSERT_EQ(ef.getSmallest(), arr[0]);
     ASSERT_TRUE(ef.getUpper().getBit(ef.getUpper().size() - 1));
-    for (Index i = 0; i < arr.size(); ++i) {
+    for (Index i = 0; i < ssize(arr); ++i) {
         if (ef.numLowerBitsPerNumber() > 0) {
             ASSERT_EQ(ef.getLower()[i], (arr[i] - arr[0]) % (Elem(1) << numLowerBits))
-                    << i << " of " << arr.size() << ", name " << name;
+                    << i << " of " << ssize(arr) << ", name " << name;
         }
-        ASSERT_EQ(ef[i], arr[i]) << i << " of " << arr.size() << ", name " << name;
+        ASSERT_EQ(ef[i], arr[i]) << i << " of " << ssize(arr) << ", name " << name;
     }
     ASSERT_TRUE(std::equal(arr.begin(), arr.end(), ef.numbers().begin()));
 }
@@ -95,7 +95,7 @@ TEST(EliasFano, ConstructionLarge) {
     std::iota(arr.begin(), arr.end(), 0);
     EliasFano<> ef(arr);
     testElems(arr, ef, "dense");
-    for (Index i = 0; i < arr.size(); i += 2) {
+    for (Index i = 0; i < ssize(arr); i += 2) {
         arr[i] += i * i + 1;
     }
     arr.push_back(0);
@@ -104,7 +104,7 @@ TEST(EliasFano, ConstructionLarge) {
     arr.push_back(Elem(-1));
     assert(std::is_sorted(arr.begin(), arr.end()));
     ef = EliasFano<>(arr);
-    ASSERT_EQ(ef.getLower()[arr.size() - 1], (Elem(1) << ef.numLowerBitsPerNumber()) - 1);
+    ASSERT_EQ(ef.getLower()[ssize(arr) - 1], (Elem(1) << ef.numLowerBitsPerNumber()) - 1);
     testElems(arr, ef, "power of two + 1");
 }
 
@@ -261,9 +261,9 @@ TEST(EliasFano, PredecessorAscending) {
     std::vector<Elem> vec(1'000'000);
     std::iota(vec.begin(), vec.end(), 0);
     EliasFano<> ef(vec);
-    ASSERT_LE(ef.numBitsPerNumber(), intLog2(vec.size()) + 1);
+    ASSERT_LE(ef.numBitsPerNumber(), intLog2(ssize(vec)) + 1);
     ASSERT_EQ(ef.numLowerBitsPerNumber(), 0);
-    ASSERT_LE(ef.numAllocatedBits(), 2 * (vec.size() + vec.size() / 10));
+    ASSERT_LE(ef.numAllocatedBits(), 2 * (ssize(vec) + ssize(vec) / 10));
     auto engine = createRandomEngine();
     std::uniform_int_distribution<Elem> dist(0, vec.back() + vec.back() / 100);
     for (Index i = 0; i < 10'000; ++i) {
@@ -276,13 +276,13 @@ TEST(EliasFano, PredecessorAscending) {
 TEST(EliasFano, PredecessorSparseNonexisting) {
     std::vector<Elem> vec(1'000'000);
     std::iota(vec.begin(), vec.end(), 65535);
-    for (Index i = 0; i < vec.size(); i += 1 / 100 + i % 4 + 1) {
+    for (Index i = 0; i < ssize(vec); i += 1 / 100 + i % 4 + 1) {
         --vec[i];
     }
     EliasFano<> ef(vec);
-    ASSERT_LE(ef.numBitsPerNumber(), intLog2(vec.size()) + 1);
+    ASSERT_LE(ef.numBitsPerNumber(), intLog2(ssize(vec)) + 1);
     ASSERT_EQ(ef.numLowerBitsPerNumber(), 0);
-    ASSERT_LE(ef.numAllocatedBits(), 2 * (vec.size() + vec.size() / 10));
+    ASSERT_LE(ef.numAllocatedBits(), 2 * (ssize(vec) + ssize(vec) / 10));
     auto engine = createRandomEngine();
     std::uniform_int_distribution<Elem> dist(0, vec.back() + vec.back() / 100);
     for (Index i = 0; i < 10'000; ++i) {
@@ -377,14 +377,14 @@ TEST(EliasFano, Clustered) {
 #ifdef ADS_HAS_CPP20
 // Constexpr tests implicitly test for UB -- the compiler is required to emit an error in that case
 TEST(EliasFano, Constexpr) {
-    //    using T = EliasFano<>; // TODO: Uncomment
-    //    static_assert(T{1, 2, 3}.size() == 3);
-    //    static_assert(T{4, 5, 6}.get(1) == 5);
-    //    static_assert(T{0, 1234, 9999}.predecessor(9000) == 1234);
-    //    static_assert(T{0, Elem(-1)}.successor(99999999) == Elem(-1));
-    //    static_assert(T{}.size() == 0);
-    //    static_assert(T{0}.get(0) == 0);
-    //    static_assert(EliasFano<signed char>{-128, 127}.predecessor(0) == -128);
-    //    static_assert(EliasFano<signed char>(std::vector<signed char>(42, 5)).predecessor(43) == 5);
+    using T = EliasFano<>;
+    static_assert(T{1, 2, 3}.size() == 3);
+    static_assert(T{4, 5, 6}.get(1) == 5);
+    static_assert(T{0, 1234, 9999}.predecessor(9000) == 1234);
+    static_assert(T{0, Elem(-1)}.successor(99999999) == Elem(-1));
+    static_assert(T{}.size() == 0);
+    static_assert(T{0}.get(0) == 0);
+    static_assert(EliasFano<signed char>{-128, 127}.predecessor(0) == -128);
+    static_assert(EliasFano<signed char>(std::vector<signed char>(42, 5)).predecessor(43) == 5);
 }
 #endif

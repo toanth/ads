@@ -1,6 +1,7 @@
 #ifndef BITVECTOR_ELIAS_FANO_HPP
 #define BITVECTOR_ELIAS_FANO_HPP
 
+#include "bitvector/classical_bitvec.hpp"
 #include "bitvector/recursive_bitvec.hpp" // TODO: Use better bitvector implementation
 #include <cmath>
 namespace ads {
@@ -10,7 +11,8 @@ namespace ads {
 /// the common case.
 /// \tparam Number The type of numbers stored the Elias-Fano data structure. Currently, this must be a built-in integer.
 /// \tparam Bitvec The bitvector to use for the upper part.
-template<typename Number = std::uint64_t, ADS_BITVEC_CONCEPT Bitvec = EfficientSelectBitvec<>>
+template<typename Number = std::uint64_t, ADS_BITVEC_CONCEPT Bitvec = ClassicalBitvec<>>
+// template<typename Number = std::uint64_t, ADS_BITVEC_CONCEPT Bitvec = EfficientSelectBitvec<>>
 class [[nodiscard]] EliasFano {
     static_assert(std::is_integral_v<Number>, "Elias fano only works for integers");
 
@@ -84,7 +86,7 @@ class [[nodiscard]] EliasFano {
         }
         // there was no element with the same upper part, so return the greatest element with a smaller upper part
         if (first == 0) [[unlikely]] {
-            throw std::invalid_argument("no predecessor found for " + std::to_string(n));
+            ADS_THROW("no predecessor found for " + std::to_string(n));
         }
         return getImpl(first - 1);
     }
@@ -115,14 +117,14 @@ class [[nodiscard]] EliasFano {
         }
         // there was no element with the same upper part, so return the greatest element with a smaller upper part
         if (last == numInts - 1) [[unlikely]] {
-            throw std::invalid_argument("no successor found for " + std::to_string(n));
+            ADS_THROW("no successor found for " + std::to_string(n));
         }
         return getImpl(last + 1);
     }
 
     [[nodiscard]] ADS_CPP20_CONSTEXPR Limb getImpl(Index i) const {
-        if (i < 0 || i >= size()) {
-            throw std::invalid_argument("EliasFano::get() Index out of range");
+        if (i < 0 || i >= size()) [[unlikely]] {
+            ADS_THROW("EliasFano::get() Index out of range");
         }
         Limb upperPart = getUpperPart(i);
         if (numLowerBitsPerNumber() == 0) {
@@ -200,6 +202,8 @@ public:
         // the cast is implementation defined before C++20 (but still does the right thing)
         if (n >= I64(largestNumber)) {
             return Number(largestNumber);
+        } else if (n < I64(smallestNumber)) {
+            return std::numeric_limits<Number>::max();
         }
         return Number(predecessorImpl(Limb(n) - smallestNumber) + smallestNumber);
     }
@@ -209,6 +213,8 @@ public:
         // the cast is implementation defined before C++20 (but still does the right thing)
         if (n <= I64(smallestNumber)) {
             return Number(smallestNumber);
+        } else if (n > I64(largestNumber)) {
+            return std::numeric_limits<Number>::max();
         }
         return Number(successorImpl(Limb(n) - smallestNumber) + smallestNumber);
     }

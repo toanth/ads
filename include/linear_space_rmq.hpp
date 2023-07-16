@@ -14,7 +14,6 @@ struct [[nodiscard]] NLogNBlockRmq : NLogNRmqOps<NLogNBlockRmq<T, BlockSize, InB
     const T* values = nullptr;
     InBlockIdx* minimumInBlock = nullptr;
     Array<BlockNumIdx> minima = Array<BlockNumIdx>();
-    //    std::unique_ptr<BlockNumIdx[]> minima = nullptr; // TODO: Use shared allocation? Measure
     constexpr NLogNBlockRmq() = default;
 
     template<typename Underlying>
@@ -71,8 +70,6 @@ class [[nodiscard]] LinearSpaceRMQ {
     // For each sub-block, stores the exclusive suffix sum in its block.
     // size() /  SubBlockSize elements, possibly with up to (size() / BlockSize) additional elements due to rounding; 8 * n / 256 bits; 8 (maybe 4?) * n / 8 bits
     Array<SubBlockIndex> subBlockSuffixMinima = Array<SubBlockIndex>();
-    /// The total allocated size in bits.
-    Index numAllocatedBits = 0;
 
     [[nodiscard]] constexpr const T* ptrMin(const T* a, const T* b) const noexcept { return comp()(*a, *b) ? a : b; }
 
@@ -139,7 +136,6 @@ public:
         ADS_ASSUME(size() % SubBlockSize == 0); // The input array must have been extended, eg by value-initialized elements
         ADS_ASSUME(allocation.sizeInBytes() >= sizeInBytes(length));
         ADS_ASSUME(allocation.sizeInBytes() == roundUpTo(sizeInBytes(length), sizeof(U64)));
-        numAllocatedBits = allocation.sizeInBytes() * 8;
         const Index numBlocks = roundUpDiv(length, BlockSize);
         values = Array<T>(allocation.memory(), length);
         std::copy(inputValues.begin(), inputValues.end(), values.ptr);
@@ -261,8 +257,7 @@ public:
     [[nodiscard]] ADS_CPP20_CONSTEXPR Index operator()(Index lower, Index upper) const { return rmq(lower, upper); }
 
     [[nodiscard]] ADS_CPP20_CONSTEXPR Index allocatedSizeInBits() const noexcept {
-        ADS_ASSUME(allocation.sizeInBytes() * 8 == numAllocatedBits);
-        return numAllocatedBits;
+        return allocation.sizeInBytes() * 8;
     }
 
     [[nodiscard]] ADS_CPP20_CONSTEXPR Index size() const noexcept { return length; }

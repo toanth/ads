@@ -25,9 +25,12 @@ enable_testing()
 if (MSVC)
     add_compile_options(/W4 /WX)
 else ()
-    add_compile_options(-Wall -Wextra -Wpedantic -Wno-sign-compare) # TODO: Enable Wsign-compare
+    add_compile_options(-Wall -Wextra -Wpedantic -g)
+    if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        add_compile_options(-fconstexpr-steps=10000000)
+    endif ()
 endif ()
 
-add_executable(tests common_tests.cpp bit_tests.cpp bitvector_tests.cpp ../include/elias_fano.hpp eliasfano_tests.cpp rmq_tests.cpp ../include/nlogn_rmq.hpp ../include/linear_space_rmq.hpp ../include/succinct_rmq.hpp rmmtree_tests.cpp ../include/bit.hpp ../include/bitvector/bitvec_base.hpp ../include/bitvector/cache_efficient_rank_bitvec.hpp ../include/bitvector/trivial_bitvec.hpp ../include/bitvector/recursive_bitvec.hpp ../include/bitvector/base/concept.hpp ../include/bitvector/base/bitvec.hpp ../include/bitvector/base/normal_bitvec.hpp ../include/bitvector/base/superblock_bitvec.hpp)
+add_executable(tests common_tests.cpp bit_tests.cpp bitvector_tests.cpp eliasfano_tests.cpp rmq_tests.cpp ../include/succinct_rmq.hpp rmmtree_tests.cpp)
 
 target_link_libraries(tests gtest gtest_main)

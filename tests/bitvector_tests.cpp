@@ -1,6 +1,7 @@
 
 #include "../include/bitvector/cache_efficient_rank_bitvec.hpp"
-#include "../include/bitvector/efficient_rank_bitvec.hpp"
+#include "../include/bitvector/classical_bitvec.hpp"
+#include "../include/bitvector/classical_rank_bitvec.hpp"
 #include "../include/bitvector/recursive_bitvec.hpp"
 #include "../include/bitvector/trivial_bitvec.hpp"
 #include "gtest/gtest.h"
@@ -10,6 +11,8 @@ using namespace ads;
 using SmallSuperBlocks = ClassicalRankBitvec<1, 8, std::uint32_t>;
 using StrangeSuperBlocks = ClassicalRankBitvec<2, (1 << 14) / 64, std::uint64_t>;
 using OneBlockPerSuperBlock = ClassicalRankBitvec<8, 8>;
+using Classical = ClassicalBitvec<>;
+using StrangeClassical = ClassicalBitvec<2, 64, 128 * 64, 256, U64, U32>;
 using Trivial = TrivialBitvec<>;
 using StrangeTrivial = TrivialBitvec<U64, ads::Operations::SELECT_ONLY>;
 using VeryRecursive
@@ -35,18 +38,19 @@ template<typename = void>
 using ReferenceBitvector = CacheEfficientRankBitvec;
 
 /// \brief A collectio of bitvectors that try to achive high coverage
-using AllBitvecs = ::testing::Types<CacheEfficientRankBitvec, ClassicalRankBitvec<>, OneBlockPerSuperBlock, Trivial,
-        StrangeTrivial, EfficientBitvec<>, RecursiveBitvec<TrivialBitvec<>>, VeryRecursive, Strange>;
+using AllBitvecs = ::testing::Types<CacheEfficientRankBitvec, ClassicalRankBitvec<>, OneBlockPerSuperBlock, Classical,
+        StrangeClassical, Trivial, StrangeTrivial, EfficientBitvec<>, RecursiveBitvec<TrivialBitvec<>>, VeryRecursive, Strange>;
 
 /// \brief All bitvectors except TrivialBitvec, for which some operations aren't defined
 using NormalBitvecs = ::testing::Types<CacheEfficientRankBitvec, ClassicalRankBitvec<>, SmallSuperBlocks,
-        StrangeSuperBlocks, OneBlockPerSuperBlock, EfficientBitvec<>, Strange>;
+        StrangeSuperBlocks, OneBlockPerSuperBlock, Classical, StrangeClassical, EfficientBitvec<>, Strange>;
 
 /// \brief Some of the faster bitvectors, which can be used for larger tests
-using EfficientBitvecs
-        = ::testing::Types<CacheEfficientRankBitvec, ClassicalRankBitvec<>, TrivialBitvec<U64>, EfficientBitvec<>, VeryRecursive, Strange>;
+using EfficientBitvecs = ::testing::Types<CacheEfficientRankBitvec, ClassicalRankBitvec<>, TrivialBitvec<U64>,
+        EfficientBitvec<>, Classical, StrangeClassical, VeryRecursive, Strange>;
 
-using EfficientNormalBitvecs = ::testing::Types<CacheEfficientRankBitvec, ClassicalRankBitvec<>, EfficientBitvec<>, VeryRecursive>;
+using EfficientNormalBitvecs
+        = ::testing::Types<CacheEfficientRankBitvec, ClassicalRankBitvec<>, Classical, StrangeClassical, EfficientBitvec<>, VeryRecursive>;
 TYPED_TEST_SUITE(AllBitvecsTest, AllBitvecs);
 TYPED_TEST_SUITE(NormalBitvecsTest, NormalBitvecs);
 TYPED_TEST_SUITE(EfficientBitvecsTest, EfficientBitvecs);
@@ -146,6 +150,9 @@ TYPED_TEST(AllBitvecsTest, ConstructionElements) {
     ASSERT_EQ(bv.size(), 65);
     ASSERT_EQ(bv.numOnes(), 0);
     ASSERT_EQ(bv.numZeros(), 65);
+    bv = TypeParam(64 * 23 + 1, Limb(9));
+    ASSERT_EQ(bv.numOnes(), 23 * 2 + 1);
+    ASSERT_TRUE(bv.getBit(bv.size() - 1));
 }
 
 TYPED_TEST(AllBitvecsTest, ConstructionFromStringview) {
@@ -157,14 +164,14 @@ TYPED_TEST(AllBitvecsTest, ConstructionFromStringview) {
     ASSERT_EQ(bv.numZeros(), bv.numOnes());
     std::string s("101110011101");
     bv = TypeParam(s);
-    ASSERT_EQ(bv.size(), s.size());
-    for (Index i = 0; i < s.size(); ++i) {
+    ASSERT_EQ(bv.size(), ssize(s));
+    for (Index i = 0; i < ssize(s); ++i) {
         ASSERT_EQ(bv.getBit(i), s[i] == '1');
     }
     ASSERT_EQ(bv.numZeros(), 4);
     s = std::string(200, '1');
     s[63] = s[64 + 63] = s[64 * 2 + 63] = '0';
-    Allocation<> allocation(TypeParam::allocatedSizeInBytesForBits(s.size()));
+    Allocation<> allocation(TypeParam::allocatedSizeInBytesForBits(ssize(s)));
     bv = TypeParam(s, 2, allocation.memory());
     ASSERT_EQ(bv.allocatedSizeInBytes(), allocation.sizeInBytes());
     if constexpr (IsNormalBitvec<TypeParam>) {
@@ -219,12 +226,12 @@ TYPED_TEST(NormalBitvecsTest, RankOneSuperblock) {
         size = TypeParam::superblockSize();
     }
     std::string s(size, '1');
-    for (Index i = 0; i < s.size(); i += 2) {
+    for (Index i = 0; i < ssize(s); i += 2) {
         s[i] = '0';
     }
     TypeParam bv(s);
     ASSERT_EQ(bv.toString(), s);
-    for (Index i = 0; i < s.size(); ++i) {
+    for (Index i = 0; i < ssize(s); ++i) {
         ASSERT_EQ(bv.rankZero(i), (i + 1) / 2) << i;
         ASSERT_EQ(bv.rankOne(i), i / 2) << i;
     }
@@ -237,11 +244,11 @@ TYPED_TEST(NormalBitvecsTest, RankManySuperblocks) {
         superblockSize = TypeParam::superblockSize();
     }
     std::string s(superblockSize * 7 + 123456, '1');
-    for (Index i = 0; i < s.size(); i += 3) {
+    for (Index i = 0; i < ssize(s); i += 3) {
         s[i] = '0';
     }
     TypeParam bv(s);
-    for (Index i = 0; i < s.size(); ++i) {
+    for (Index i = 0; i < ssize(s); ++i) {
         ASSERT_EQ(bv.rankZero(i), (i + 2) / 3) << i;
         ASSERT_EQ(bv.rankOne(i), (2 * i) / 3) << i;
     }
@@ -252,8 +259,8 @@ TYPED_TEST(AllBitvecsTest, SelectSmall) {
     TypeParam bv(s);
     ASSERT_EQ(bv.selectOne(0), 0);
     ASSERT_EQ(bv.selectOne(1), 1);
-    ASSERT_EQ(bv.selectOne(2), s.size() - 1);
-    for (Index i = 0; i < s.size() - 3; ++i) {
+    ASSERT_EQ(bv.selectOne(2), ssize(s) - 1);
+    for (Index i = 0; i < ssize(s) - 3; ++i) {
         ASSERT_EQ(bv.selectZero(i), i + 2);
     }
     bv = TypeParam("0111");
@@ -265,11 +272,11 @@ TYPED_TEST(AllBitvecsTest, SelectSmall) {
 TYPED_TEST(AllBitvecsTest, SelectLarge) {
     std::string s(12345, 'c');
     TypeParam bv(s, 16);
-    for (Index i = 0; i < s.size(); ++i) {
-        ASSERT_EQ(bv.selectZero(2 * i), 4 * i + 2) << i;
-        ASSERT_EQ(bv.selectZero(2 * i + 1), 4 * i + 3) << i;
+    for (Index i = 0; i < ssize(s); ++i) {
         ASSERT_EQ(bv.selectOne(2 * i), 4 * i) << i;
         ASSERT_EQ(bv.selectOne(2 * i + 1), 4 * i + 1) << i;
+        ASSERT_EQ(bv.selectZero(2 * i), 4 * i + 2) << i;
+        ASSERT_EQ(bv.selectZero(2 * i + 1), 4 * i + 3) << i;
     }
 }
 
@@ -378,8 +385,8 @@ TYPED_TEST(AllBitvecsTest, AlternatingOneZero) {
         ASSERT_EQ(bv.rankZero(i), (i + 1) / 2) << i;
     }
     for (Index i = 0; i < bv.numOnes(); ++i) {
-        ASSERT_EQ(bv.selectZero(i), 2 * i) << i;
         ASSERT_EQ(bv.selectOne(i), 2 * i + 1) << i;
+        ASSERT_EQ(bv.selectZero(i), 2 * i) << i;
     }
     ASSERT_EQ(bv.selectZero(bv.size() / 2), bv.size() - 1);
 }
@@ -397,7 +404,6 @@ TYPED_TEST(AllBitvecsTest, IncreasingRunLengths) {
     Index numOnes = 0;
     for (Index i = 0; i < 520; ++i) {
         for (Index j = 0; j < i; ++j, ++current, numOnes += i % 2) {
-            if (i < 24) continue; // TODO: Remove
             ASSERT_EQ(bv.getBit(current), i % 2) << i << " " << j << " " << current << " " << numOnes;
             ASSERT_EQ(bv.rankOne(current), numOnes) << i << " " << j << " " << current << " " << numOnes;
             ASSERT_EQ(bv.rankZero(current), current - numOnes) << i << " " << j << " " << current << " " << numOnes;
@@ -449,7 +455,7 @@ TYPED_TEST(AllBitvecsTest, EmptyOrOneElem) {
 }
 
 TYPED_TEST(EfficientBitvecsTest, PowerOfTwo) {
-    for (Index i = 1; i <= (Limb(1) << 26); i *= 4) {
+    for (Index i = 1; i <= (Index(1) << 26); i *= 4) {
         TypeParam bv(i, Limb(0));
         if constexpr (IsSuperblockBitvec<TypeParam>) {
             for (Index j = 0; j < bv.numLimbs() - 1; ++j) {
@@ -481,9 +487,9 @@ TYPED_TEST(AllBitvecsTest, RandomSmallish) {
             c = '1';
         }
     }
-    std::vector<std::uint32_t> results(str.size());
+    std::vector<std::uint32_t> results(ssize(str));
     results[0] = 0;
-    for (Index i = 1; i < str.size(); ++i) {
+    for (Index i = 1; i < ssize(str); ++i) {
         results[i] = results[i - 1] + (str[i - 1] == '0');
     }
     TypeParam bv(str);
@@ -519,9 +525,9 @@ TYPED_TEST(AllBitvecsTest, Random) {
             c = '1';
         }
     }
-    std::vector<std::uint32_t> results(str.size());
+    std::vector<std::uint32_t> results(ssize(str));
     results[0] = 0;
-    for (Index i = 1; i < str.size(); ++i) {
+    for (Index i = 1; i < ssize(str); ++i) {
         results[i] = results[i - 1] + (str[i - 1] == '0');
     }
     TypeParam bv(str);
@@ -550,19 +556,19 @@ TYPED_TEST(AllBitvecsTest, RandomLongRuns) {
     auto dist = std::uniform_real_distribution<double>(-16.0, 16.0);
     Index numOnes = 0;
     std::string str;
-    while (str.size() < 300'000) {
+    while (ssize(str) < 300'000) {
         double randomVal = dist(engine);
         Index len = Index(std::max(0.0, std::pow(2.0, std::abs(randomVal))));
         char c = randomVal > 0.0 ? '1' : '0';
         str.append(len, c);
         numOnes += (randomVal > 0.0 ? len : 0);
     }
-    std::vector<std::uint32_t> rankOnes(str.size() + 1);
+    std::vector<std::uint32_t> rankOnes(ssize(str) + 1);
     rankOnes[0] = 0;
-    for (Index i = 1; i < str.size() + 1; ++i) {
+    for (Index i = 1; i < ssize(str) + 1; ++i) {
         rankOnes[i] = rankOnes[i - 1] + (str[i - 1] == '1');
     }
-    ASSERT_EQ(rankOnes[str.size()], numOnes);
+    ASSERT_EQ(rankOnes[ssize(str)], numOnes);
     TypeParam bv(str);
     Index numZeros = bv.rankZero(bv.size() - 1);
     if (!bv.getBit(bv.size() - 1)) {
@@ -647,36 +653,53 @@ TYPED_TEST(AllBitvecsTest, InefficientOps) {
     }
 }
 
+
 template<ADS_BITVEC_CONCEPT Bitvec>
 static ADS_CONSTEVAL Index constexprBitvecTests() noexcept {
     Bitvec bv("10010");
-    Index res = bv.rankZero(3) - 2;
-    res += bv.selectOne(1) - 3;
+    assert(bv.rankZero(3) == 2);
+    assert(bv.selectOne(1) == 3);
     bv = Bitvec::uninitializedForSize(123);
     for (Index i = 0; i < bv.size(); ++i) {
         bv.setBit(i, i % 3 == 0);
     }
     bv.buildMetadata();
     for (Index i = 0; i < bv.size(); ++i) {
-        res += bv.rankOne(i) - (i + 2) / 3;
+        assert(bv.rankOne(i) == (i + 2) / 3);
     }
     for (Index i = 0; i < bv.numOnes(); ++i) {
-        res += bv.selectOne(i) - i * 3;
-        res += bv.selectZero(2 * i) - (3 * i + 1);
-        res += bv.selectZero(2 * i + 1) - (3 * i + 2);
+        assert(bv.selectOne(i) == i * 3);
+        assert(bv.selectZero(2 * i) == (3 * i + 1));
+        assert(bv.selectZero(2 * i + 1) == (3 * i + 2));
     }
-    return res;
+    if constexpr (IsSuperblockBitvec<Bitvec>) {
+        bv = Bitvec(Bitvec::superblockSize() * 2 + 1, Limb(5));
+        assert(bv.numOnes() == bv.numLimbs() * 2 - 1);
+        assert(bv.selectOne(bv.numLimbsInSuperblock() * 2) == bv.superblockSize());
+    } else if constexpr (IsNormalBitvec<Bitvec>) {
+        bv = Bitvec(Bitvec::blockSize() * 2 + 1, Limb(5));
+        assert(bv.numOnes() == bv.numLimbs() * 2 - 1);
+        assert(bv.selectOne(bv.numLimbsInBlock() * 2) == bv.blockSize());
+    } else {
+        bv = Bitvec(64 * 17 + 1, Limb(5));
+        assert(bv.selectOne(21) == 10 * 64 + 2);
+    }
+    assert(bv.numOnes() * 62 > bv.numZeros() * 2);
+    assert((bv.numOnes() - 1) * 62 == bv.numZeros() * 2);
+    assert(bv.getBit(bv.size() - 1));
+    assert(bv.rankZero(bv.size() - 1) == bv.numZeros());
+    return 0;
 }
 
 #ifdef ADS_HAS_CPP20
 TYPED_TEST(AllBitvecsTest, Constexpr) {
-    //    static_assert(TypeParam("1").size() == 1); // TODO: Uncomment all constexpr test cases
-    //    static_assert(TypeParam("").size() == 0);
-    //    static_assert(!TypeParam("00011").getBit(2));
-    //    static_assert(TypeParam("00011").getBit(3));
-    //    static_assert(TypeParam("10101").rankZero(3) == 1);
-    //    static_assert(TypeParam("10101").selectOne(1) == 2);
-    //    static_assert(TypeParam(3 * 64 - 7, 0xf0f0'f0f0'f0f0'f0f0).selectOne(42) == 86);
-    //    static_assert(constexprBitvecTests<TypeParam>() == 0);
+    static_assert(TypeParam("1").size() == 1);
+    static_assert(TypeParam("").size() == 0);
+    static_assert(!TypeParam("00011").getBit(2));
+    static_assert(TypeParam("00011").getBit(3));
+    static_assert(TypeParam("10101").rankZero(3) == 1);
+    static_assert(TypeParam("10101").selectOne(1) == 2);
+    static_assert(TypeParam(3 * 64 - 7, 0xf0f0'f0f0'f0f0'f0f0).selectOne(42) == 86);
+    static_assert(constexprBitvecTests<TypeParam>() == 0);
 }
 #endif

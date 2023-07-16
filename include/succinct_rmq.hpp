@@ -2,7 +2,7 @@
 #ifndef ADS_SUCCINCT_RMQ_HPP
 #define ADS_SUCCINCT_RMQ_HPP
 
-#include "bitvector/efficient_rank_bitvec.hpp"
+#include "bitvector/classical_rank_bitvec.hpp"
 #include "bitvector/recursive_bitvec.hpp"
 #include "common.hpp"
 #include <algorithm>

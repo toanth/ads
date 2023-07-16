@@ -36,7 +36,7 @@ public:
             Index shift = 64 * derived().numLimbs() - derived().numBits();
             ADS_ASSUME(shift >= 0);
             ADS_ASSUME(shift < 64);
-            Limb value = (values.begin()[values.size() - 1] << shift) >> shift;
+            Limb value = (values[values.size() - 1] << shift) >> shift;
             derived().setLimb(derived().numLimbs() - 1, value);
         }
         derived().buildMetadata();
@@ -56,7 +56,7 @@ protected:
     }
 
     ADS_CPP20_CONSTEXPR void initFromStr(std::string_view str, Index base = 2) {
-        assert(derived().numBits() == str.size() * intLog2(base)); // should only be called after allocation
+        assert(derived().numBits() == Index(str.size()) * intLog2(base)); // should only be called after allocation
         auto limbValues = this->limbViewFromStringView(str, base);
         assert((limbValues.size() - 1) * 64 < derived().size());
         assert(limbValues.size() * 64 >= derived().size());
@@ -119,7 +119,7 @@ public:
         i = limbIdxInCacheLineArray(i);
         ADS_ASSUME(i >= 0);
         ADS_ASSUME(i < derived().numAccessibleCacheLines());
-        return derived().getCacheLine(i);
+        return derived().getCompleteCacheLine(i);
     }
 
     [[nodiscard]] ADS_CPP20_CONSTEXPR CacheLine& getCacheLineForLimb(Index i) noexcept {
@@ -128,7 +128,7 @@ public:
         i = limbIdxInCacheLineArray(i);
         ADS_ASSUME(i >= 0);
         ADS_ASSUME(i < derived().numAccessibleCacheLines());
-        return derived().getCacheLine(i);
+        return derived().getCompleteCacheLine(i);
     }
 
     // ** An implementation of this interface could ignore the previous methods and only override the following **

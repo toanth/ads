@@ -100,22 +100,21 @@ namespace maybe_ranges = std;
 #define ADS_ASSUME(x) assert(x)
 #endif
 
-#ifdef __cpp_lib_assume_aligned // C++20 feature
+#if defined __cpp_lib_assume_aligned && defined NDEBUG // C++20 feature
 #define ADS_ASSUME_ALIGNED_IMPL(ptr, align) (ptr) = std::assume_aligned<(align)>(ptr);
 #else
 #define ADS_ASSUME_ALIGNED_IMPL(ptr, align) /*nothing*/
 #endif
 
-#if defined __GNUC__ || defined __clang__
-#define ADS_ASSUME_ALIGNED(ptr, align)                                                                                 \
-    do {                                                                                                               \
-        ADS_IF_CONSTEVAL {}                                                                                            \
-        else {                                                                                                         \
-            ADS_ASSUME((std::uintptr_t(ptr) & ((align)-1)) == 0);                                                      \
-        }                                                                                                              \
-        ADS_ASSUME_ALIGNED_IMPL(ptr, align);                                                                           \
-    } while (false)
+#if __cpp_exceptions
+#define ADS_THROW(msg)                                                                                                 \
+    throw std::invalid_argument {                                                                                      \
+        msg                                                                                                            \
+    }
 #else
+#define ADS_THROW(msg) std::terminate()
+#endif
+
 #define ADS_ASSUME_ALIGNED(ptr, align)                                                                                 \
     do {                                                                                                               \
         ADS_IF_CONSTEVAL {}                                                                                            \
@@ -124,7 +123,6 @@ namespace maybe_ranges = std;
         }                                                                                                              \
         ADS_ASSUME_ALIGNED_IMPL(ptr, align);                                                                           \
     } while (false)
-#endif
 
 #ifdef _MSC_VER
 #define ADS_FORCE_INLINE(func) __forceinline func
@@ -219,9 +217,23 @@ ADS_CPP20_CONSTEXPR void uninitializedValueConstructN(T* ADS_RESTRICT dest, Inde
         }
     }
     else {
-        std::uninitialized_value_construct_n(dest, n);
+#ifdef NDEBUG
+        std::uninitialized_value_construct_n(dest, n); // should compile to zero instructions
+#else
+        // fill with obviously incorrect values to trigger bugs when reading uninitialized memory
+        std::uninitialized_fill_n(dest, n, std::numeric_limits<T>::max());
+#endif
     }
 }
+
+#ifdef ADS_HAS_CPP20
+using std::ranges::ssize;
+#else
+template<typename Range>
+[[noexcept]] Index ssize(const Range& range) noexcept { // not in C++17
+    return static_cast<Index>(maybe_ranges::size(range));
+}
+#endif
 
 /// Unlike std::from_chars, the compile time version doesn't return an error code on errors,
 /// instead throwing an exception which results in a compile time error.
@@ -233,7 +245,7 @@ constexpr std::from_chars_result fromChars(const char* first, const char* last, 
         T digit;
         const char* it = first;
         if (it == last) {
-            throw std::invalid_argument{"fromChars called at compile time with empty input"};
+            ADS_THROW("fromChars called at compile time with empty input");
         }
         for (; it != last; ++it) {
             if (*it >= '0' && *it <= '9') {
@@ -243,7 +255,7 @@ constexpr std::from_chars_result fromChars(const char* first, const char* last, 
             } else if (*it >= 'A' && *it <= 'Z') {
                 digit = T(10) + (*it - 'A');
             } else {
-                throw std::invalid_argument{"invalid character found"};
+                ADS_THROW("invalid character found");
             }
             value *= base;
             value += digit;
@@ -439,5 +451,24 @@ ADS_CPP20_CONSTEXPR std::unique_ptr<T[]> toUniquePtr(Span<const T> values) noexc
 }
 
 } // namespace ads
+
+namespace std {
+
+template<::ads::Index NumBytes>
+struct numeric_limits<::ads::SIMDLimb<NumBytes>> {
+    constexpr static bool is_specialized = true;
+
+    constexpr static ::ads::SIMDLimb<NumBytes> max() {
+        using namespace ads;
+        SIMDLimb<NumBytes> result;
+        for (Limb& x : result.limbs) {
+            x = Limb(-1);
+        }
+        return result;
+    }
+    constexpr static ::ads::SIMDLimb<NumBytes> min() { return ::ads::SIMDLimb<NumBytes>(); }
+};
+
+} // namespace std
 
 #endif // ADS_COMMON_HPP

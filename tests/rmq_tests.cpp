@@ -54,8 +54,8 @@ template<typename RMQ>
 void testSmallRmq(std::vector<Elem> values) {
     RMQ rmq(values);
     SimpleRMQ<> reference(values);
-    for (Index i = 0; i < values.size(); ++i) {
-        for (Index j = i + 1; j <= values.size(); ++j) {
+    for (Index i = 0; i < ssize(values); ++i) {
+        for (Index j = i + 1; j <= ssize(values); ++j) {
             testQuery(rmq, reference, i, j);
         }
     }
@@ -66,8 +66,8 @@ void testLargeRmq(std::vector<Elem> values, CheckAnswer check = CheckAnswer()) {
     RMQ rmq(values);
     NLogNRmq<> reference(values);
     auto engine = createRandomEngine();
-    std::uniform_int_distribution<Index> idxDist(0, Index(values.size()));
-    Index numIterations = values.size() / 10 + 10 * Index(std::sqrt(values.size())) + 10;
+    std::uniform_int_distribution<Index> idxDist(0, ssize(values));
+    Index numIterations = ssize(values) / 10 + 10 * Index(std::sqrt(ssize(values))) + 10;
     for (Index i = 0; i < numIterations; ++i) {
         std::pair<Index, Index> range = std::minmax(idxDist(engine), idxDist(engine));
         if (range.first == range.second) continue;
@@ -79,7 +79,7 @@ void testLargeRmq(std::vector<Elem> values, CheckAnswer check = CheckAnswer()) {
     for (Index i = 0; i < numIterations / 4; ++i) {
         Index l = idxDist(engine);
         Index u = idxDist(engine) % 7 + l + 1;
-        if (u >= values.size()) {
+        if (u >= ssize(values)) {
             continue;
         }
         testQuery(rmq, reference, l, u, check);
@@ -95,8 +95,8 @@ TEST(LinearSpaceRMQ, BlockBorders) {
     LinearSpaceRMQ<> rmq(values);
     Index blockSize = LinearSpaceRMQ<>::blockSize;
     NLogNRmq<> reference(values);
-    for (Index i = 0; i < values.size(); i += blockSize) {
-        for (Index j = i + blockSize; j < values.size(); j += blockSize) {
+    for (Index i = 0; i < ssize(values); i += blockSize) {
+        for (Index j = i + blockSize; j < ssize(values); j += blockSize) {
             testQuery(rmq, reference, i, j);
         }
     }
@@ -107,8 +107,8 @@ TEST(LinearSpaceRMQ, SubBlockBorders) {
     LinearSpaceRMQ<> rmq(values);
     Index subBlockSize = LinearSpaceRMQ<>::subBlockSize;
     NLogNRmq<> reference(values);
-    for (Index i = 0, iteration = 0; i < values.size(); i += subBlockSize * ++iteration) {
-        for (Index j = i + subBlockSize; j < values.size(); j += subBlockSize) {
+    for (Index i = 0, iteration = 0; i < ssize(values); i += subBlockSize * ++iteration) {
+        for (Index j = i + subBlockSize; j < ssize(values); j += subBlockSize) {
             testQuery(rmq, reference, i, j);
         }
     }
@@ -119,10 +119,10 @@ TEST(LinearSpaceRMQ, AlmostSubBlockBorders) {
     LinearSpaceRMQ<> rmq(values);
     Index subBlockSize = LinearSpaceRMQ<>::subBlockSize;
     NLogNRmq<> reference(values);
-    for (Index i = 0, iteration = 0; i < values.size(); i += subBlockSize * ++iteration) {
-        for (Index j = i + subBlockSize; j < values.size(); j += subBlockSize) {
+    for (Index i = 0, iteration = 0; i < ssize(values); i += subBlockSize * ++iteration) {
+        for (Index j = i + subBlockSize; j < ssize(values); j += subBlockSize) {
             Index l = std::max(int(i + (iteration + j) % 3 - 1), 0);
-            Index u = std::min(Index(values.size()), j + (iteration + j) % 3 - 1);
+            Index u = std::min(ssize(values), j + (iteration + j) % 3 - 1);
             testQuery(rmq, reference, l, u);
         }
     }
@@ -169,7 +169,7 @@ TYPED_TEST(AllRmqsTest, SmallRepeating) {
 
 TYPED_TEST(AllRmqsTest, SuccinctBlockBorder) {
     std::vector<Elem> vec(260);
-    for (Index i = 0; i < vec.size(); ++i) {
+    for (Index i = 0; i < ssize(vec); ++i) {
         vec[i] = i;
     }
     TypeParam rmq(vec);
@@ -196,7 +196,7 @@ TYPED_TEST(AllRmqsTest, SuccinctBlockBorder) {
 
 TYPED_TEST(AllRmqsTest, 1000Elements) {
     std::vector<Elem> vec(1000);
-    for (Index i = 0; i * 2 < vec.size(); ++i) {
+    for (Index i = 0; i * 2 < ssize(vec); ++i) {
         vec[2 * i] = i + 1'000'200;
         vec[2 * i + 1] = (i % 2 == 0 ? 1 : -1) * i * i + 1'000'000;
     }
@@ -248,7 +248,7 @@ TYPED_TEST(UsefulRmqsTest, LargeAlmostAscending) {
     std::vector<Elem> vec((1 << 18) - 31);
     std::iota(vec.rbegin(), vec.rend(), 7);
     auto engine = createRandomEngine();
-    std::uniform_int_distribution<Index> idxDist(0, vec.size() - 1);
+    std::uniform_int_distribution<Index> idxDist(0, ssize(vec) - 1);
     for (Index i = 0; i < 100; ++i) {
         std::swap(vec[idxDist(engine)], vec[idxDist(engine)]);
     }
@@ -265,21 +265,21 @@ TYPED_TEST(UsefulRmqsTest, LargeRandom) {
     testLargeRmq<TypeParam>(randomValues(Index(dist(engine)), 100));
 }
 
-//
-// #ifdef ADS_HAS_CPP20
-// TYPED_TEST(AllRmqsTest, Constexpr) {
-//    static_assert(TypeParam{}.size() == 0);
-//    static_assert(TypeParam{3}(0, 1) == 0);
-//    static_assert(TypeParam{0, 23, 2, 40, 4, 2, 1}(2, 5) == 2);
-//    static constexpr Index size = std::same_as<TypeParam, NaiveRMQ<>>     ? 50 :
-//                                  std::same_as<TypeParam, NLogNRmq<Elem>> ? 500 :
-//                                                                            1234;
-//    constexpr auto testVec = []() {
-//        std::vector<Elem> res(size);
-//        std::iota(res.begin(), res.end(), 987654);
-//        res[42] = 123456;
-//        return res;
-//    };
-//    static_assert(TypeParam(testVec())(12, size - 1) == 42);
-//}
-// #endif
+
+#ifdef ADS_HAS_CPP20
+TYPED_TEST(AllRmqsTest, Constexpr) {
+    static_assert(TypeParam{}.size() == 0);
+    static_assert(TypeParam{3}(0, 1) == 0);
+    static_assert(TypeParam{0, 23, 2, 40, 4, 2, 1}(2, 5) == 2);
+    static constexpr Index size = std::same_as<TypeParam, NaiveRMQ<>>     ? 50 :
+                                  std::same_as<TypeParam, NLogNRmq<Elem>> ? 500 :
+                                                                            1234;
+    constexpr auto testVec = []() {
+        std::vector<Elem> res(size);
+        std::iota(res.begin(), res.end(), 987654);
+        res[42] = 123456;
+        return res;
+    };
+    static_assert(TypeParam(testVec())(12, size - 1) == 42);
+}
+#endif

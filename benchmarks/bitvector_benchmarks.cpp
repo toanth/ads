@@ -1,13 +1,22 @@
+#include "../include/bitvector/cache_efficient_rank_bitvec.hpp"
+#include "../include/bitvector/classical_bitvec.hpp"
+#include "../include/bitvector/classical_rank_bitvec.hpp"
 #include "../include/bitvector/recursive_bitvec.hpp"
 #include "benchmarks_common.hpp"
 
 
 using namespace ads;
 
+using BitvectorTypes = std::tuple<TrivialBitvec<>, CacheEfficientRankBitvec, ClassicalRankBitvec<>, ClassicalBitvec<>,
+        RecursiveBitvec<TrivialBitvec<>>, EfficientSelectBitvec<>>; // TODO: Benchmark all these bitvectors
+
 // using RankBitvector = ClassicalRankBitvec<>;
-using RankBitvector = EfficientBitvec<>; // also use almost the same bitvector for fairer comparisons
-using SelectBitvector = EfficientSelectBitvec<>;
-using DefaultBitvector = SelectBitvector;
+// using RankBitvector = EfficientBitvec<>; // also use almost the same bitvector for fairer comparisons
+// using SelectBitvector = EfficientSelectBitvec<>;
+// using DefaultBitvector = SelectBitvector;
+using RankBitvector = ClassicalBitvec<>;
+using SelectBitvector = ClassicalBitvec<>;
+using DefaultBitvector = ClassicalBitvec<>;
 
 
 constexpr Index maxNumBits = maxNumValues * 64 * 2;
@@ -181,7 +190,9 @@ static void BM_BitvecFirstLastBitOneOthersZeroSelectSecondOne(bm::State& state) 
     bv.setBit(0);
     bv.setBit(bv.size() - 1);
     bv.buildMetadata();
-    if (!bv.getBit(0)) throw std::logic_error("internal error");
+    if (!bv.getBit(0)) {
+        ADS_THROW("internal error");
+    }
     for (auto _ : state) {
         Index i = bv.selectOne(1);
         bm::DoNotOptimize(i);
@@ -200,7 +211,9 @@ static void BM_BitvecFirstLastBitOneOthersZeroSelectRandom(bm::State& state) {
     bv.setBit(0);
     bv.setBit(bv.size() - 1);
     bv.buildMetadata();
-    if (!bv.getBit(0)) throw std::logic_error("internal error");
+    if (!bv.getBit(0)) {
+        ADS_THROW("internal error");
+    }
     Index i = 0;
     for (auto _ : state) {
         Index val = bv.selectOne(ADS_GET_RANDVAL(2));

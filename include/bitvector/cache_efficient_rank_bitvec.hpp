@@ -91,7 +91,7 @@ public:
 
     [[nodiscard]] ADS_CPP20_CONSTEXPR Index getBlockRank(Index blockIdx) const noexcept {
         ADS_ASSUME(blockIdx >= 0);
-        ADS_ASSUME(blockIdx < numBlocks());
+        ADS_ASSUME(blockIdx < numAccessibleBlocks());
         return Index(BitwiseAccess<8>::getBits(getCompleteCacheLine(blockIdx / numBlocksInSuperblock()).limbs,
                 numLimbsInSuperblock() + 1, blockIdx % numBlocksInSuperblock()));
     }

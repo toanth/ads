@@ -1,8 +1,8 @@
 
+#include "../benchmarks/benchmarks_common.hpp"
+#include "../include/bitvector/recursive_bitvec.hpp"
+#include "../include/elias_fano.hpp"
 #include "benchmark/benchmark.h"
-#include "benchmarks/benchmarks_common.hpp"
-#include "include/bitvector/recursive_bitvec.hpp"
-#include "include/elias_fano.hpp"
 
 #include <iostream>
 

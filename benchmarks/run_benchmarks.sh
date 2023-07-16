@@ -139,7 +139,7 @@ runBenchmark() {
 
 export CLICOLOR_FORCE=1
 
-[ -f "$outputFile" ] && mv "$outputFile" "${outputFile}Old"
+[ -f "$outputFile" ] && mv -u "$outputFile" "${outputFile}Old"
 
 cd "${SCRIPTPATH}"
 (mkdir -p ../build/Release/ &&

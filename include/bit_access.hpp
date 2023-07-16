@@ -246,14 +246,14 @@ public:
     [[nodiscard]] constexpr T* endOfMemory() const noexcept { return mem + sizeInTs(); }
 
     template<typename U>
-    [[nodiscard]] constexpr bool isEnd(U* ptr, Index numAllowedUnusedBytes = sizeof(T) - 1) const noexcept {
+    [[nodiscard]] constexpr bool isEnd(const U* ptr, Index numAllowedUnusedBytes = sizeof(T) - 1) const noexcept {
         ADS_IF_CONSTEVAL {
             return true;
         }
         else {
             T* endPtr = endOfMemory();
-            bool result = std::less_equal{}(static_cast<void*>(ptr), static_cast<void*>(endPtr));
-            result &= reinterpret_cast<std::uintptr_t>(endPtr) - reinterpret_cast<std::uintptr_t>(ptr) < numAllowedUnusedBytes;
+            bool result = std::less_equal{}(static_cast<const void*>(ptr), static_cast<const void*>(endPtr));
+            result &= Index(reinterpret_cast<std::uintptr_t>(endPtr) - reinterpret_cast<std::uintptr_t>(ptr)) < numAllowedUnusedBytes;
             return result;
         }
     }
@@ -327,7 +327,9 @@ struct BitView {
     [[nodiscard]] constexpr Index sizeInLimbs() const noexcept { return roundUpDiv(numT * sizeof(T), sizeof(Limb)); }
 
     [[nodiscard]] constexpr T* begin() noexcept { return ptr; }
+    [[nodiscard]] constexpr const T* begin() const noexcept { return ptr; }
     [[nodiscard]] constexpr T* end() noexcept { return ptr + numT; }
+    [[nodiscard]] constexpr const T* end() const noexcept { return ptr + numT; }
 
     [[nodiscard]] constexpr Index numBitsPerValue() const noexcept {
         if constexpr (NumBits == -1) {

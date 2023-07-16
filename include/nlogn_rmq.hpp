@@ -75,9 +75,8 @@ public:
 
     [[nodiscard]] ADS_CPP20_CONSTEXPR Index rmq(Index lower, Index upper) const {
         if (!(0 <= lower && lower < upper && upper <= size())) [[unlikely]] {
-            throw std::invalid_argument("Invalid rmq range: " + std::to_string(lower) + ", " + std::to_string(upper));
+            ADS_THROW(("Invalid rmq range: " + std::to_string(lower) + ", " + std::to_string(upper)));
         }
-        //        if (lower == upper) { return lower; }
         Index log2Length = intLog2(upper - lower);
         Index leftMin = getMinimumStartingAt(lower, log2Length);
         Index rightMin = getMinimumEndingAt(upper, log2Length);

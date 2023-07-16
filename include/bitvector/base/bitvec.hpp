@@ -37,20 +37,20 @@ protected:
     // ** Construction from string_view **
     ADS_CPP20_CONSTEXPR static auto limbViewFromStringView(const std::string_view& str, Index base) {
         if (base != 2 && base != 4 && base != 16) [[unlikely]] {
-            throw std::invalid_argument("base must be one of 2, 4, or 16");
+            ADS_THROW("base must be one of 2, 4, or 16");
         }
         const Index log2ofBase = intLog2(base);
         const Index charsPerLimb = 64 / log2ofBase;
         auto proj = [base, log2ofBase, charsPerLimb](std::string_view str, Index i) -> Limb {
-            ADS_ASSUME(str.size() > i * charsPerLimb);
+            ADS_ASSUME(Index(str.size()) > i * charsPerLimb);
             str.remove_prefix(i * charsPerLimb);
             Index numToParse = std::min(charsPerLimb, Index(str.size()));
             U64 res;
             auto err = fromChars(str.data(), str.data() + numToParse, res, int(base));
             if (err.ec != std::errc()) [[unlikely]] {
-                throw std::invalid_argument(std::make_error_code(err.ec).message());
+                ADS_THROW(std::make_error_code(err.ec).message());
             } else if (err.ptr != str.data() + numToParse) [[unlikely]] {
-                throw std::invalid_argument("invalid character found");
+                ADS_THROW("invalid character found");
             }
             if (numToParse < charsPerLimb) {
                 res <<= (charsPerLimb - numToParse) * log2ofBase;
@@ -88,7 +88,7 @@ public:
         }
     }
 
-    [[nodiscard]] const Allocation<>& alloc() const noexcept { return allocation; }
+    [[nodiscard]] ADS_CPP20_CONSTEXPR const Allocation<>& alloc() const noexcept { return allocation; }
 
 
     // must be implemented in the derived class
@@ -199,7 +199,7 @@ public:
 
     [[nodiscard]] ADS_CPP20_CONSTEXPR Index rankOne(Index pos) const {
         if (pos >= derived().numBits() || pos < 0) [[unlikely]] {
-            throw std::invalid_argument("invalid position for rank query");
+            ADS_THROW("invalid position for rank query");
         }
         return derived().rankOneUnchecked(pos);
     }
@@ -212,7 +212,7 @@ public:
     /// Return the position `i` such that `getBit(i)` returns the `rank`th one, counting from 0.
     [[nodiscard]] ADS_CPP20_CONSTEXPR Index selectOne(Index rank) const {
         if (rank < 0 || rank >= derived().size()) [[unlikely]] {
-            throw std::invalid_argument("invalid rank for select one query: " + std::to_string(rank));
+            ADS_THROW("invalid rank for select one query: " + std::to_string(rank));
         }
         return derived().selectOneUnchecked(rank);
     }
@@ -220,7 +220,7 @@ public:
     /// Return the position `i` such that `getBit(i)` returns the `rank`th zero, counting from 0
     [[nodiscard]] ADS_CPP20_CONSTEXPR Index selectZero(Index rank) const {
         if (rank < 0 || rank >= derived().size()) [[unlikely]] {
-            throw std::invalid_argument("invalid rank for select zero query: " + std::to_string(rank));
+            ADS_THROW("invalid rank for select zero query: " + std::to_string(rank));
         }
         return derived().selectZeroUnchecked(rank);
     }

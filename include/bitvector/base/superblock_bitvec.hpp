@@ -10,6 +10,7 @@ namespace ads {
 /// Base::Base alias, as friends. \tparam Derived The actual bitvector, which inherits from SuperblockBitvecBase<Derived>.
 template<typename Derived, Index NumLimbsInSuperblock, Index NumLimbsInBlock, typename SuperblockRankT = Limb, Index NumLimbsInCacheLine = U64_PER_CACHELINE>
 class [[nodiscard]] SuperblockBitvecBase : public NormalBitvecBase<Derived, NumLimbsInBlock, NumLimbsInCacheLine> {
+protected:
     friend Derived;
 
     using Base = NormalBitvecBase<Derived, NumLimbsInBlock, NumLimbsInCacheLine>;
@@ -86,7 +87,7 @@ public:
         Index inSuperblockSoFar = 0;
         Index numBlocks = derived().numBlocksInSuperblock();
         if (superblockIdx == derived().numSuperblocks() - 1) {
-            numBlocks = derived().numBlocks() - numBlocks * superblockIdx;
+            numBlocks = derived().numAccessibleBlocks() - numBlocks * superblockIdx;
         }
         Index superblockStartIdx = superblockIdx * numLimbsInSuperblock();
         for (Index b = 0; b < numBlocks; ++b) {
@@ -139,37 +140,72 @@ public:
 
 
 private:
+    template<bool IsOne>
+    [[nodiscard]] constexpr Index superblockRank(Index superblockIdx) const noexcept {
+        ADS_ASSUME(superblockIdx >= 0);
+        ADS_ASSUME(superblockIdx <= derived().numSuperblocks());
+        Index rankOne = derived().getSuperblockRank(superblockIdx);
+        ADS_ASSUME(rankOne >= 0);
+        if constexpr (IsOne) {
+            return rankOne;
+        } else {
+            // if superblockIdx is derived().numSuperblocks(), this can be greater than the number of zeros in the
+            // bitvector, but that's not a problem
+            Index numBitsBefore = superblockIdx * derived().superblockSize();
+            ADS_ASSUME(numBitsBefore >= 0);
+            ADS_ASSUME(rankOne <= numBitsBefore);
+            return numBitsBefore - rankOne;
+        }
+    }
+
+    template<bool IsOne>
+    [[nodiscard]] constexpr Index selectSuperblockIdxInRange(Index& bitRank, Index l, Index u) const noexcept {
+        ADS_ASSUME(l >= 0);
+        ADS_ASSUME(l <= u);
+        ADS_ASSUME(u > 0);
+        ADS_ASSUME(u <= numSuperblocks());
+
+        constexpr Index linearFallbackSize = 8;
+        while (u - l > linearFallbackSize) [[unlikely]] {
+            ADS_ASSUME(0 <= l);
+            ADS_ASSUME(l <= u);
+            Index mid = (l + u) / 2;
+            Index midRank = superblockRank<IsOne>(mid);
+            ADS_ASSUME(midRank >= superblockRank<IsOne>(l));
+            if (midRank <= bitRank) {
+                l = mid;
+            } else {
+                u = mid;
+            }
+        }
+        ADS_ASSUME(u - l <= linearFallbackSize);
+        ADS_ASSUME(l <= u);
+        for (Index i = l; i < u; ++i) {
+            if (superblockRank<IsOne>(i) > bitRank) {
+                bitRank -= superblockRank<IsOne>(i - 1);
+                return i - 1;
+            }
+        }
+        ADS_ASSUME(superblockRank<IsOne>(u) >= bitRank);
+        bitRank -= superblockRank<IsOne>(u - 1);
+        return u - 1;
+    }
+
     // ** internal implementations for the default select. They simply do binary searches, but the
     // constant factor is smaller than for inefficientSelect(). Still, some Bitvector implementations
     // provide faster select operations **
     template<bool IsOne>
-    [[nodiscard]] constexpr Index selectSuperBlockIdx(Index& bitRank) const {
+    [[nodiscard]] constexpr Index selectSuperblockIdx(Index& bitRank) const noexcept {
         constexpr Index linearFallbackSize = 8;
-        auto rankFunc = [this](Index i) noexcept {
-            ADS_ASSUME(i >= 0);
-            ADS_ASSUME(i <= derived().numSuperblocks());
-            Index rankOne = derived().getSuperblockRank(i);
-            ADS_ASSUME(rankOne >= 0);
-            if constexpr (IsOne) {
-                return rankOne;
-            } else {
-                // if i is derived().numSuperblocks(), this can be greater than the number of zeros in the
-                // bitvector, but that's not a problem
-                Index numBitsBefore = i * derived().superblockSize();
-                ADS_ASSUME(rankOne <= numBitsBefore);
-                return numBitsBefore - rankOne;
-            }
-        };
         ADS_ASSUME(bitRank >= 0);
         // + 1 because we're searching for the first superblock where the rank is greater than bitRank
         Index l = bitRank / derived().superblockSize() + 1;
         Index u = derived().numSuperblocks();
         ADS_ASSUME(l > 0);
         ADS_ASSUME(l <= u);
-        if (u - l > linearFallbackSize) {
+        if (u - l > linearFallbackSize) [[unlikely]] {
             // set u close to the expected location for iid bit with 50% probability for '1', then increase exponentially
-            // until it is an upper bound. Unlike binary search, this starts with a less pessimistic search window and
-            // should hopefully be easier on the branch predictor. This improves performance for random values but hurts for especially hard cases.
+            // until it is an upper bound. Unlike binary search, this starts with a less pessimistic search window. This improves performance for random values but hurts for especially hard cases.
             u = l;
             do {
                 l = u;
@@ -178,100 +214,69 @@ private:
                     u = derived().numSuperblocks();
                     break;
                 }
-            } while (rankFunc(u) <= bitRank);
-            while (u - l > linearFallbackSize) {
-                ADS_ASSUME(0 < l);
-                ADS_ASSUME(l <= u);
-                Index mid = (l + u) / 2;
-                Index midRank = rankFunc(mid);
-                ADS_ASSUME(midRank >= rankFunc(l));
-                if (midRank <= bitRank) {
-                    l = mid;
-                } else {
-                    u = mid;
-                }
-            }
+            } while (superblockRank<IsOne>(u) <= bitRank);
         }
-        ADS_ASSUME(u - l <= linearFallbackSize);
-        ADS_ASSUME(l <= u);
-        for (Index i = l; i < u; ++i) {
-            if (rankFunc(i) > bitRank) {
-                bitRank -= rankFunc(i - 1);
-                return i - 1;
-            }
-        }
-        ADS_ASSUME(rankFunc(u) >= bitRank);
-        bitRank -= rankFunc(u - 1);
-        return u - 1;
+        return derived().template selectSuperblockIdxInRange<IsOne>(bitRank, l, u);
     }
 
-    // TODO: For most bitvectors, superblock indices can be represented with 32 bit values.
     template<bool IsOne>
-    [[nodiscard]] constexpr Index selectBlockIdx(Index& bitRank, Index superBlockIdx) const noexcept {
-        auto rankFunc = [this](Index i) noexcept {
-            Index rankOne = derived().getBlockRank(i);
-            if constexpr (IsOne) {
-                return rankOne;
-            } else {
-                Index numBitsBefore = (i % derived().numBlocksInSuperblock()) * derived().blockSize();
-                ADS_ASSUME(rankOne <= numBitsBefore);
-                return numBitsBefore - rankOne;
-            }
-        };
+    [[nodiscard]] constexpr Index blockRank(Index blockIdx) const noexcept {
+        ADS_ASSUME(blockIdx >= 0);
+        Index rankOne = derived().getBlockRank(blockIdx);
+        ADS_ASSUME(rankOne >= 0);
+        ADS_ASSUME(rankOne <= derived().numOnes());
+        if constexpr (IsOne) {
+            return rankOne;
+        } else {
+            Index numBitsBefore = (blockIdx % derived().numBlocksInSuperblock()) * derived().blockSize();
+            ADS_ASSUME(rankOne <= numBitsBefore);
+            return numBitsBefore - rankOne;
+        }
+    }
+
+    template<bool IsOne>
+    [[nodiscard]] constexpr Index selectBlockIdxInRange(Index& bitRank, Index superblockIdx, Index l, Index u) const noexcept {
         constexpr Index linearFallbackSize = 2 * sizeof(Limb) / sizeof(BlockRank);
-        ADS_ASSUME(superBlockIdx >= 0);
-        ADS_ASSUME(superBlockIdx < derived().numSuperblocks());
-        ADS_ASSUME(bitRank >= 0);
-        // we're searching for the first block with count strictly greater than bitRank
-        Index l = superBlockIdx * derived().numBlocksInSuperblock() + 1;
-        Index u = std::min(l + derived().numBlocksInSuperblock() - 1, derived().numBlocks());
         ADS_ASSUME(u >= l);
-        ADS_ASSUME(u - l < derived().numBlocksInSuperblock());
+        ADS_ASSUME(u - l <= derived().numBlocksInSuperblock());
+        ADS_ASSUME(u / this->numBlocksInSuperblock() - l / this->numBlocksInSuperblock() <= 1);
         while (u - l > linearFallbackSize) {
             Index mid = (l + u) / 2;
-            Index midRank = rankFunc(mid);
+            Index midRank = blockRank<IsOne>(mid);
             if (midRank > bitRank) {
                 u = mid;
             } else {
                 l = mid;
             }
         }
+        ADS_ASSUME(l >= 0);
         ADS_ASSUME(u >= l);
         ADS_ASSUME(u - l <= linearFallbackSize);
-        ADS_ASSUME(l > superBlockIdx * derived().numBlocksInSuperblock());
-        for (Index i = l; i < u; ++i) {
-            ADS_ASSUME(i == 0 || derived().getBlockRank(i) >= derived().getBlockRank(i - 1));
-            if (rankFunc(i) > bitRank) {
-                bitRank -= rankFunc(i - 1);
+        ADS_ASSUME(l >= superblockIdx * derived().numBlocksInSuperblock());
+        for (Index i = l; i < u; ++i) { // TODO: Start from l + 1
+            ADS_ASSUME((i % derived().numBlocksInSuperblock()) == 0 || blockRank<IsOne>(i) >= blockRank<IsOne>(i - 1));
+            ADS_ASSUME((i % derived().numBlocksInSuperblock()) == 0 || blockRank<IsOne>(i - 1) <= bitRank);
+            if (blockRank<IsOne>(i) > bitRank) {
+                bitRank -= blockRank<IsOne>(i - 1);
                 return i - 1;
             }
         }
-        bitRank -= rankFunc(u - 1);
+        bitRank -= blockRank<IsOne>(u - 1);
+        ADS_ASSUME(bitRank >= 0);
+        ADS_ASSUME(bitRank < this->blockSize());
         return u - 1;
     }
 
     template<bool IsOne>
-    [[nodiscard]] constexpr Index selectLimbIdx(Index& bitRank, Index blockIdx) const noexcept {
-        Index first = blockIdx * derived().numLimbsInBlock();
-        auto rankFunc = [this](Index i) noexcept {
-            Limb l = derived().getLimb(i);
-            if constexpr (IsOne) {
-                return popcount(l);
-            } else {
-                return 64 - popcount(l);
-            }
-        };
-        for (Index i = first; i < derived().numLimbs(); ++i) {
-            Index rank = rankFunc(i);
-            ADS_ASSUME(i - first < derived().numLimbsInBlock());
-            ADS_ASSUME(rank >= 0);
-            if (rank > bitRank) {
-                return i;
-            }
-            bitRank -= rank;
-            ADS_ASSUME(bitRank >= 0);
-        }
-        return derived().numLimbs() - 1;
+    [[nodiscard]] constexpr Index selectBlockIdx(Index& bitRank, Index superblockIdx) const noexcept {
+        ADS_ASSUME(superblockIdx >= 0);
+        ADS_ASSUME(superblockIdx < derived().numSuperblocks());
+        ADS_ASSUME(bitRank >= 0);
+        ADS_ASSUME(bitRank < derived().superblockSize());
+        // we're searching for the first block with count strictly greater than bitRank
+        Index l = superblockIdx * derived().numBlocksInSuperblock() + 1;
+        Index u = std::min(l + derived().numBlocksInSuperblock() - 1, derived().numBlocks());
+        return derived().template selectBlockIdxInRange<IsOne>(bitRank, superblockIdx, l, u);
     }
 
     template<bool IsOne>
@@ -283,18 +288,86 @@ private:
         }
     }
 
+    template<bool IsOne>
+    [[nodiscard]] constexpr Index selectInBlock(Index bitRank, Index blockIdx) const noexcept {
+        if constexpr (NumLimbsInBlock == 1) {
+            Index limb = this->getLimb(blockIdx);
+            return selectBitIdx<IsOne>(limb, bitRank);
+        } else if constexpr (NumLimbsInBlock == 4) {
+            if constexpr (IsOne) {
+                return u256Select(this->getBlock(blockIdx).data(), bitRank);
+            } else {
+                return u256SelectZero(this->getBlock(blockIdx).data(), bitRank);
+            }
+        } else {
+            auto rankFunc = [](Limb limb) noexcept {
+                if constexpr (IsOne) {
+                    return popcount(limb);
+                } else {
+                    return 64 - popcount(limb);
+                }
+            };
+            Span block = this->getBlock(blockIdx);
+            for (Index i = 0; i + 1 < NumLimbsInBlock; ++i) {
+                Limb limb = block[i];
+                Index rank = rankFunc(limb);
+                ADS_ASSUME(rank >= 0);
+                if (rank > bitRank) {
+                    return i * 64 + selectBitIdx<IsOne>(limb, bitRank);
+                }
+                bitRank -= rank;
+                ADS_ASSUME(bitRank >= 0);
+            }
+            Limb limb = block[NumLimbsInBlock - 1];
+            ADS_ASSUME(bitRank >= 0);
+            ADS_ASSUME(rankFunc(limb) > bitRank);
+            return (NumLimbsInBlock - 1) * 64 + selectBitIdx<IsOne>(limb, bitRank);
+        }
+    }
+
 public:
     template<bool IsOne>
     [[nodiscard]] constexpr Index select(Index bitRank) const {
         if (bitRank < 0 || bitRank >= derived().size()) [[unlikely]] {
-            throw std::invalid_argument("invalid rank for select query: " + std::to_string(bitRank));
+            ADS_THROW("invalid rank for select query: " + std::to_string(bitRank));
         }
-        Index superBlockIdx = derived().template selectSuperBlockIdx<IsOne>(bitRank);
-        Index blockIdx = derived().template selectBlockIdx<IsOne>(bitRank, superBlockIdx);
-        Index limbIdx = derived().template selectLimbIdx<IsOne>(bitRank, blockIdx);
-        Index bitIdx = derived().template selectBitIdx<IsOne>(derived().getLimb(limbIdx), bitRank);
-        return limbIdx * 64 + bitIdx;
+        Index superblockIdx = derived().template selectSuperblockIdx<IsOne>(bitRank);
+        ADS_ASSUME(superblockIdx >= 0);
+        ADS_ASSUME(superblockIdx < derived().numSuperblocks());
+        ADS_ASSUME(bitRank >= 0);
+        ADS_ASSUME(bitRank < this->superblockSize());
+        Index blockIdx = derived().template selectBlockIdx<IsOne>(bitRank, superblockIdx);
+        ADS_ASSUME(blockIdx >= 0);
+        ADS_ASSUME(blockIdx < derived().numBlocks());
+        ADS_ASSUME(bitRank >= 0);
+        ADS_ASSUME(bitRank < this->blockSize());
+        //        if (derived().blocks.numT >= 2) {
+        //            std::cout << derived().blocks.numT << " " << derived().blocks[0] << " " << derived().blocks[1]
+        //                      << " "
+        //                      /*<< derived().blocks[2]*/
+        //                      << std::endl;
+        //        }
+        Index inBlock = derived().template selectInBlock<IsOne>(bitRank, blockIdx);
+        ADS_ASSUME(inBlock >= 0);
+        ADS_ASSUME(inBlock < NumLimbsInBlock * 64);
+        return blockIdx * derived().blockSize() + inBlock;
     }
+
+    //    [[nodiscard]] constexpr std::pair<Index, Index> selectOneAndPrevOne(Index secondRank) const {
+    //        if (secondRank < 0 || secondRank >= derived().size()) [[unlikely]] {
+    //            ADS_THROW("invalid rank for select query: " + std::to_string(secondRank));
+    //        }
+    //        Index superblockIdx = derived().template selectSuperblockIdx<true>(secondRank);
+    //        ADS_ASSUME(superblockIdx >= 0);
+    //        ADS_ASSUME(superblockIdx < derived().numSuperblocks());
+    //        Index blockIdx = derived().template selectBlockIdx<true>(secondRank, superblockIdx);
+    //        ADS_ASSUME(blockIdx >= 0);
+    //        ADS_ASSUME(blockIdx < derived().numBlocks());
+    //        Index inBlock = derived().template selectInBlock<true>(secondRank, blockIdx);
+    //        ADS_ASSUME(inBlock >= 0);
+    //        ADS_ASSUME(inBlock < NumLimbsInBlock * 64);
+    //        return blockIdx * derived().blockSize() + inBlock;
+    //    }
 };
 
 
