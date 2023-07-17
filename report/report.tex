@@ -1,0 +1,218 @@
+
+\documentclass[a4paper,UKenglish,cleveref, autoref, thm-restate]{lipics-v2021}
+%This is a template for producing LIPIcs articles. 
+%See lipics-v2021-authors-guidelines.pdf for further information.
+%for A4 paper format use option "a4paper", for US-letter use option "letterpaper"
+%for british hyphenation rules use option "UKenglish", for american hyphenation rules use option "USenglish"
+%for section-numbered lemmas etc., use "numberwithinsect"
+%for enabling cleveref support, use "cleveref"
+%for enabling autoref support, use "autoref"
+%for anonymousing the authors (e.g. for double-blind review), add "anonymous"
+%for enabling thm-restate support, use "thm-restate"
+%for enabling a two-column layout for the author/affilation part (only applicable for > 6 authors), use "authorcolumns"
+%for producing a PDF according the PDF/A standard, add "pdfa"
+
+%\pdfoutput=1 %uncomment to ensure pdflatex processing (mandatatory e.g. to submit to arXiv)
+\hideLIPIcs  %uncomment to remove references to LIPIcs series (logo, DOI, ...), e.g. when preparing a pre-final version to be uploaded to arXiv or another public repository
+
+%\graphicspath{{./graphics/}}%helpful if your graphic files are in another directory
+
+\bibliographystyle{plainurl}% the mandatory bibstyle
+
+\title{Elias-Fano and RMQ Implementation} %TODO Please add
+
+%\titlerunning{Dummy short title} %TODO optional, please use if title is longer than one line
+
+\author{Tobias Theuer}{KIT, Germany}{ufevn@student.kit.edu}{}{}%TODO mandatory, please use full name; only 1 author per \author macro; first two parameters are mandatory, other parameters can be empty. Please provide at least the name of the affiliation and the country. The full address is optional. Use additional curly braces to indicate the correct name splitting when the last name consists of multiple name parts.
+
+% \author{Joan R. Public\footnote{Optional footnote, e.g. to mark corresponding author}}{Department of Informatics, Dummy College, [optional: Address], Country}{joanrpublic@dummycollege.org}{[orcid]}{[funding]}
+
+\authorrunning{T. Theuer} %TODO mandatory. First: Use abbreviated first/middle names. Second (only in severe cases): Use first author plus 'et al.'
+
+\Copyright{Tobias Theuer} %TODO mandatory, please use full first names. LIPIcs license is "CC-BY";  http://creativecommons.org/licenses/by/3.0/
+
+\ccsdesc[100]{None} %TODO mandatory: Please choose ACM 2012 classifications from https://dl.acm.org/ccs/ccs_flat.cfm
+
+\keywords{Elias-Fano, RMQ} %TODO mandatory; please add comma-separated list of keywords
+
+\category{} %optional, e.g. invited paper
+
+\relatedversion{} %optional, e.g. full version hosted on arXiv, HAL, or other respository/website
+%\relatedversiondetails[linktext={opt. text shown instead of the URL}, cite=DBLP:books/mk/GrayR93]{Classification (e.g. Full Version, Extended Version, Previous Version}{URL to related version} %linktext and cite are optional
+
+%\supplement{}%optional, e.g. related research data, source code, ... hosted on a repository like zenodo, figshare, GitHub, ...
+%\supplementdetails[linktext={opt. text shown instead of the URL}, cite=DBLP:books/mk/GrayR93, subcategory={Description, Subcategory}, swhid={Software Heritage Identifier}]{General Classification (e.g. Software, Dataset, Model, ...)}{URL to related version} %linktext, cite, and subcategory are optional
+
+%\funding{(Optional) general funding statement \dots}%optional, to capture a funding statement, which applies to all authors. Please enter author specific funding statements as fifth argument of the \author macro.
+
+% \acknowledgements{I want to thank \dots}%optional
+
+\nolinenumbers %uncomment to disable line numbering
+
+
+
+%Editor-only macros:: begin (do not touch as author)%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\EventEditors{John Q. Open and Joan R. Access}
+\EventNoEds{2}
+\EventLongTitle{42nd Conference on Very Important Topics (CVIT 2016)}
+\EventShortTitle{CVIT 2016}
+\EventAcronym{CVIT}
+\EventYear{2016}
+\EventDate{December 24--27, 2016}
+\EventLocation{Little Whinging, United Kingdom}
+\EventLogo{}
+\SeriesVolume{42}
+\ArticleNo{23}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+\usepackage{mathtools}
+\usepackage{csquotes}
+
+\newcommand{\stress}[1] {\textit{#1}}
+\newcommand{\todo}[1] {{\color{red}\textsc{#1}}}
+\newcommand{\rank} {\texttt{rank}}
+\newcommand{\select} {\texttt{select}}
+\DeclarePairedDelimiter{\ceil}{\lceil}{\rceil}
+\DeclarePairedDelimiter{\floor}{\lfloor}{\rfloor}
+
+
+\begin{document}
+
+\maketitle
+
+%TODO mandatory: add short abstract of the document
+\begin{abstract}
+This document gives an overview over my implementation of the \stress{Elias-Fano} (EF) encoding \cite{elias} \cite{fano} \cite{folien}
+for answering predecessor queries as well as my implementation of several \stress{RMQ} data structures.
+In particular, I focus on my implementations of various Bitvectors,
+which are used as part of the Elias-Fano encoding and a succinct RMQ implementation.
+My EF implementation achieves expected $\mathcal{O}(\log \mathcal U)$ time for uniformly distributed numbers
+within an interval $I = [x_{min}, x_{max}] \in \mathcal U$
+and $\mathcal{O}(\log n + \log \mathcal U)$ worst-case complexity for a single predecessor query,
+where $n$ is the number of stored values and $\mathcal U$ the universe of possible numbers.\footnote{In the implementation,
+$\mathcal U = \left(0, 2^{64}\right]$, so technically, there are at most $2^{64} \in \mathcal{O}(1)$ unique numbers in $I$ and all queries
+could be answered in $O(1)$ time and space, but this isn't relevant in practice.}
+My RMQ implementations achieve $\mathcal O(1)$ or $\mathcal O(\log n)$ time, depending on the implementation.
+
+\end{abstract}
+
+\newpage
+
+% \section{Introduction}
+% \label{ch:Introduction}
+
+% \subsection{Elias-Fano}
+% The \stress{Elias-Fano} (EF) encoding  is used to store a sorted list of integers
+% in a space-efficient way and efficiently answer predecessor and successor queries.
+
+% The Elias-Fano coding works by splitting the binary representation of each number into an \stress{upper} and \stress{lower} part such that
+% all lower parts consists of exactly $0 \leq l \leq \log \mathcal U$ bits.
+% Then, the lower parts are simply stored one after another in an array.
+% The upper parts, consisting of $u \coloneqq\log \mathcal U - l$ bits, are interpreted as numbers and stored in a \stress{Bitvector} (BV) as follows:
+% For the $i$th number, let $\text{upper}_i$ be its upper part, expressed as an integer value in base 2. Then, the bit at position $i + \text{upper}_i$ is set to 1; all bits which are not set to 1 like this for any number remain 0.
+% Finding a value or its predecessor involves the \select{} operation on Bitvectors: $\select_1(j)$ returns the index of the $j$th 1, while $\select_0(j)$ returns the index of the $j$th 0.
+% An efficient implementation of $\select_0$ is key to fast predecessor queries\footnote{In the implementation,
+% all bits in the upper BV are flipped, so $\select_1$ performance is most important}.
+
+% \subsection{RMQ}
+% A \stress{Range Minimum Query} (RMQ) structure $R$ is a data structure which stores information about a list $L$ of values
+% such that it can efficiently answer range minimum queries.
+% $R$ does not necessarily need to store $L$; there are succinct RMQ structures using only $2n + \mathcal o(n)$ bits
+% for an arbitrary list of $n$ values. \cite{succinctRmq}
+
+
+
+\section{Algorithms and Data Structures}
+\label{ch:FirstContentSection}
+\subsection{Bitvectors}
+I implemented several Bitvectors, which will be described in chronological order of implementation.
+Almost all of these Bitvectors take several hyper-parameters at compile time,
+which can be tweaked for different space-time trade-offs.
+
+\begin{itemize}
+    \item The \textbf{Cache-Efficient Bitvector} answers \rank{} queries with at most 1 cache miss; however,
+    it is not very fast for \select{} queries and uses twice as many bits as necessary to store the bit sequence because it only
+    uses half of each cache line to store bits and the other half for meta data\footnote{It would have been possible to add
+    \select{} metadata to make those queries more efficient without any additional space overhead,
+    but there are better implementations in any case}.
+    \item The \textbf{Classical Rank Bitvector} is very close to the one from the slides but doesn't store \select{} metadata.
+    Instead, like the Cache-Efficient Bitvector, it relies on an optimized binary search over \rank{} metadata for \select{}.
+    Blocks and superblocks have fixed sizes, which can be chosen at compile time.
+    \item The \textbf{Trivial Bitvector} simply precomputes all possible \rank{} and \select{} queries.
+    If the answer to one query can be represented using $k$ bits, it needs $2kn$ bits in total:
+    There are $n$ $\rank_1$ entries and a total of $n$ $\select_0$ and $\select_1$ entries.\footnote{I.~e.~, $\select_0$ and $\select_1$
+    entries are stored in the same array, a trick which also applies to other Bitvectors.}
+    The original bit sequence can be reconstructed using $\rank_1(i+1) - \rank_1(i)$.
+    \item The \textbf{Recursive Bitvector}\footnote{I don't know if this idea already exists
+    because I avoided looking up existing Bitvector implementation, apart from some low-level bit-fiddling tricks.}
+    tries to (space) efficiently answer \select{} queries:
+    The bitvector is partitioned into \stress{blocks} of size $b$ (by default: $b=256$) and for each block, the rank at the beginning of the block,
+    modulo $b$, is stored in an array $a$.
+    Also, a \stress{nested} Bitvector of $\ceil{n / b}$ bits stores a bit for each block,
+    which is 1 if this block contains a 1 whose $\rank_1$ is a multiple of $b$.
+    To efficiently support $\select_0$ in addition to $\select_1$, a second nested bitvector storing $\rank_0$ is necessary.\footnote{Nested Bitvectors only need to answer $\select_1$ queries, never $\select_0$.}
+    Then, $\rank(i)$ can be easily implemented using the nested BV's $\rank(\floor{i / b}) * b$ and $a[\floor{i/b}]$ while $\select(i)$
+    can be implemented using the nested BV's $\select(\floor{i / b})$, $\select(\floor{i / b} + 1)$ and a binary search over the corresponding entries of $a$.
+    If the values of bits are independently and identically distributed with probability $p$ for a 1, then only $1/p$ entries of $a$ must
+    be looked at on average for $\select_1$, making this a $\mathcal O(1)$ implementation in that case,
+    provided the nested BV supports constant-time operations.
+    By using the Recursive Bitvector as its own nested Bitvector type, this is easy to guarantee.
+    For $b \coloneqq \log n$, $a$ contains $\ceil{\frac{n}{\log n}} \log \log n$ bits and the nested BV
+    stores $m \coloneqq \ceil{\frac{n}{\log n}}$ logical bits
+    (using $s_\text{nested}(n)\coloneqq m + \ceil{\frac{m}{\log m}} \log \log m + s_\text{nested}(m)$ bits),
+    or $o(n)$ additional bits in total\footnote{For $b=256$, the nested's nested Bitvector contains only $\ceil{\frac{n}{2^{16}}}$ bits, so the Trivial Bitvector can be used there without wasting too much space}.
+    \item The \textbf{Classical Bitvector} is based on the Classical Rank Bitvector but additionally stores \select{} metadata in two levels:
+    By storing indices of superblocks (or blocks within a superblock) which contain bits where the \rank{} is a multiple of some constant $c$,
+    binary search over \rank{} metadata need only consider a constant interval on average if bits are \enquote{randomly} distributed,
+    similar to the Recursive Bitvector Strategy.
+    % \item The \textbf{Select Bitvector} is a variation of the Classical Bitvector where rank metadata for a block isn't stored with
+    % respect to the containing superblock, but rather to the corresponding $\select$ entry, which allows saving metadata for each block.
+    % This is conceptually the same as using, for each block, a RecursiveBitvector with a nested Trivial Bitvector
+    % supporting only $\select$ queries. $\rank$ queries can be implemented with binary search over $\select$ metadata.
+\end{itemize}
+
+\subsection{Elias-Fano}
+The smallest value is subtracted from each value and the universe is taken to be $\mathcal U' \coloneqq [0, x_\text{max} - x_\text{min}]$
+to reduce the size of the upper Bitvector.
+To find the predecessor in an interval of lower values, it is necessary to use binary search to avoid linear worst-case behavior.
+
+
+\subsection{RMQ}
+Compared to Elias-Fano, I spent far less time on the RMQ problem.
+I have implemented 5 different RMQ structures:
+\begin{itemize}
+    \item The \textbf{Simple RMQ} is simply an unbounded array (\textit{\texttt{std::vector}}) that uses binary search.
+    \item The \textbf{Naive RMQ} precomputes all queries.
+    \item The \textbf{$n \log n$ space RMQ} uses an additional array to store minima indices as shown on the slides.
+    \item The \textbf{Linear space RMQ} partitions the list of values into blocks of $b$ (default: $b=256$) values
+    and builds a $n \log n$ RMQ structure over the block minima.
+    It also uses an array to store the index of the minimum within each block; blocks are partitioned in smaller subblocks,
+    and prefix and suffix minima are stored over subblocks within in a block\footnote{This part could be implemented much more space-efficiently} \footnote{Because the block size is constant, it's technically not in $\mathcal O(n)$ space,
+    but plugging in $2^{64}$ for $n$ in the equation from the slides (\cite{folien}) would only give a block size $b'$ of 16 values, resulting in an even larger $n \log n$ RMQ}.
+    \item The \textbf{Succinct RMQ} is a very unoptimized implementation of the succinct RMQ from \cite{succinctRmq}
+    using the range min-max tree from \cite{simpleEfficient} to answer rm queries in $\mathcal O(\log n)$ time.
+\end{itemize}
+
+\section{Implementation}
+The entire project was written in standard-conforming single-threaded\footnote{It would have been straightforward to parallelize queries,
+but that seemed to violate the spirit of the task} C++17 \todo{Test in C++17, test on windows} but optionally uses compiler extensions
+and C++20 features (if available) for optional goals such as full compile-time evaluation of all algorithms and data structures\footnote{This
+is helpful in C++ because constant evaluation is required to produce an error when executing Undefined Behavior,
+which allows testing for the absence of UB}, better error messages and warnings,
+and increased speed by using special instructions (e.g.\@ \href{https://en.wikipedia.org/wiki/X86_Bit_manipulation_instruction_set#BMI2_(Bit_Manipulation_Instruction_Set_2)}{BMI2} instructions),
+C++ attributes such as \texttt{[[(un)likely]]}, and by informing the compiler that addresses have a high alignment.\footnote{To keep this document relatively short, I don't go into details of the individual implementation.}
+
+
+\section{Experimental Evaluation}
+\label{ch:Conclusion}
+I ran all benchmarks on my Laptop computer, a Thinkpad T14 with 32GB RAM and 16 logical cores.
+For the benchmarks, the laptop was put in a special benchmarking state, which includes disabling turbo boost,
+disabling dynamic frequency scaling (so all cores are always running at 1,7 Ghz), reserving a logical core for the exclusive use
+of the benchmarked program and completely disabling its SMT partner.
+The x86 BMI2 \texttt{pdep} instruction, which \href{https://stackoverflow.com/questions/7669057/find-nth-set-bit-in-an-int/27453505#27453505}{can be used} for \select{} on 64bit values, is implemented in microcode on my processor, resulting in dramatically worse performance compared to the lookup table-based implementation, and therefore isn't used\footnote{Which makes all \select{} calls slightly slower
+and should be especially unfavorable for the Recursive Bitvector}.
+
+\bibliography{report.bib}
+
+\end{document}

@@ -266,6 +266,39 @@ static void BM_BitvecSelectRandom(bm::State& state) {
     setGroup(state, 2.2);
 }
 
+template<typename Bv>
+static void selectRandomImpl(bm::State& state) {
+    Span<const U64> randomQueries = getRandomQueries(state);
+    Bv bv(getRandomNumbers(roundUpDiv(state.range(), 64)), state.range());
+    if (bv.numOnes() == 0) {
+        bv.setBit(0);
+        bv.buildMetadata();
+    }
+    Index i = 0;
+    Index maxRank = bv.numOnes();
+    for (auto _ : state) {
+        Index val = bv.selectOne(ADS_GET_RANDVAL(maxRank));
+        bm::DoNotOptimize(val);
+    }
+    setNumBits(state, bv.allocatedSizeInBits());
+    state.SetComplexityN(state.range());
+    subtractNFromBitCount(state);
+    setGroup(state, 2.2);
+}
+
+static void BM_BitvecSelectRandomTrivial(bm::State& state) {
+    selectRandomImpl<TrivialBitvec<>>();
+}
+static void BM_BitvecSelectRandomCacheEfficientRank(bm::State& state) {
+    selectRandomImpl<CacheEfficientRankBitvec<>>();
+}
+static void BM_BitvecSelectRandomClassical(bm::State& state) {
+    selectRandomImpl<ClassicalBitvec<>>();
+}
+static void BM_BitvecSelectRandomRecursive(bm::State& state) {
+    selectRandomImpl<RecursiveBitvec<>>();
+}
+
 //
 // BENCHMARK(BM_BitvecAllocation)->Range(8, Limb(1) << 34)->Complexity(bm::oN);
 // BENCHMARK(BM_BitvecFillZero)->Range(8, Limb(1) << 34)->Complexity(bm::oN);
@@ -279,7 +312,7 @@ static void BM_BitvecSelectRandom(bm::State& state) {
 
 // BENCHMARK(BM_BitvecAlternatingOnesZerosSelectOneThird)->RangeMultiplier(5)->Range(5, maxNumBits)->Complexity(bm::o1);
 // BENCHMARK(BM_BitvecAlternatingOnesZerosSelectRandom)->RangeMultiplier(5)->Range(5, maxNumBits)->Complexity(bm::o1);
-
+/*
 // BENCHMARK(BM_BitvecOnesThenZerosSelectFirstZero)->RangeMultiplier(5)->Range(5, maxNumBits)->Complexity(bm::o1);
 BENCHMARK(BM_BitvecOnesThenZerosSelectRandom)->RangeMultiplier(5)->Range(5, maxNumBits)->Complexity(bm::o1);
 
@@ -289,3 +322,9 @@ BENCHMARK(BM_BitvecFirstLastBitOneOthersZeroSelectRandom)->RangeMultiplier(5)->R
 BENCHMARK(BM_BitvecSqrtNRandomOnesSelectRandom)->RangeMultiplier(5)->Range(5, maxNumBits)->Complexity(bm::oLogN);
 
 BENCHMARK(BM_BitvecSelectRandom)->RangeMultiplier(5)->Range(5, maxNumBits)->Complexity(bm::o1);
+*/
+
+BENCHMARK(BM_BitvecSelectRandomCacheEfficientRank)->RangeMultiplier(5)->Range(5, maxNumBits)->Complexity(bm::o1);
+BENCHMARK(BM_BitvecSelectRandomClassical)->RangeMultiplier(5)->Range(5, maxNumBits)->Complexity(bm::o1);
+BENCHMARK(BM_BitvecSelectRandomRecursive)->RangeMultiplier(5)->Range(5, maxNumBits)->Complexity(bm::o1);
+BENCHMARK(BM_BitvecSelectRandomTrivial)->RangeMultiplier(5)->Range(5, maxNumBits)->Complexity(bm::o1);
