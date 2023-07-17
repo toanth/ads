@@ -8,7 +8,8 @@ namespace ads {
 /// \brief CRTP base class of all bitvectors with fixed-sized rank blocks and superblocks. See BitvecBase for a CRTP
 /// discussion. Derived classes should declare both this class and its base classes, available under the Base and
 /// Base::Base alias, as friends. \tparam Derived The actual bitvector, which inherits from SuperblockBitvecBase<Derived>.
-template<typename Derived, Index NumLimbsInSuperblock, Index NumLimbsInBlock, typename SuperblockRankT = Limb, Index NumLimbsInCacheLine = U64_PER_CACHELINE>
+template<typename Derived, Index NumLimbsInSuperblock, Index NumLimbsInBlock, typename SuperblockRankT = Limb,
+        Index NumLimbsInCacheLine = U64_PER_CACHELINE, typename OverwriteBlockRankT = FalseT>
 class [[nodiscard]] SuperblockBitvecBase : public NormalBitvecBase<Derived, NumLimbsInBlock, NumLimbsInCacheLine> {
 protected:
     friend Derived;
@@ -22,7 +23,8 @@ protected:
     static_assert(NumLimbsInCacheLine % NumLimbsInBlock == 0);
 
     // ** These aliases can be used unqualified (ie without Derived::) because they should refer to the actual types **
-    using BlockRank = IntType<bytesNeededForIndexing(NumLimbsInSuperblock * 64)>;
+    using BlockRank
+            = std::conditional_t<OverwriteBlockRankT{}, Unwrap<OverwriteBlockRankT>, IntType<bytesNeededForIndexing(NumLimbsInSuperblock * 64)>>;
     using SuperblockRank = SuperblockRankT;
 
 
@@ -139,7 +141,7 @@ public:
     }
 
 
-private:
+protected:
     template<bool IsOne>
     [[nodiscard]] constexpr Index superblockRank(Index superblockIdx) const noexcept {
         ADS_ASSUME(superblockIdx >= 0);
@@ -341,12 +343,6 @@ public:
         ADS_ASSUME(blockIdx < derived().numBlocks());
         ADS_ASSUME(bitRank >= 0);
         ADS_ASSUME(bitRank < this->blockSize());
-        //        if (derived().blocks.numT >= 2) {
-        //            std::cout << derived().blocks.numT << " " << derived().blocks[0] << " " << derived().blocks[1]
-        //                      << " "
-        //                      /*<< derived().blocks[2]*/
-        //                      << std::endl;
-        //        }
         Index inBlock = derived().template selectInBlock<IsOne>(bitRank, blockIdx);
         ADS_ASSUME(inBlock >= 0);
         ADS_ASSUME(inBlock < NumLimbsInBlock * 64);

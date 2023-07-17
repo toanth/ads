@@ -82,7 +82,7 @@ template<typename T>
 [[nodiscard]] ADS_CPP20_CONSTEXPR auto repeatView(T value, Index count) noexcept {
     auto repeat = [value](std::nullptr_t, Index) -> T { return value; };
     using Iter = RandAccessIter<nullptr_t, decltype(repeat)>;
-    return Subrange<Iter>(Iter(nullptr, repeat), Iter(nullptr, repeat, count));
+    return Subrange<Iter>{Iter(nullptr, repeat), Iter(nullptr, repeat, count)};
 }
 
 } // namespace ads

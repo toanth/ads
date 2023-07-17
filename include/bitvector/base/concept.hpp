@@ -8,8 +8,6 @@
 
 namespace ads {
 
-/// Note that the following concepts also apply in C++17 mode, they are just not checked by the implementation.
-#ifdef ADS_HAS_CPP20
 /// Bitvectors organize their bit sequence in groups of different sizes, where each group contains one or more of the
 /// preceding groups, and each instance of a group has the same size (with the possible exception of the last
 /// superblock). The groups are: Bit, Byte, Limb, Block, Cache Line, Superblock. In general, bitvectors only have the
@@ -24,6 +22,9 @@ namespace ads {
 /// those groups). Because the number of bits is not necessarily a multiple of these groups sizes, bitvectors can extend
 /// the stored bit sequence and provide the numAccessible<Group> functions in addition to the sizeIn<Group> functions.
 enum class Group { Bit, Byte, Limb, Block, CacheLine, Superblock };
+
+/// Note that the following concepts also apply in C++17 mode, they are just not checked by the implementation.
+#ifdef ADS_HAS_CPP20
 
 template<Group G>
 using TypeFor = std::conditional_t<G == Group::Byte, Byte,
@@ -204,10 +205,10 @@ template<typename T>
 constexpr static bool IsBitvec = detail::IsNormalBitvecImpl<T>::value;
 
 template<typename Bitvec>
-constexpr static bool IsNormalBitvec = IsBitvec<Bitvec> && detail::IsNormalBitvecImpl<T>::value;
+constexpr static bool IsNormalBitvec = IsBitvec<Bitvec> && detail::IsNormalBitvecImpl<Bitvec>::value;
 
 template<typename Bitvec>
-constexpr static bool IsSuperblockBitvec = IsNormalBitvec<Bitvec> && detail::IsSuperblockBitvecImpl<T>::value;
+constexpr static bool IsSuperblockBitvec = IsNormalBitvec<Bitvec> && detail::IsSuperblockBitvecImpl<Bitvec>::value;
 
 #endif // ADS_HAS_CPP20
 
@@ -228,11 +229,11 @@ template<bool IsOne>
 
 /// Comparison operators
 
-template<ADS_BITVEC_CONCEPT Bitvec1, ADS_BITVEC_CONCEPT Bitvec2>
+template<ADS_BITVEC_CONCEPT Bitvec1, ADS_BITVEC_CONCEPT Bitvec2, typename = std::enable_if_t<IsBitvec<Bitvec1> && IsBitvec<Bitvec2>>>
 [[nodiscard]] ADS_CPP20_CONSTEXPR bool operator==(const Bitvec1& lhs, const Bitvec2& rhs) noexcept {
     return lhs.numBits() == rhs.numBits() && std::equal(lhs.bitView().begin(), lhs.bitView().end(), rhs.bitView().begin());
 }
-template<ADS_BITVEC_CONCEPT Bitvec1, ADS_BITVEC_CONCEPT Bitvec2>
+template<ADS_BITVEC_CONCEPT Bitvec1, ADS_BITVEC_CONCEPT Bitvec2, typename = std::enable_if_t<IsBitvec<Bitvec1> && IsBitvec<Bitvec2>>>
 [[nodiscard]] ADS_CPP20_CONSTEXPR bool operator!=(const Bitvec1& lhs, const Bitvec2& rhs) noexcept {
     return !(rhs == lhs);
 }
@@ -247,19 +248,19 @@ template<ADS_BITVEC_CONCEPT Bitvec1, ADS_BITVEC_CONCEPT Bitvec2>
 
 #else
 
-template<ADS_BITVEC_CONCEPT Bitvec1, ADS_BITVEC_CONCEPT Bitvec2>
+template<ADS_BITVEC_CONCEPT Bitvec1, ADS_BITVEC_CONCEPT Bitvec2, typename = std::enable_if_t<IsBitvec<Bitvec1> && IsBitvec<Bitvec2>>>
 [[nodiscard]] bool operator<(const Bitvec1& lhs, const Bitvec2& rhs) noexcept {
     return std::lexicographical_compare(lhs.bitView().begin(), lhs.bitView().end(), rhs.bitView().begin(), rhs.bitView().end());
 }
-template<ADS_BITVEC_CONCEPT Bitvec1, ADS_BITVEC_CONCEPT Bitvec2>
+template<ADS_BITVEC_CONCEPT Bitvec1, ADS_BITVEC_CONCEPT Bitvec2, typename = std::enable_if_t<IsBitvec<Bitvec1> && IsBitvec<Bitvec2>>>
 [[nodiscard]] bool operator>(const Bitvec1& lhs, const Bitvec2& rhs) noexcept {
     return rhs < lhs;
 }
-template<ADS_BITVEC_CONCEPT Bitvec1, ADS_BITVEC_CONCEPT Bitvec2>
+template<ADS_BITVEC_CONCEPT Bitvec1, ADS_BITVEC_CONCEPT Bitvec2, typename = std::enable_if_t<IsBitvec<Bitvec1> && IsBitvec<Bitvec2>>>
 [[nodiscard]] bool operator<=(const Bitvec1& lhs, const Bitvec2& rhs) noexcept {
     return !(rhs < lhs);
 }
-template<ADS_BITVEC_CONCEPT Bitvec1, ADS_BITVEC_CONCEPT Bitvec2>
+template<ADS_BITVEC_CONCEPT Bitvec1, ADS_BITVEC_CONCEPT Bitvec2, typename = std::enable_if_t<IsBitvec<Bitvec1> && IsBitvec<Bitvec2>>>
 [[nodiscard]] bool operator>=(const Bitvec1& lhs, const Bitvec2& rhs) noexcept {
     return !(lhs < rhs);
 }

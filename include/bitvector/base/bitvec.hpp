@@ -60,7 +60,7 @@ protected:
         using Iter = RandAccessIter<std::string_view, decltype(proj)>;
         auto begin = Iter(str, proj);
         auto end = Iter(str, proj, roundUpDiv(Index(str.size()), charsPerLimb));
-        return Subrange<Iter>(begin, end);
+        return Subrange<Iter>{begin, end};
     }
 
     /// \brief Allocates memory for the Bitvector or uses the provided ptr, assuming it points to enough memory.

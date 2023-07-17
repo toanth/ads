@@ -127,7 +127,7 @@ namespace maybe_ranges = std;
 #ifdef _MSC_VER
 #define ADS_FORCE_INLINE(func) __forceinline func
 #elif defined __GNUC__ || defined __clang__
-#define ADS_FORCE_INLINE(func) inline func __attribute__((always_inline, artificial))
+#define ADS_FORCE_INLINE(func) func __attribute__((always_inline, artificial))
 #endif
 
 
@@ -176,7 +176,6 @@ template<typename T>
 struct TypeIdentity { // std::type_identity is a C++20 feature
     using Type = T;
 };
-
 template<Index NumBytes>
 struct IntTypeImpl : TypeIdentity<std::uint64_t> {
     static_assert(NumBytes > 4 && NumBytes <= 8);
@@ -195,6 +194,18 @@ struct IntTypeImpl<1> : TypeIdentity<std::uint8_t> {};
 
 template<Index NumBytes>
 using IntType = typename detail::IntTypeImpl<NumBytes>::Type;
+
+template<typename T>
+struct OverwriteType : std::bool_constant<true> {
+    using Type = T;
+    using type = T;
+};
+
+using FalseT = std::bool_constant<false>;
+
+template<typename T>
+using Unwrap = typename T::type;
+
 
 #define ADS_RESTRICT __restrict
 
@@ -230,7 +241,7 @@ ADS_CPP20_CONSTEXPR void uninitializedValueConstructN(T* ADS_RESTRICT dest, Inde
 using std::ranges::ssize;
 #else
 template<typename Range>
-[[noexcept]] Index ssize(const Range& range) noexcept { // not in C++17
+[[nodiscard]] Index ssize(const Range& range) noexcept { // not in C++17
     return static_cast<Index>(maybe_ranges::size(range));
 }
 #endif

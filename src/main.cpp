@@ -86,7 +86,7 @@ void writeRmqOutput(std::string_view filename, Span<std::pair<U64, U64>> output)
 Index eliasFano(PredecessorInput& input) {
     EliasFano<> ef(input.sequence);
     // TODO: Overwrite queries vector instead of creating new vector
-    for (Index i = 0; i < input.queries.size(); ++i) {
+    for (Index i = 0; i < ssize(input.queries); ++i) {
         input.queries[i] = ef.predecessor(input.queries[i]);
     }
     std::cout << ef.getUpper().allocatedSizeInBits() << " " << ef.numUpperBitsPerNumber() << " "
@@ -114,15 +114,14 @@ int main(int argc, char** argv) {
     }
     Index spaceInBits = -1;
     Index time = -1;
-    if (argv[1] == std::string("pd")) {
+    if (std::string(argv[1]) == std::string("pd")) {
         PredecessorInput input = readPredecessorInput(argv[2]);
         auto before = std::chrono::system_clock::now();
         spaceInBits = eliasFano(input);
         auto after = std::chrono::system_clock::now();
         time = std::chrono::duration_cast<std::chrono::milliseconds>(after - before).count();
         writePredecessorOutput(argv[3], input.queries);
-
-    } else if (argv[1] == std::string("rmq")) {
+    } else if (std::string(argv[1]) == std::string("rmq")) {
         RmqInput input = readRmqInput(argv[2]);
         auto before = std::chrono::system_clock::now();
         spaceInBits = rmq(input);
@@ -133,6 +132,7 @@ int main(int argc, char** argv) {
         printUsage();
         return 2;
     }
-    std::cout << "RESULT algo=rmq name=tobias_theuer time=" << time << " space=" << spaceInBits << std::endl;
+    std::string algoName = argv[1];
+    std::cout << "RESULT algo=" << algoName << " name=tobias_theuer time=" << time << " space=" << spaceInBits << std::endl;
     return 0;
 }

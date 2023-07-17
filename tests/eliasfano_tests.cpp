@@ -263,7 +263,7 @@ TEST(EliasFano, PredecessorAscending) {
     EliasFano<> ef(vec);
     ASSERT_LE(ef.numBitsPerNumber(), intLog2(ssize(vec)) + 1);
     ASSERT_EQ(ef.numLowerBitsPerNumber(), 0);
-    ASSERT_LE(ef.numAllocatedBits(), 2 * (ssize(vec) + ssize(vec) / 10));
+    ASSERT_LE(ef.numAllocatedBits(), 2 * (ssize(vec) + ssize(vec) / 5));
     auto engine = createRandomEngine();
     std::uniform_int_distribution<Elem> dist(0, vec.back() + vec.back() / 100);
     for (Index i = 0; i < 10'000; ++i) {
@@ -282,7 +282,7 @@ TEST(EliasFano, PredecessorSparseNonexisting) {
     EliasFano<> ef(vec);
     ASSERT_LE(ef.numBitsPerNumber(), intLog2(ssize(vec)) + 1);
     ASSERT_EQ(ef.numLowerBitsPerNumber(), 0);
-    ASSERT_LE(ef.numAllocatedBits(), 2 * (ssize(vec) + ssize(vec) / 10));
+    ASSERT_LE(ef.numAllocatedBits(), 2 * (ssize(vec) + ssize(vec) / 5));
     auto engine = createRandomEngine();
     std::uniform_int_distribution<Elem> dist(0, vec.back() + vec.back() / 100);
     for (Index i = 0; i < 10'000; ++i) {

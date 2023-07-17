@@ -4,6 +4,9 @@
 #include "common.hpp"
 #include <array>
 
+#if (defined ADS_HAS_GCC_BMI2 || defined ADS_HAS_MSVC_INTRINSICS) && defined ADS_USE_BMI2_INTRINSICS
+#define ADS_USE_PDEP
+#endif
 
 namespace ads {
 
@@ -127,7 +130,7 @@ template<typename UnsignedInteger>
 }
 
 [[nodiscard]] ADS_CPP20_CONSTEXPR U64 u64SelectImpl(U64 n, Index bitRank) noexcept {
-#if (defined ADS_HAS_GCC_BMI2 || defined ADS_HAS_MSVC_INTRINSICS) && defined ADS_USE_BMI2_INTRINSICS
+#ifdef ADS_USE_PDEP
     ADS_IF_CONSTEVAL {
         return u64SelectImplFallback(n, bitRank);
     }
@@ -203,8 +206,11 @@ constexpr static inline BitSelectTable<> byteSelectTable = precomputeBitSelectTa
 
 
 [[nodiscard]] ADS_CPP20_CONSTEXPR Index u64Select(U64 value, Index bitRank) noexcept {
+#ifdef ADS_USE_PDEP
+    return countTrailingZeros(u64SelectImpl(value, bitRank));
+#else
     return u64SelectWithTable(value, bitRank);
-    //    return countTrailingZeros(u64SelectImpl(value, bitRank));
+#endif
 }
 
 

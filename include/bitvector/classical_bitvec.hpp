@@ -5,14 +5,13 @@
 
 namespace ads {
 
-template<Index BlockSizeInLimbs = 8, Index SuperblockSizeInLimbs = (1 << 16) / 64 / 4, Index SuperblockSelectStepSize = SuperblockSizeInLimbs * 64,
-        Index InSuperblockSelectStepSize = BlockSizeInLimbs * 64, typename SuperblockSelectT = U32, typename SuperblockRankT = Limb>
-class ClassicalBitvec
-    : public ClassicalRankBitvecImpl<ClassicalBitvec<BlockSizeInLimbs, SuperblockSizeInLimbs, SuperblockSelectStepSize, InSuperblockSelectStepSize, SuperblockSelectT, SuperblockRankT>,
-              BlockSizeInLimbs, SuperblockSizeInLimbs, SuperblockRankT> {
-
-    using Base = ClassicalRankBitvecImpl<ClassicalBitvec<BlockSizeInLimbs, SuperblockSizeInLimbs, SuperblockSelectStepSize, InSuperblockSelectStepSize, SuperblockSelectT, SuperblockRankT>,
-            BlockSizeInLimbs, SuperblockSizeInLimbs, SuperblockRankT>;
+template<typename Derived, Index BlockSizeInLimbs = 8, Index SuperblockSizeInLimbs = (1 << 16) / 64 / 4,
+        Index SuperblockSelectStepSize = SuperblockSizeInLimbs * 64, Index InSuperblockSelectStepSize = BlockSizeInLimbs * 64,
+        typename SuperblockSelectT = U32, typename SuperblockRankT = Limb, typename OverwriteRankT = FalseT>
+class ClassicalBitvecImpl
+    : public ClassicalRankBitvecImpl<Derived, BlockSizeInLimbs, SuperblockSizeInLimbs, SuperblockRankT, OverwriteRankT> {
+protected:
+    using Base = ClassicalRankBitvecImpl<Derived, BlockSizeInLimbs, SuperblockSizeInLimbs, SuperblockRankT, OverwriteRankT>;
     using Base::Base;
     friend Base;
 
@@ -31,7 +30,7 @@ class ClassicalBitvec
 
 
 public:
-    constexpr ClassicalBitvec(UninitializedTag, Index numBits, CacheLine* mem = nullptr) noexcept
+    constexpr ClassicalBitvecImpl(UninitializedTag, Index numBits, CacheLine* mem = nullptr) noexcept
         : Base(UninitializedTag{}, numBits, mem) {
         numBits = roundUpTo(numBits, CACHELINE_SIZE_BYTES * 8);
         Index numSuperblockSelectEntries = roundUpDiv(numBits, SuperblockSelectStepSize) + 2;
@@ -45,22 +44,22 @@ public:
     }
 
 
-    explicit constexpr ClassicalBitvec(Index numBits, Limb fill, CacheLine* mem = nullptr)
-        : ClassicalBitvec(UninitializedTag{}, numBits, mem) {
+    explicit constexpr ClassicalBitvecImpl(Index numBits, Limb fill, CacheLine* mem = nullptr)
+        : ClassicalBitvecImpl(UninitializedTag{}, numBits, mem) {
         this->fill(fill);
     }
 
-    explicit ADS_CPP20_CONSTEXPR ClassicalBitvec(Span<const Limb> limbs, CacheLine* mem = nullptr) noexcept
-        : ClassicalBitvec(limbs, limbs.size() * 64, mem) {}
+    explicit ADS_CPP20_CONSTEXPR ClassicalBitvecImpl(Span<const Limb> limbs, CacheLine* mem = nullptr) noexcept
+        : ClassicalBitvecImpl(limbs, limbs.size() * 64, mem) {}
 
-    ADS_CPP20_CONSTEXPR ClassicalBitvec(Span<const Limb> limbs, Index numBits, CacheLine* mem = nullptr) noexcept
-        : ClassicalBitvec(UninitializedTag{}, numBits, mem) {
+    ADS_CPP20_CONSTEXPR ClassicalBitvecImpl(Span<const Limb> limbs, Index numBits, CacheLine* mem = nullptr) noexcept
+        : ClassicalBitvecImpl(UninitializedTag{}, numBits, mem) {
         this->copyFrom(limbs);
     }
 
 
-    explicit ADS_CPP20_CONSTEXPR ClassicalBitvec(std::string_view str, Index base = 2, CacheLine* mem = nullptr) noexcept
-        : ClassicalBitvec(UninitializedTag{}, str.size() * intLog2(base), mem) {
+    explicit ADS_CPP20_CONSTEXPR ClassicalBitvecImpl(std::string_view str, Index base = 2, CacheLine* mem = nullptr) noexcept
+        : ClassicalBitvecImpl(UninitializedTag{}, str.size() * intLog2(base), mem) {
         this->initFromStr(str, base);
     }
 
@@ -104,10 +103,16 @@ public:
             selectZeroIdx = 0;
             Index numBlocks = (sbIdx + 1 == this->numSuperblocks() ? this->numBlocks() - sbIdx * this->numBlocksInSuperblock() :
                                                                      this->numBlocksInSuperblock());
+            //            Index lastRank = 0;
             for (Index blockIdx = 0; blockIdx <= numBlocks; ++blockIdx) {
                 Index rank = blockIdx == numBlocks ?
                                      this->superblocks[sbIdx + 1] :
                                      this->superblocks[sbIdx] + this->blocks[sbIdx * this->numBlocksInSuperblock() + blockIdx];
+                //                if constexpr (OverwriteRankT{}) {
+                //                    if (rank < lastRank || (rank == lastRank && this->getLimb(blockIdx * this->numLimbsInBlock()) != 0)) {
+                //                    }
+                //                }
+                //                Index lastRank = rank;
                 rank -= this->superblocks[sbIdx];
                 Index rankZero = blockIdx * this->blockSize() - rank;
                 while (rank > selectOneIdx * InSuperblockSelectStepSize) {
@@ -124,7 +129,7 @@ public:
     }
 
     template<bool IsOne>
-    [[nodiscard]] [[using gnu: hot]] ADS_CPP20_CONSTEXPR Index selectSuperblockIdx(Index& bitRank) const noexcept {
+    [[nodiscard]] [[gnu::hot]] ADS_CPP20_CONSTEXPR Index selectSuperblockIdx(Index& bitRank) const noexcept {
         ADS_ASSUME(bitRank >= 0);
         ADS_ASSUME(bitRank < this->template numBitsEqualTo<IsOne>());
         Index inSuperblockSelectArr = bitRank / SuperblockSelectStepSize;
@@ -146,7 +151,7 @@ public:
     }
 
     template<bool IsOne>
-    [[nodiscard]] [[using gnu: hot]] ADS_CPP20_CONSTEXPR Index selectBlockIdx(Index& bitRank, Index superblockIdx) const noexcept {
+    [[nodiscard]] ADS_CPP20_CONSTEXPR Index selectBlockIdx(Index& bitRank, Index superblockIdx) const noexcept {
         ADS_ASSUME(bitRank >= 0);
         ADS_ASSUME(bitRank < this->superblockSize());
         ADS_ASSUME(superblockIdx >= 0);
@@ -164,6 +169,7 @@ public:
         Index inSuperblock = bitRank / InSuperblockSelectStepSize;
         Index lowerSelectIdx = selectEntry(superblockIdx, inSuperblock);
         Index upperSelectIdx = selectEntry(superblockIdx, inSuperblock + 1);
+        ADS_ASSUME(lowerSelectIdx >= 0);
         Index blockLowerBound = selectInSuperblock[lowerSelectIdx];
         Index blockUpperBound = selectInSuperblock[upperSelectIdx] + 1;
         ADS_ASSUME(blockLowerBound >= 0);
@@ -171,8 +177,27 @@ public:
         ADS_ASSUME(blockUpperBound <= this->numBlocksInSuperblock());
         blockLowerBound += superblockIdx * this->numBlocksInSuperblock();
         blockUpperBound += superblockIdx * this->numBlocksInSuperblock();
+        if constexpr (OverwriteRankT{}) {
+            bitRank %= Limb(1) << (sizeof(Unwrap<OverwriteRankT>) * 8);
+        }
         return this->template selectBlockIdxInRange<IsOne>(bitRank, superblockIdx, blockLowerBound, blockUpperBound);
     }
+};
+
+
+template<Index BlockSizeInLimbs = 4, Index SuperblockSizeInLimbs = (1 << 16) / 64 / 4, Index SuperblockSelectStepSize = SuperblockSizeInLimbs * 64,
+        Index InSuperblockSelectStepSize = BlockSizeInLimbs * 64, typename SuperblockSelectT = U32, typename SuperblockRankT = Limb>
+class ClassicalBitvec
+    : public ClassicalBitvecImpl<ClassicalBitvec<BlockSizeInLimbs, SuperblockSizeInLimbs, SuperblockSelectStepSize, InSuperblockSelectStepSize, SuperblockSelectT, SuperblockRankT>,
+              BlockSizeInLimbs, SuperblockSizeInLimbs, SuperblockSelectStepSize, InSuperblockSelectStepSize, SuperblockSelectT, SuperblockRankT> {
+public:
+    using Base = ClassicalBitvecImpl<ClassicalBitvec<BlockSizeInLimbs, SuperblockSizeInLimbs, SuperblockSelectStepSize, InSuperblockSelectStepSize, SuperblockSelectT, SuperblockRankT>,
+            BlockSizeInLimbs, SuperblockSizeInLimbs, SuperblockSelectStepSize, InSuperblockSelectStepSize, SuperblockSelectT, SuperblockRankT>;
+    using Base::Base;
+    friend Base;
+
+    constexpr ClassicalBitvec(UninitializedTag, Index numBits, CacheLine* mem = nullptr) noexcept
+        : Base(UninitializedTag{}, numBits, mem) {}
 };
 
 } // namespace ads

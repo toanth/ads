@@ -30,7 +30,7 @@ class RecursiveBitvec
 
     using Base = NormalBitvecBase<RecursiveBitvec<NestedBitvec, SelectOps, BlockSize, BlockCountT>, BlockSize / 64>;
     friend Base;
-    friend Base::Base;
+    friend typename Base::Base;
     using Nested = NestedBitvec;
 
     /// \brief The nestedZeros Bitvector stores a bit for each block b, which is one iff the block contains a zero at
@@ -193,8 +193,7 @@ public:
     // Cf. rankOneUnchecked() below. This function exists because it fits the pattern in which Elias-Fano calls
     // selectOne and the pattern in which this bitvector calls the nested bitvector's selectOne function, so for a RecursiveBitvec<RecursiveBitvec<TrivialBitvec>>>,
     // this turns 14 selectOne()s per predecessor into usually no more than 3 selectOneAndPrev calls overall.
-    [[nodiscard]] [[using gnu: hot, pure]] ADS_CPP20_CONSTEXPR std::pair<Index, Index> selectOneAndPrevOne(
-            Index rankOfSecond) const noexcept {
+    [[nodiscard]] [[gnu::pure]] ADS_CPP20_CONSTEXPR std::pair<Index, Index> selectOneAndPrevOne(Index rankOfSecond) const noexcept {
         ADS_ASSUME(rankOfSecond >= 0);
         ADS_ASSUME(rankOfSecond < this->numOnes());
         if (rankOfSecond == 0) [[unlikely]] {
@@ -369,7 +368,7 @@ private:
     /// \brief The subrange [lower, upper) of block ranks must be in ascending order. Finds the first block in the
     /// range [lower, upper) where the rank is strictly larger than rank or returns upper if no such block exists.
     template<bool IsOne>
-    [[nodiscard]] [[using gnu: hot, pure]] ADS_CPP20_CONSTEXPR Index selectBlock(Index lower, Index upper, Index rank) const noexcept {
+    [[nodiscard]] [[gnu::pure]] ADS_CPP20_CONSTEXPR Index selectBlock(Index lower, Index upper, Index rank) const noexcept {
         ADS_ASSUME(rank >= 0);
         ADS_ASSUME(rank < BlockSize);
         ADS_ASSUME(lower >= 0);
@@ -430,8 +429,7 @@ private:
     /// \brief The subrange [lower, upper) of block ranks must be in ascending order. Finds the first block in the
     /// range [lower, upper) where the rank is strictly larger than rank or returns upper if no such block exists.
     template<bool IsOne>
-    [[nodiscard]] [[using gnu: hot, pure]] ADS_CPP20_CONSTEXPR Index selectBlockLinearly(
-            Index lower, Index upper, Index rank) const noexcept {
+    [[nodiscard]] [[gnu::pure]] ADS_CPP20_CONSTEXPR Index selectBlockLinearly(Index lower, Index upper, Index rank) const noexcept {
         ADS_ASSUME(rank >= 0);
         ADS_ASSUME(rank < BlockSize);
         ADS_ASSUME(lower >= 0);

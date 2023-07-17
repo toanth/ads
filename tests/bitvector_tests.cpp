@@ -3,6 +3,7 @@
 #include "../include/bitvector/classical_bitvec.hpp"
 #include "../include/bitvector/classical_rank_bitvec.hpp"
 #include "../include/bitvector/recursive_bitvec.hpp"
+// #include "../include/bitvector/select_bitvec.hpp"
 #include "../include/bitvector/trivial_bitvec.hpp"
 #include "gtest/gtest.h"
 
@@ -18,6 +19,7 @@ using StrangeTrivial = TrivialBitvec<U64, ads::Operations::SELECT_ONLY>;
 using VeryRecursive
         = RecursiveBitvec<RecursiveBitvec<RecursiveBitvec<RecursiveBitvec<CacheEfficientRankBitvec>>, SupportedSelects::ONE_ONLY, 64, U32>>;
 using Strange = RecursiveBitvec<TrivialBitvec<U32, Operations::RANK_ONLY>, SupportedSelects::ONE_ONLY, 64 * 2>;
+// using Select = SelectBitvec<>;
 
 static_assert(IsNormalBitvec<VeryRecursive>);
 
@@ -38,19 +40,19 @@ template<typename = void>
 using ReferenceBitvector = CacheEfficientRankBitvec;
 
 /// \brief A collectio of bitvectors that try to achive high coverage
-using AllBitvecs = ::testing::Types<CacheEfficientRankBitvec, ClassicalRankBitvec<>, OneBlockPerSuperBlock, Classical,
-        StrangeClassical, Trivial, StrangeTrivial, EfficientBitvec<>, RecursiveBitvec<TrivialBitvec<>>, VeryRecursive, Strange>;
+using AllBitvecs = ::testing::Types<CacheEfficientRankBitvec, ClassicalRankBitvec<>, OneBlockPerSuperBlock, Classical, StrangeClassical,
+        Trivial, StrangeTrivial, EfficientBitvec<>, RecursiveBitvec<TrivialBitvec<>>, VeryRecursive, Strange /*, Select*/>;
 
 /// \brief All bitvectors except TrivialBitvec, for which some operations aren't defined
 using NormalBitvecs = ::testing::Types<CacheEfficientRankBitvec, ClassicalRankBitvec<>, SmallSuperBlocks,
-        StrangeSuperBlocks, OneBlockPerSuperBlock, Classical, StrangeClassical, EfficientBitvec<>, Strange>;
+        StrangeSuperBlocks, OneBlockPerSuperBlock, Classical, StrangeClassical, EfficientBitvec<>, Strange /*, Select*/>;
 
 /// \brief Some of the faster bitvectors, which can be used for larger tests
 using EfficientBitvecs = ::testing::Types<CacheEfficientRankBitvec, ClassicalRankBitvec<>, TrivialBitvec<U64>,
-        EfficientBitvec<>, Classical, StrangeClassical, VeryRecursive, Strange>;
+        EfficientBitvec<>, Classical, StrangeClassical, VeryRecursive, Strange /*, Select*/>;
 
 using EfficientNormalBitvecs
-        = ::testing::Types<CacheEfficientRankBitvec, ClassicalRankBitvec<>, Classical, StrangeClassical, EfficientBitvec<>, VeryRecursive>;
+        = ::testing::Types<CacheEfficientRankBitvec, ClassicalRankBitvec<>, Classical, StrangeClassical, EfficientBitvec<>, VeryRecursive /*, Select*/>;
 TYPED_TEST_SUITE(AllBitvecsTest, AllBitvecs);
 TYPED_TEST_SUITE(NormalBitvecsTest, NormalBitvecs);
 TYPED_TEST_SUITE(EfficientBitvecsTest, EfficientBitvecs);
@@ -119,8 +121,10 @@ TYPED_TEST(AllBitvecsTest, ConstructionElements) {
     ASSERT_EQ(bv.getBit(0), 1);
     ASSERT_EQ(*bv.bitView().begin(), 1);
     ASSERT_EQ(bv.toString(), "1");
+#ifdef ADS_HAS_CPP20
     ASSERT_EQ(bv, ReferenceBitvector<>("1"));
     ASSERT_GT(bv, ReferenceBitvector<>("0"));
+#endif
     ASSERT_EQ(bv.numZeros(), 0);
     ASSERT_EQ(bv.numOnes(), 1);
     bv = TypeParam::uninitializedForSize(64);
@@ -135,7 +139,9 @@ TYPED_TEST(AllBitvecsTest, ConstructionElements) {
     ASSERT_EQ(bv.getBit(0), 0);
     ASSERT_EQ(bv.getBit(63), 1);
     ASSERT_FALSE(*bv.bitView().begin());
+#ifdef ADS_HAS_CPP20
     ASSERT_GT(bv, ReferenceBitvector<>("0"));
+#endif
     ASSERT_EQ(bv.numZeros(), 63);
     ASSERT_EQ(bv.numOnes(), 1);
     std::vector<Limb> values{Limb(-1), Limb(-1)};

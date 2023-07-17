@@ -31,6 +31,6 @@ else ()
     endif ()
 endif ()
 
-add_executable(tests common_tests.cpp bit_tests.cpp bitvector_tests.cpp eliasfano_tests.cpp rmq_tests.cpp ../include/succinct_rmq.hpp rmmtree_tests.cpp)
+add_executable(tests common_tests.cpp bit_tests.cpp bitvector_tests.cpp eliasfano_tests.cpp rmq_tests.cpp ../include/succinct_rmq.hpp rmmtree_tests.cpp ../include/bitvector/select_bitvec.hpp)
 
 target_link_libraries(tests gtest gtest_main)

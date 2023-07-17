@@ -15,15 +15,15 @@ namespace ads {
 /// parameter shouldn't be chosen too large. Must be a multiple of BlockSize.
 /// \tparam SuperblockRankT The type used to store superblock counts. Some small memory requirement reductions are possible
 /// if the size of the bitvector in bits is known in advance to fit into a smaller type than Limb.
-template<typename Derived, Index BlockSizeInLimbs = 8, Index SuperblockSizeInLimbs = (1 << 16) / 64, typename SuperblockRankT = Limb>
+template<typename Derived, Index BlockSizeInLimbs = 8, Index SuperblockSizeInLimbs = (1 << 16) / 64, typename SuperblockRankT = Limb, typename OverwriteBlockRankT = FalseT>
 class [[nodiscard]] ClassicalRankBitvecImpl
-    : public SuperblockBitvecBase<Derived, SuperblockSizeInLimbs, BlockSizeInLimbs, SuperblockRankT> {
+    : public SuperblockBitvecBase<Derived, SuperblockSizeInLimbs, BlockSizeInLimbs, SuperblockRankT, U64_PER_CACHELINE, OverwriteBlockRankT> {
 protected:
-    using Base = SuperblockBitvecBase<Derived, SuperblockSizeInLimbs, BlockSizeInLimbs, SuperblockRankT>;
+    using Base = SuperblockBitvecBase<Derived, SuperblockSizeInLimbs, BlockSizeInLimbs, SuperblockRankT, U64_PER_CACHELINE, OverwriteBlockRankT>;
     friend Derived;
     friend Base;
-    friend Base::Base;
-    friend Base::Base::Base; // :D
+    friend typename Base::Base;
+    friend typename Base::Base::Base; // :D
 
     static_assert(0 < BlockSizeInLimbs && 0 < SuperblockSizeInLimbs && SuperblockSizeInLimbs % BlockSizeInLimbs == 0);
 
@@ -38,7 +38,7 @@ public:
     }
 
     using typename Base::BlockRank;
-    static_assert(std::is_same_v<BlockRank, IntType<bytesPerBlockCount()>>);
+    static_assert(std::is_same_v<BlockRank, IntType<bytesPerBlockCount()>> || OverwriteBlockRankT{});
     using BlockRanks = Array<BlockRank>;
     using typename Base::SuperblockRank;
     static_assert(std::is_same_v<SuperblockRank, SuperblockRankT>);
@@ -47,7 +47,7 @@ public:
     SuperblockRanks superblocks = SuperblockRanks();
     BlockRanks blocks = BlockRanks();
 
-private:
+protected:
     [[nodiscard]] ADS_CPP20_CONSTEXPR const BlockRank* endOfMemory() const noexcept { return blocks.end(); }
     [[nodiscard]] ADS_CPP20_CONSTEXPR BlockRank* endOfMemory() noexcept { return blocks.end(); }
 

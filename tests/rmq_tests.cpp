@@ -8,8 +8,12 @@
 using namespace ads;
 
 
-constexpr auto noCheck = [](auto...) { return true; };
-using NoCheck = decltype(noCheck);
+struct NoCheck {
+    template<typename... Args>
+    constexpr bool operator()(Args&&...) noexcept {
+        return true;
+    }
+};
 
 
 template<ADS_RMQ_CONCEPT RmqType>

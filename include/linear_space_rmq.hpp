@@ -61,7 +61,7 @@ class [[nodiscard]] LinearSpaceRMQ {
     // are multiples of the block size. size() / BlockSize elements (rounded up), each storing a logarithmic number of
     // indices; 32 * k log k (with k = n / 65536) bits by default; 64 * k log k, k = n / 256
     BlockRmq blockRmq = BlockRmq();
-    // For each block, stores its mininum relative to the block start. Used by the bock bitvecRmq.
+    // For each block, stores its minimum relative to the block start. Used by the bock bitvecRmq.
     // size() / BlockSize elements, rounded up; 16 * n / 65636 bits; 8 * n / 256 bits
     Array<InBlockIdx> minimumInBlock = Array<InBlockIdx>();
     // For each sub-block, stores the exclusive prefix sum in its block.

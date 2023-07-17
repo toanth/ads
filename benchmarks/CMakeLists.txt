@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 3.25)
 
 project(benchmarks)
 
+set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
+
 set(GOOGLETEST_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../dependencies/googletest-src")
 
 include(FetchContent)
@@ -30,7 +32,7 @@ endif ()
 
 add_compile_options(benchmarks -DADS_NO_FALLBACKS)
 
-add_executable(benchmarks bitvector_benchmarks.cpp eliasfano_benchmarks.cpp ../include/bitvector/classical_bitvec.hpp)
+add_executable(benchmarks bitvector_benchmarks.cpp eliasfano_benchmarks.cpp ../include/bitvector/classical_bitvec.hpp ../include/bitvector/select_bitvec.hpp)
 
 target_link_libraries(benchmarks benchmark::benchmark benchmark::benchmark_main)
 
