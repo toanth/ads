@@ -15,7 +15,7 @@ namespace ads {
 /// parameter shouldn't be chosen too large. Must be a multiple of BlockSize.
 /// \tparam SuperblockRankT The type used to store superblock counts. Some small memory requirement reductions are possible
 /// if the size of the bitvector in bits is known in advance to fit into a smaller type than Limb.
-template<typename Derived, Index BlockSizeInLimbs = 8, Index SuperblockSizeInLimbs = (1 << 16) / 64, typename SuperblockRankT = Limb, typename OverwriteBlockRankT = FalseT>
+template<typename Derived, Index BlockSizeInLimbs, Index SuperblockSizeInLimbs, typename SuperblockRankT = Limb, typename OverwriteBlockRankT = FalseT>
 class [[nodiscard]] ClassicalRankBitvecImpl
     : public SuperblockBitvecBase<Derived, SuperblockSizeInLimbs, BlockSizeInLimbs, SuperblockRankT, U64_PER_CACHELINE, OverwriteBlockRankT> {
 protected:

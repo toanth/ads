@@ -5,7 +5,7 @@
 
 namespace ads {
 
-template<typename Derived, Index BlockSizeInLimbs = 8, Index SuperblockSizeInLimbs = (1 << 16) / 64 / 4,
+template<typename Derived, Index BlockSizeInLimbs, Index SuperblockSizeInLimbs,
         Index SuperblockSelectStepSize = SuperblockSizeInLimbs * 64, Index InSuperblockSelectStepSize = BlockSizeInLimbs * 64,
         typename SuperblockSelectT = U32, typename SuperblockRankT = Limb, typename OverwriteRankT = FalseT>
 class ClassicalBitvecImpl
@@ -185,7 +185,7 @@ public:
 };
 
 
-template<Index BlockSizeInLimbs = 4, Index SuperblockSizeInLimbs = (1 << 16) / 64 / 4, Index SuperblockSelectStepSize = SuperblockSizeInLimbs * 64,
+template<Index BlockSizeInLimbs = 8, Index SuperblockSizeInLimbs = (1 << 16) / 64 / 4, Index SuperblockSelectStepSize = SuperblockSizeInLimbs * 64,
         Index InSuperblockSelectStepSize = BlockSizeInLimbs * 64, typename SuperblockSelectT = U32, typename SuperblockRankT = Limb>
 class ClassicalBitvec
     : public ClassicalBitvecImpl<ClassicalBitvec<BlockSizeInLimbs, SuperblockSizeInLimbs, SuperblockSelectStepSize, InSuperblockSelectStepSize, SuperblockSelectT, SuperblockRankT>,

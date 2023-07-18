@@ -32,7 +32,7 @@ endif ()
 
 add_compile_options(benchmarks -DADS_NO_FALLBACKS)
 
-add_executable(benchmarks bitvector_benchmarks.cpp eliasfano_benchmarks.cpp ../include/bitvector/classical_bitvec.hpp ../include/bitvector/select_bitvec.hpp)
+add_executable(benchmarks bitvector_benchmarks.cpp eliasfano_benchmarks.cpp ../include/bitvector/classical_bitvec.hpp ../include/bitvector/select_bitvec.hpp rmq_benchmarks.cpp)
 
 target_link_libraries(benchmarks benchmark::benchmark benchmark::benchmark_main)
 
