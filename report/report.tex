@@ -15,7 +15,7 @@
 %\pdfoutput=1 %uncomment to ensure pdflatex processing (mandatatory e.g. to submit to arXiv)
 \hideLIPIcs  %uncomment to remove references to LIPIcs series (logo, DOI, ...), e.g. when preparing a pre-final version to be uploaded to arXiv or another public repository
 
-%\graphicspath{{./graphics/}}%helpful if your graphic files are in another directory
+\graphicspath{{./images/}}%helpful if your graphic files are in another directory
 
 \bibliographystyle{plainurl}% the mandatory bibstyle
 
@@ -68,6 +68,7 @@
 
 \usepackage{mathtools}
 \usepackage{csquotes}
+ \graphicspath{ {./images} }
 
 \newcommand{\stress}[1] {\textit{#1}}
 \newcommand{\todo}[1] {{\color{red}\textsc{#1}}}
@@ -212,6 +213,81 @@ disabling dynamic frequency scaling (so all cores are always running at 1,7 Ghz)
 of the benchmarked program and completely disabling its SMT partner.
 The x86 BMI2 \texttt{pdep} instruction, which \href{https://stackoverflow.com/questions/7669057/find-nth-set-bit-in-an-int/27453505#27453505}{can be used} for \select{} on 64bit values, is implemented in microcode on my processor, resulting in dramatically worse performance compared to the lookup table-based implementation, and therefore isn't used\footnote{Which makes all \select{} calls slightly slower
 and should be especially unfavorable for the Recursive Bitvector}.
+
+\begin{figure}[h]
+\caption{Comparison of the Classical Bitvector (current) vs. Recursive Bitvector (baseline) for Bitvectors consisting of alternating 0s and 1s,
+with random rank queries.
+The Bitvector hyper-parameters used are their default values, which have been chosen to use roughly the same amount of additional space.
+As with all plots, error bars are drawn when the coefficient of variance out of 3 repetition is greater than 5 percent,
+where a single repetition executes the benchmark multiple times, as controlled by the google benchmark framework.
+Cache effects are clearly visible.}
+\centering
+\includegraphics[width=\textwidth]{BitvecAlternatingOnesZerosRankRandom}
+\label{fig:BitvecSelectRandom}
+\end{figure}
+
+\begin{figure}[h]
+\caption{Bitvector Rank of the same value for each size on a Bitvector with alternating 1s and 0s, Classical Bitvector (current) vs Recursive Bitvector (baseline). It is clear to see that both Bitvectors support this operation in O(1), although there is considerable variation in the time for different sizes (but very little variance within a given size). Based on profiling data, this appears to be due to the differing number
+of iterations in the final \texttt{popcount} loop, but not scaling with the number of these iterations. I am not certain what the reason for this
+behavior is, it may have been caused by incorrect branch predictions (although \rank{} was called many times
+for each size, so the branch predictor should have been able to learn the number of loop iterations). }
+\centering
+\includegraphics[width=\textwidth]{BitvecAlternatingOnesZerosRankTwoThird}
+\label{fig:rankConstant}
+\end{figure}
+
+\begin{figure}[h]
+\caption{Bitvector \rank{} of random indices for random Bitvectors, Classical Bitvector (current) vs Recursive Bitvector (baseline).
+The variation in rank times has been smoothened by the random queries, but query times are no longer constant as soon as the L3 cache size (4 MiB)
+is exceeded.}
+\centering
+\includegraphics[width=\textwidth]{BitvecRandomRank}
+\end{figure}
+
+\begin{figure}[h]
+\caption{A very similar benchmark to figure \ref{fig:rankConstant}, but this time with \select{} instead of \rank{}.
+Again, it's easy to see that query times are constant, with significant variation for different sizes (but very small measurement noise).}
+\centering
+\includegraphics[width=\textwidth]{BitvecAlternatingOnesZerosSelectOneThird}
+\end{figure}
+
+\begin{figure}[h]
+\caption{Bitvector \select{} of random indices for random Bitvectors, Classical Bitvector (current) vs Recursive Bitvector (baseline).
+Again, the variation in \select{} times has been smoothened by the random queries, but query times are no longer constant due to cache misses
+and branch mispredictions.}
+\centering
+\includegraphics[width=\textwidth]{BitvecSelectRandom}
+\end{figure}
+
+
+\begin{figure}[h]
+\caption{Bitvector \select{} of random indices for Bitvectors with random bits; comparison between different Bitvector implementations.
+The variability in the Trivial Bitvector for large sizes may be explained by the fact that my computer was heavily swapping memory at that point,
+due to the way the benchmarks are set up internally this can occurs before an individual Bitvector's size exceeds the RAM capacity.
+Unfortunately, I didn't finish implementing an additional \stress{SelectBitvector} in time, which should have had roughly the same performance characteristic as the Classical Bitvector while using only about 70 percent of its additional space.}
+\centering
+\includegraphics[width=\textwidth]{compare_4_BitvecSelectRandoms_CacheEfficientRank}
+\end{figure}
+
+
+\begin{figure}[h]
+\caption{Elias-Fano using the Classical Bitvector containing $n$ consecutive numbers. Queries are randomly chosen from all numbers
+contained in the Elias-Fano structure. The size of the L3 cache was 4 MiB, enough to store approx.\@$5 * 10^6$ 64bit values, which is also
+where the time per query starts to increase due to cache misses. The size of the L1 cache was 32 KiB, enough to store around $4 * 10^3$ values,
+an effect that can also be seen in the plot.}
+\centering
+\includegraphics[width=\textwidth]{EliasFanoPredecessorAcending}
+\end{figure}
+
+
+\begin{figure}[h]
+\caption{Three different RMQ implementation with random values and random query intervals. All implementations could be optimized further,
+the Succinct RMQ is slow because it needs $\mathcal{O} (\log n)$ time to answer a query and because the current implementation traverses
+each bit individually instead of using precomputed tables.}
+\centering
+\includegraphics[width=\textwidth]{rmq}
+\end{figure}
+
 
 \bibliography{report.bib}
 
